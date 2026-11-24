@@ -6,6 +6,7 @@
 @using PoMiniGamesClient.Services
 @using PoMiniGamesClient.Services.Play
 @inject IJSRuntime JS
+@inject DialogService Dialogs
 @inject NavigationManager Navigation
 @inject KioskCoordinator Kiosk
 @inject ApiService Api
@@ -187,128 +188,126 @@
                 <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
             </div>
 
-            @* The Studio: a native modal dialog (focus stays inside, Esc closes) that walks through
-               four steps. It is always rendered, so the video and canvas the Studio controller
-               holds survive every step; index.js opens and closes it. *@
-            <dialog class="pf-studio" @ref="_studioDialog" data-step="@_studioStep" aria-label="PoFighter Studio" @onclose="OnStudioClosedAsync">
-                <header class="pf-studio-head">
-                    <h2>Create a fighter</h2>
-                    <PoButton class="pf-icon-btn" Click="CloseStudioAsync" aria-label="Close the Studio">
-                        <span class="material-symbols-outlined" aria-hidden="true">close</span>
-                    </PoButton>
-                </header>
-                <ol class="pf-steps">
-                    @foreach (var (n, label) in StudioSteps)
-                    {
-                        var state = n < _studioStep ? "done" : n == _studioStep ? "current" : "todo";
-                        <li class="pf-step pf-step--@state" aria-current="@(n == _studioStep ? "step" : null)">
-                            <PoButton Disabled="@(n > _studioReached || _studioBusy)" Click="() => _studioStep = n">
-                                <span class="pf-step-dot">
-                                    @if (state == "done")
-                                    {
-                                        <span class="material-symbols-outlined" aria-hidden="true">check</span>
-                                    }
-                                    else
-                                    {
-                                        @n
-                                    }
-                                </span>
-                                <span class="pf-step-label">@label</span>
-                            </PoButton>
-                        </li>
-                    }
-                </ol>
-                <p class="pf-studio-status" @ref="_studioStatus" role="status">Everything runs in this browser: nothing is uploaded.</p>
-                <div class="pf-studio-progress" hidden="@(!_studioBusy)"><span style="--p: @(_studioProgress)%"></span></div>
-
-                <div class="pf-studio-cams">
-                    <video @ref="_studioVideo" class="pf-studio-video" muted playsinline></video>
-                    <canvas @ref="_studioPreview" class="pf-studio-preview" width="240" height="240" aria-label="Cut-out preview"></canvas>
-                </div>
-
-                @if (_studioStep == 1)
-                {
-                    <div class="pf-sources">
-                        <PoButton data-spring class="pf-source" Disabled="@_studioBusy" Click="StartWebcamAsync">
-                            <span class="material-symbols-outlined" aria-hidden="true">videocam</span>
-                            <strong>Use the webcam</strong>
-                            <small>Perform each move in front of the camera.</small>
-                        </PoButton>
-                        <label class="pf-source @(_studioBusy ? "is-disabled" : "")">
-                            <span class="material-symbols-outlined" aria-hidden="true">movie</span>
-                            <strong>Upload a clip</strong>
-                            <small>A short video of one person doing the moves.</small>
-                            <input @ref="_studioFile" type="file" accept="video/*" @onchange="ImportVideoAsync" disabled="@_studioBusy" class="pf-visually-hidden" />
-                        </label>
-                    </div>
-                }
-                else if (_studioStep == 2)
-                {
-                    <p class="pf-studio-tip">Step out of the frame, then capture the empty room. The cut-out is cleaner with it.</p>
-                    <div class="pf-studio-actions">
-                        <PoButton data-spring class="pf-btn" Click="() => GoStudioStep(3)">Skip</PoButton>
-                        <PoButton data-spring class="pf-btn pf-btn--primary" Click="CaptureBgAsync">
-                            <span class="material-symbols-outlined" aria-hidden="true">wallpaper</span> Capture background
-                        </PoButton>
-                    </div>
-                }
-                else if (_studioStep == 3)
-                {
-                    <ul class="pf-capture-grid">
-                        @foreach (var m in StudioMoves)
-                        {
-                            var count = _studioCounts.TryGetValue(m.Id, out var c) ? c : 0;
-                            var thumb = _studioThumbs.TryGetValue(m.Id, out var t) ? t : null;
-                            <li>
-                                <PoButton class="@($"pf-capture {(count > 0 ? "is-done" : "")}")" Disabled="@_studioBusy"
-                                        Click="() => CaptureMoveAsync(m.Id)" aria-label="@($"Record {m.Label}: {m.Hint}. {count} pictures")">
-                                    <span class="pf-capture-ring" style="--p: @(Math.Min(100, count * 100 / StudioFramesPerMove))">
-                                        @if (thumb is not null)
-                                        {
-                                            <img src="@thumb" alt="" />
-                                        }
-                                        else
-                                        {
-                                            <span class="material-symbols-outlined" aria-hidden="true">@m.Icon</span>
-                                        }
-                                    </span>
-                                    <strong>@m.Label</strong>
-                                    <small>@(count > 0 ? $"{count} pictures" : m.Hint)</small>
-                                    @if (count > 0)
-                                    {
-                                        <span class="pf-capture-check material-symbols-outlined" aria-hidden="true">check_circle</span>
-                                    }
-                                </PoButton>
-                            </li>
-                        }
-                    </ul>
-                    <div class="pf-studio-actions">
-                        <PoButton data-spring class="pf-btn pf-btn--primary" Disabled="@(_studioTotalFrames == 0 || _studioBusy)" Click="() => GoStudioStep(4)">
-                            Next <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-                        </PoButton>
-                    </div>
-                }
-                else
-                {
-                    <label class="pf-studio-name">
-                        <span>Fighter name</span>
-                        <PoTextBox MaxLength="24" @bind-Value="_studioFighterName" Placeholder="My Fighter" />
-                    </label>
-                    <p class="pf-studio-tip">@_studioCounts.Count(kv => kv.Value > 0) of @StudioMoves.Length moves, @_studioTotalFrames pictures. Saved in this browser only.</p>
-                    <div class="pf-studio-actions">
-                        <PoButton data-spring class="pf-btn pf-btn--primary" Disabled="@(_studioTotalFrames == 0 || _studioBusy)" Click="SaveStudioFighterAsync">
-                            <span class="material-symbols-outlined" aria-hidden="true">sports_mma</span> Save and fight
-                        </PoButton>
-                    </div>
-                }
-            </dialog>
-
             @TouchPad("backward", "forward")
         </div>
     }
 </GameShell>
 
 @code {
+    private RenderFragment StudioContent => @<div class="pf-studio" role="dialog" aria-modal="true" data-step="@_studioStep" aria-label="PoFighter Studio">
+        <header class="pf-studio-head">
+            <h2>Create a fighter</h2>
+            <PoButton class="pf-icon-btn" Click="CloseStudioAsync" aria-label="Close the Studio">
+                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+            </PoButton>
+        </header>
+        <ol class="pf-steps">
+            @foreach (var (n, label) in StudioSteps)
+            {
+                var state = n < _studioStep ? "done" : n == _studioStep ? "current" : "todo";
+                <li class="pf-step pf-step--@state" aria-current="@(n == _studioStep ? "step" : null)">
+                    <PoButton Disabled="@(n > _studioReached || _studioBusy)" Click="() => GoStudioStep(n)">
+                        <span class="pf-step-dot">
+                            @if (state == "done")
+                            {
+                                <span class="material-symbols-outlined" aria-hidden="true">check</span>
+                            }
+                            else
+                            {
+                                @n
+                            }
+                        </span>
+                        <span class="pf-step-label">@label</span>
+                    </PoButton>
+                </li>
+            }
+        </ol>
+        <p class="pf-studio-status" @ref="_studioStatus" role="status">Everything runs in this browser: nothing is uploaded.</p>
+        <div class="pf-studio-progress" hidden="@(!_studioBusy)"><span style="--p: @(_studioProgress)%"></span></div>
+
+        <div class="pf-studio-cams">
+            <video @ref="_studioVideo" class="pf-studio-video" muted playsinline></video>
+            <canvas @ref="_studioPreview" class="pf-studio-preview" width="240" height="240" aria-label="Cut-out preview"></canvas>
+        </div>
+
+        @if (_studioStep == 1)
+        {
+            <div class="pf-sources">
+                <PoButton data-spring class="pf-source" Disabled="@_studioBusy" Click="StartWebcamAsync">
+                    <span class="material-symbols-outlined" aria-hidden="true">videocam</span>
+                    <strong>Use the webcam</strong>
+                    <small>Perform each move in front of the camera.</small>
+                </PoButton>
+                <label class="pf-source @(_studioBusy ? "is-disabled" : "")">
+                    <span class="material-symbols-outlined" aria-hidden="true">movie</span>
+                    <strong>Upload a clip</strong>
+                    <small>A short video of one person doing the moves.</small>
+                    <input @ref="_studioFile" type="file" accept="video/*" @onchange="ImportVideoAsync" disabled="@_studioBusy" class="pf-visually-hidden" />
+                </label>
+            </div>
+        }
+        else if (_studioStep == 2)
+        {
+            <p class="pf-studio-tip">Step out of the frame, then capture the empty room. The cut-out is cleaner with it.</p>
+            <div class="pf-studio-actions">
+                <PoButton data-spring class="pf-btn" Click="() => GoStudioStep(3)">Skip</PoButton>
+                <PoButton data-spring class="pf-btn pf-btn--primary" Click="CaptureBgAsync">
+                    <span class="material-symbols-outlined" aria-hidden="true">wallpaper</span> Capture background
+                </PoButton>
+            </div>
+        }
+        else if (_studioStep == 3)
+        {
+            <ul class="pf-capture-grid">
+                @foreach (var m in StudioMoves)
+                {
+                    var count = _studioCounts.TryGetValue(m.Id, out var c) ? c : 0;
+                    var thumb = _studioThumbs.TryGetValue(m.Id, out var t) ? t : null;
+                    <li>
+                        <PoButton class="@($"pf-capture {(count > 0 ? "is-done" : "")}")" Disabled="@_studioBusy"
+                                Click="() => CaptureMoveAsync(m.Id)" aria-label="@($"Record {m.Label}: {m.Hint}. {count} pictures")">
+                            <span class="pf-capture-ring" style="--p: @(Math.Min(100, count * 100 / StudioFramesPerMove))">
+                                @if (thumb is not null)
+                                {
+                                    <img src="@thumb" alt="" />
+                                }
+                                else
+                                {
+                                    <span class="material-symbols-outlined" aria-hidden="true">@m.Icon</span>
+                                }
+                            </span>
+                            <strong>@m.Label</strong>
+                            <small>@(count > 0 ? $"{count} pictures" : m.Hint)</small>
+                            @if (count > 0)
+                            {
+                                <span class="pf-capture-check material-symbols-outlined" aria-hidden="true">check_circle</span>
+                            }
+                        </PoButton>
+                    </li>
+                }
+            </ul>
+            <div class="pf-studio-actions">
+                <PoButton data-spring class="pf-btn pf-btn--primary" Disabled="@(_studioTotalFrames == 0 || _studioBusy)" Click="() => GoStudioStep(4)">
+                    Next <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+                </PoButton>
+            </div>
+        }
+        else
+        {
+            <label class="pf-studio-name">
+                <span>Fighter name</span>
+                <PoTextBox MaxLength="24" @bind-Value="_studioFighterName" Placeholder="My Fighter" />
+            </label>
+            <p class="pf-studio-tip">@_studioCounts.Count(kv => kv.Value > 0) of @StudioMoves.Length moves, @_studioTotalFrames pictures. Saved in this browser only.</p>
+            <div class="pf-studio-actions">
+                <PoButton data-spring class="pf-btn pf-btn--primary" Disabled="@(_studioTotalFrames == 0 || _studioBusy)" Click="SaveStudioFighterAsync">
+                    <span class="material-symbols-outlined" aria-hidden="true">sports_mma</span> Save and fight
+                </PoButton>
+            </div>
+        }
+        <PoDialogLifecycle OnMounted="InitStudioControllerAsync" />
+    </div>;
+
     [Parameter] public string? Mode { get; set; }
 
     private bool IsDemo => string.Equals(Mode, "demo", StringComparison.OrdinalIgnoreCase);
@@ -405,7 +404,6 @@
     </text>;
 
     private ElementReference _room;
-    private ElementReference _studioDialog;
     private ElementReference _studioVideo;
     private ElementReference _studioPreview;
     private ElementReference _studioStatus;
@@ -585,16 +583,41 @@
         _studioStep = _studioReached = 1;
         await JS.InvokeVoidAsync("PoFighter.hideSheet", "pf-roster-sheet");
         await JS.InvokeVoidAsync("PoFighter.stop");
-        StateHasChanged();
-        await JS.InvokeVoidAsync("PoFighter.showDialog", _studioDialog);
+        Dialogs.OnClose += OnStudioDialogClosed;
+        _ = Dialogs.OpenAsync(
+            "Create a fighter",
+            _ => StudioContent,
+            new DialogOptions
+            {
+                ShowTitle = false,
+                ShowClose = false,
+                CloseDialogOnEsc = true,
+                CloseDialogOnOverlayClick = false,
+                CssClass = "po-rz-dialog po-rz-dialog--studio",
+                WrapperCssClass = "po-rz-dialog-wrapper po-rz-dialog-wrapper--studio",
+            });
+    }
+
+    private async Task InitStudioControllerAsync()
+    {
+        if (!_studioOpen) return;
         _studioModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/pofighter/studio.js");
         _selfRef ??= DotNetObjectReference.Create(this);
         _studioCtrl = await _studioModule.InvokeAsync<IJSObjectReference>(
             "createStudioController", _studioVideo, _studioPreview, _studioStatus, _selfRef);
     }
 
-    /// <summary>The close button: closing the dialog raises its close event, which tidies up.</summary>
-    private Task CloseStudioAsync() => JS.InvokeVoidAsync("PoFighter.closeDialog", _studioDialog).AsTask();
+    private Task CloseStudioAsync()
+    {
+        if (_studioOpen) Dialogs.Close();
+        return Task.CompletedTask;
+    }
+
+    private void OnStudioDialogClosed(dynamic? _)
+    {
+        Dialogs.OnClose -= OnStudioDialogClosed;
+        _ = InvokeAsync(OnStudioClosedAsync);
+    }
 
     /// <summary>The dialog's close event (the close button, Esc, or a save).</summary>
     private async Task OnStudioClosedAsync()
@@ -614,6 +637,7 @@
     {
         _studioStep = step;
         _studioReached = Math.Max(_studioReached, step);
+        if (_studioOpen) Dialogs.Refresh();
     }
 
     private async Task StartWebcamAsync()
@@ -745,7 +769,7 @@
             }
             _studioCounts = counts;
             _studioThumbs = thumbs;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(() => { StateHasChanged(); if (_studioOpen) Dialogs.Refresh(); });
         }
         catch (System.Text.Json.JsonException ex)
         {
@@ -758,11 +782,17 @@
     public void OnStudioProgress(int percent)
     {
         _studioProgress = Math.Clamp(percent, 0, 100);
-        InvokeAsync(StateHasChanged);
+        InvokeAsync(() => { StateHasChanged(); if (_studioOpen) Dialogs.Refresh(); });
     }
 
     public async ValueTask DisposeAsync()
     {
+        Dialogs.OnClose -= OnStudioDialogClosed;
+        if (_studioOpen)
+        {
+            _studioOpen = false;
+            Dialogs.Close();
+        }
         if (_studioCtrl is not null)
         {
             try { await _studioCtrl.InvokeVoidAsync("dispose"); await _studioCtrl.DisposeAsync(); } catch { }

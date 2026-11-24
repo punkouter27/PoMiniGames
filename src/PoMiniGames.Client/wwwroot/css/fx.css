@@ -248,7 +248,7 @@
 }
 
 /* The end-of-game card is read, not glanced at: the scene only tints it. */
-dialog.gps-modal[data-glass-live] { --glass-capture-tint: color-mix(in srgb, var(--color-surface) 86%, transparent); }
+.gps-modal[data-glass-live] { --glass-capture-tint: color-mix(in srgb, var(--color-surface) 86%, transparent); }
 
 /* ===== Hub glass ==============================================================
  * glassFx.ambient() (high tier, no reduced motion) shares one blurred thumbnail of the

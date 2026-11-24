@@ -4,6 +4,7 @@
 @using Microsoft.Extensions.Logging
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services.Ui
+@inject DialogService Dialogs
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -45,144 +46,131 @@
                and, for a game with several maps, the map dropdown (Maps, 1P and 2P only).
    The card is a flex column that never scrolls itself; the body is the only part that may,
    and every game's content is cut to fit so it does not (LinkAuditUiTests holds the line). *@
-@if (!_kiosk)
-{
-<dialog class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
-     style="width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;box-sizing:border-box;color:inherit"
-     @ref="_root"
-     @onclick="HandleOverlayClick"
-     @oncancel="CancelAsync"
-     @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
-    <div class="gps-intro-card gps-intro-card--@ModeClass @(Wide ? "gps-intro-card--wide" : null)"
-        @ref="_focusRoot" tabindex="-1"
-        @onclick:stopPropagation="true">
-        <header class="gps-intro-head">
-            @if (Title != null)
+@code {
+    private RenderFragment IntroContent => @<div class="gps-intro-overlay" data-po-dialog="intro" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
+         style="width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;box-sizing:border-box;color:inherit"
+         @ref="_root"
+         @onclick="HandleOverlayClick"
+         @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
+        <div class="gps-intro-card gps-intro-card--@ModeClass @(Wide ? "gps-intro-card--wide" : null)"
+            @ref="_focusRoot" tabindex="-1"
+            @onclick:stopPropagation="true">
+            <header class="gps-intro-head">
+                @if (Title != null)
+                {
+                    <div class="gps-intro-title">@Title</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Objective))
+                {
+                    <p class="gps-intro-objective">@Objective</p>
+                }
+            </header>
+
+            @if (Status != null)
             {
-                <div class="gps-intro-title">@Title</div>
+                @Status
             }
 
-            @if (!string.IsNullOrWhiteSpace(Objective))
+            @if (Controls != null || HowToPlay != null || Options != null || Lobby != null)
             {
-                <p class="gps-intro-objective">@Objective</p>
-            }
-        </header>
+                <div class="gps-intro-body" data-view="@ViewName">
+                    @if (Controls != null || HowToPlay != null)
+                    {
+                        var bothViews = Controls != null && HowToPlay != null;
+                        <section class="gps-intro-controls" aria-label="@(ShowingRules ? "How to play" : "Controls")">
+                            @if (bothViews || Options != null)
+                            {
+                                <div class="gps-intro-tabs @(bothViews ? null : "gps-intro-tabs--setup-only")" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
+                                    @if (Controls != null)
+                                    {
+                                        <PoButton role="tab" class="gps-intro-tab" data-spring
+                                                aria-selected="@(_view == IntroView.Controls ? "true" : "false")"
+                                                Click="() => SetView(IntroView.Controls)">Controls</PoButton>
+                                    }
+                                    @if (HowToPlay != null)
+                                    {
+                                        <PoButton role="tab" class="gps-intro-tab" data-spring
+                                                aria-selected="@(_view == IntroView.Rules || Controls == null ? "true" : "false")"
+                                                Click="() => SetView(IntroView.Rules)">How to play</PoButton>
+                                    }
+                                    @if (Options != null)
+                                    {
+                                        <PoButton role="tab" class="gps-intro-tab gps-intro-tab--setup" data-spring
+                                                aria-selected="@(_view == IntroView.Setup ? "true" : "false")"
+                                                Click="() => SetView(IntroView.Setup)">Setup</PoButton>
+                                    }
+                                </div>
+                            }
+                            @if (!bothViews)
+                            {
+                                <div class="gps-intro-section-label @(Options != null ? "gps-intro-section-label--setup-only" : null)">@(Controls != null ? "Controls" : "How to play")</div>
+                            }
+                            <div class="gps-intro-panel">@(ShowingRules ? HowToPlay : Controls)</div>
+                        </section>
+                    }
 
-        @if (Status != null)
-        {
-            @Status
-        }
-
-        @if (Controls != null || HowToPlay != null || Options != null || Lobby != null)
-        {
-            <div class="gps-intro-body" data-view="@ViewName">
-                @if (Controls != null || HowToPlay != null)
-                {
-                    var bothViews = Controls != null && HowToPlay != null;
-                    <section class="gps-intro-controls" aria-label="@(ShowingRules ? "How to play" : "Controls")">
-                        @if (bothViews || Options != null)
-                        {
-                            @* Views of one panel, not actions: a tab strip. Keydowns stop so Enter on
-                               a tab switches it instead of starting the game. On a phone the game's
-                               setup (Options) is a third tab instead of a second block below, so the
-                               card never scrolls; a wider card shows setup beside the panel and
-                               hides that tab (game-shell.css, .gps-intro-tab--setup). *@
-                            <div class="gps-intro-tabs @(bothViews ? null : "gps-intro-tabs--setup-only")" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
-                                @if (Controls != null)
-                                {
-                                    <PoButton role="tab" class="gps-intro-tab" data-spring
-                                            aria-selected="@(_view == IntroView.Controls ? "true" : "false")"
-                                            Click="() => _view = IntroView.Controls">Controls</PoButton>
-                                }
-                                @if (HowToPlay != null)
-                                {
-                                    <PoButton role="tab" class="gps-intro-tab" data-spring
-                                            aria-selected="@(_view == IntroView.Rules || Controls == null ? "true" : "false")"
-                                            Click="() => _view = IntroView.Rules">How to play</PoButton>
-                                }
-                                @if (Options != null)
-                                {
-                                    <PoButton role="tab" class="gps-intro-tab gps-intro-tab--setup" data-spring
-                                            aria-selected="@(_view == IntroView.Setup ? "true" : "false")"
-                                            Click="() => _view = IntroView.Setup">Setup</PoButton>
-                                }
-                            </div>
-                        }
-                        @if (!bothViews)
-                        {
-                            <div class="gps-intro-section-label @(Options != null ? "gps-intro-section-label--setup-only" : null)">@(Controls != null ? "Controls" : "How to play")</div>
-                        }
-                        <div class="gps-intro-panel">@(ShowingRules ? HowToPlay : Controls)</div>
-                    </section>
-                }
-
-                @if (Options != null)
-                {
-                    @* Keydowns stop here so Space
-                       on a checkbox in the options must tick it, not start the game. A select
-                       driven by per-player keys (ForwardOptionKeys) lets them through to OnKey,
-                       so its keys keep working once a tile inside it has focus. *@
-                    <div class="gps-intro-options" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
-                }
-                @if (Lobby != null)
-                {
-                    <div @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Lobby</div>
-                }
-            </div>
-        }
-
-        @if (ShowStart)
-        {
-        <footer class="gps-intro-actions">
-            @if (Mode == IntroMode.Demo)
-            {
-                <div class="gps-intro-demo-hint" role="status">
-                    <span class="gps-intro-spinner" aria-hidden="true"></span>
-                    Demo starting…
+                    @if (Options != null)
+                    {
+                        <div class="gps-intro-options" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
+                    }
+                    @if (Lobby != null)
+                    {
+                        <div @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Lobby</div>
+                    }
                 </div>
             }
-            @if (Actions != null)
-            {
-                @* Setup toggles beside OK (Brawl's "Training first"). Keydowns stop so Space
-                   on a checkbox ticks it. *@
-                <div class="gps-intro-actions-extra" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Actions</div>
-            }
-            @if (ShowMapPicker)
-            {
-                @* The map, beside OK (owner rule 2026-11-18): the card's one other control, a
-                   dropdown, in 1P and 2P only. Keydowns stop so arrows and Enter in the list pick
-                   a map instead of starting the game. *@
-                <label class="gps-intro-map" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
-                    <span class="gps-intro-map-label">@MapLabel</span>
-                    <PoSelect Class="gps-intro-map-select" Options="@MapOptions" Value="@MapId"
-                              ValueChanged="OnMapChangedAsync" AriaLabel="@MapLabel" />
-                </label>
-            }
-            @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
-            <span class="gps-intro-contents" style="display: contents" @onkeydown="HandleOkKey" @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)">
-                <PoButton class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
-                          @ref="_ok"
-                          Disabled="@(!StartEnabled)"
-                          Click="StartAsync">OK</PoButton>
-            </span>
-            @* The one gesture every game shares, learned once: Tab opens the live
-               stats panel (GameShell's GameDebugOverlay). Cascaded, so it disappears
-               on the two pages that already bind Tab themselves. *@
-            @if (TabStats)
-            {
-                <p class="gps-intro-hint"><kbd class="gps-kbd">Tab</kbd> shows live stats</p>
-            }
-            @if (!string.IsNullOrWhiteSpace(StartHint))
-            {
-                <p class="gps-intro-hint" role="status">@StartHint</p>
-            }
-        </footer>
-        }
-    </div>
-</dialog>
-}
 
-@code {
+            @if (ShowStart)
+            {
+            <footer class="gps-intro-actions">
+                @if (Mode == IntroMode.Demo)
+                {
+                    <div class="gps-intro-demo-hint" role="status">
+                        <span class="gps-intro-spinner" aria-hidden="true"></span>
+                        Demo starting…
+                    </div>
+                }
+                @if (Actions != null)
+                {
+                    <div class="gps-intro-actions-extra" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Actions</div>
+                }
+                @if (ShowMapPicker)
+                {
+                    <label class="gps-intro-map" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
+                        <span class="gps-intro-map-label">@MapLabel</span>
+                        <PoSelect Class="gps-intro-map-select" Options="@MapOptions" Value="@MapId"
+                                  ValueChanged="OnMapChangedAsync" AriaLabel="@MapLabel" />
+                    </label>
+                }
+                <span class="gps-intro-contents" style="display: contents" @onkeydown="HandleOkKey" @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)">
+                    <PoButton class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
+                              @ref="_ok"
+                              Disabled="@(!StartEnabled)"
+                              Click="StartAsync">OK</PoButton>
+                </span>
+                @if (TabStats)
+                {
+                    <p class="gps-intro-hint"><kbd class="gps-kbd">Tab</kbd> shows live stats</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(StartHint))
+                {
+                    <p class="gps-intro-hint" role="status">@StartHint</p>
+                }
+            </footer>
+            }
+        </div>
+        <PoDialogLifecycle OnMounted="OnDialogMountedAsync" />
+    </div>;
+
+    private bool _dialogOpen;
+
+    private void SetView(IntroView view)
+    {
+        _view = view;
+        if (_dialogOpen) Dialogs.Refresh();
+    }
+
     public enum IntroMode { Demo, OnePlayer, TwoPlayer }
 
     /// <summary>Card heading — normally the game's title fragment.</summary>
@@ -340,17 +328,36 @@
 
     protected override void OnInitialized()
     {
-        // When the URL carries ?kiosk=N (the "Watch all demos" attract loop) we skip
-        // the intro card entirely, otherwise the same dialog would flash back at the
-        // viewer on every loop iteration. Every demo page reads the same kiosk query
-        // param, so the dialog stays suppressed across the whole loop.
-        // Only applies to Demo mode — OnePlayer / TwoPlayer always show the card.
+        Dialogs.OnClose += OnDialogClosed;
         if (Mode == IntroMode.Demo &&
             new Uri(Navigation.Uri).Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase))
         {
             _kiosk = true;
             _demoElapsed = true;
+            return;
         }
+
+        _dialogOpen = true;
+        _ = Dialogs.OpenAsync(
+            string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel,
+            _ => IntroContent,
+            new DialogOptions
+            {
+                ShowTitle = false,
+                ShowClose = false,
+                CloseDialogOnEsc = false,
+                CloseDialogOnOverlayClick = false,
+                AutoFocusFirstElement = false,
+                CssClass = "po-rz-dialog po-rz-dialog--intro",
+                WrapperCssClass = "po-rz-dialog-wrapper po-rz-dialog-wrapper--intro",
+                Width = "100vw",
+                Height = "100vh",
+            });
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_dialogOpen) Dialogs.Refresh();
     }
 
     private string ModeClass => Mode switch
@@ -367,7 +374,8 @@
             if (!_kiosk && ShowStart != _lastShowStart)
             {
                 _lastShowStart = ShowStart;
-                try { await (ShowStart && StartEnabled ? _ok!.Element : _focusRoot).FocusAsync(); }
+                if (_dialogOpen) Dialogs.Refresh();
+                try { await (ShowStart && StartEnabled && _ok is not null ? _ok.Element : _focusRoot).FocusAsync(); }
                 catch { /* dialog already gone */ }
             }
             if (_demoElapsed && StartEnabled && !_started) await StartAsync();
@@ -377,37 +385,20 @@
         if (_kiosk)
         {
             if (StartEnabled) await StartAsync();
-            return;
         }
+    }
 
-        try
-        {
-            await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _root);
-            await _root.ShowModalAsync(JS);
-        }
-        catch (Exception ex) when (!_disposed)
-        {
-            Logger.LogWarning(ex, "Could not open the game intro modal for {Game}.", CueScope);
-            throw new InvalidOperationException("The game intro could not open safely.", ex);
-        }
-        catch (Exception)
-        {
-            // Torn down mid-open: nothing left to show.
-            return;
-        }
+    private async Task OnDialogMountedAsync()
+    {
+        if (_disposed) return;
+        try { await JS.InvokeVoidAsync("PoDialogInterop.trapFocus", _root); }
+        catch { /* torn down */ }
 
         _lastShowStart = ShowStart;
-        // Best-effort, like the re-render path above: a page that starts on its own
-        // (PoCapitol's demo) can drop this card between showModal and focus, and a
-        // missing focus target must not take the whole game down with it.
-        try { await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart ? _focusRoot : _ok!.Element).FocusAsync(); }
+        try { await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart || _ok is null ? _focusRoot : _ok.Element).FocusAsync(); }
         catch (Exception ex) { Logger.LogDebug(ex, "Intro focus skipped for {Game}; the card is already gone.", CueScope); }
         if (_disposed) return;
 
-        // The title swarm (gpuFxWebGPU.js): particles fall into the heading's letters and
-        // burst away when this card leaves the DOM, which the module watches for itself.
-        // Not awaited (it waits on a GPU adapter), and a no-op without WebGPU, on the low
-        // tier or under reduced motion.
         _ = SwarmAsync();
 
         if (Mode == IntroMode.Demo && _demoTimer is null)
@@ -511,20 +502,33 @@
     private Task HandleOkKey(KeyboardEventArgs e) =>
         Mode != IntroMode.TwoPlayer ? HandleControlKey(e) : Task.CompletedTask;
 
-    private async Task CancelAsync()
+    private Task CancelAsync()
     {
-        if (_disposed || _cancelled) return;
+        if (_disposed || _cancelled) return Task.CompletedTask;
         _cancelled = true;
         _demoTimer?.Dispose();
         _demoTimer = null;
-        await _root.CloseAsync(JS);
+        if (_dialogOpen)
+        {
+            _dialogOpen = false;
+            Dialogs.Close();
+        }
         Navigation.NavigateTo("/");
+        return Task.CompletedTask;
     }
+
+    private void OnDialogClosed(dynamic? _) => _dialogOpen = false;
 
     public void Dispose()
     {
         _disposed = true;
+        Dialogs.OnClose -= OnDialogClosed;
         _demoTimer?.Dispose();
         _demoTimer = null;
+        if (_dialogOpen)
+        {
+            _dialogOpen = false;
+            Dialogs.Close();
+        }
     }
 }

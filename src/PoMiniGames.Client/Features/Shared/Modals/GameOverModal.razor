@@ -1,5 +1,6 @@
 @namespace PoMiniGamesClient.Features.Shared
 @using PoMiniGamesClient.Services
+@inject DialogService Dialogs
 @implements IAsyncDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -36,7 +37,11 @@
    navigate rather than use the dialog's native "close + submit" semantics. *@
 @* data-glass: glassFx.js paints a blurred capture of the game's last frame under the card
    (game-shell.css keeps it faint; a DOM game with no canvas simply gets the plain card). *@
-<dialog class="gps-modal @(Moment.Vignette ? "gps-modal--loss" : null)" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel" @onkeydown="HandleKey">
+@code {
+    private PoButton? _backButton;
+    private bool _dialogOpen;
+
+    private RenderFragment ModalContent => @<div class="gps-modal @(Moment.Vignette ? "gps-modal--loss" : null)" data-po-dialog="gameover" role="dialog" aria-modal="true" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @onkeydown="HandleKey">
         <header class="gps-modal-header">
             <div class="gps-modal-title">@Title</div>
         </header>
@@ -63,7 +68,6 @@
                 {
                     var stat = headlineStats[i];
                     <div class="gps-stat">
-                        @* The first cell is the one a new best assembles out of the swarm. *@
                         @if (i == 0)
                         {
                             <span class="gps-stat-value" @ref="_firstStatRef">@stat.Value</span>
@@ -96,13 +100,8 @@
             }
         }
 
-        @* Where the player actually stands. Silently absent when they have no row
-           on this board yet — an end-of-game modal should never invent a rank. *@
         @if (_loading)
         {
-            @* The board is a fetch that lands after the dialog opens. Until it does, a
-               placeholder the same height as the rank line and the top 3 holds their place,
-               so the card does not grow under the player's thumb and the buttons stay put. *@
             <div class="gps-modal-skeleton" aria-hidden="true">
                 @if (!string.IsNullOrWhiteSpace(Player))
                 {
@@ -131,8 +130,6 @@
             </div>
         }
 
-        @* Silently omitted when the game has no board (GameKey null / 404) or the
-           API is offline — the modal still works, it just shows no top 3. *@
         @if (!_loading && _board is not null && _board.Entries.Count > 0)
         {
             <div class="gps-modal-board">
@@ -153,18 +150,17 @@
             </div>
         }
 
-        @* Owner rule: the end card has exactly one action. It is focused on open and Escape maps to
-           it. Games put replay and setup choices on their start card, never here. *@
         <footer class="gps-play-again-actions">
             <PoButton class="app-btn app-btn--primary" data-end-action
+                    @ref="_backButton"
                     Click="Back" autofocus>
                 <span>Back to main menu</span>
                 <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
             </PoButton>
         </footer>
-</dialog>
+        <PoDialogLifecycle OnMounted="OnDialogMountedAsync" />
+    </div>;
 
-@code {
     /// <summary>Modal heading — normally the game's title.</summary>
     [Parameter] public RenderFragment? Title { get; set; }
 
@@ -277,43 +273,34 @@
     /// fires before the render). Re-running it on every render would re-trigger
     /// the open animation each StateHasChanged, so we gate on firstRender.
     /// </remarks>
+    protected override void OnInitialized()
+    {
+        Dialogs.OnClose += OnDialogClosed;
+        if (!_dialogOpened)
+        {
+            _dialogOpened = true;
+            _dialogOpen = true;
+            _ = Dialogs.OpenAsync(
+                "Game over",
+                _ => ModalContent,
+                new DialogOptions
+                {
+                    ShowTitle = false,
+                    ShowClose = false,
+                    CloseDialogOnEsc = false,
+                    CloseDialogOnOverlayClick = false,
+                    AutoFocusFirstElement = false,
+                    CssClass = "po-rz-dialog po-rz-dialog--gameover",
+                    WrapperCssClass = Moment.Vignette
+                        ? "po-rz-dialog-wrapper po-rz-dialog-wrapper--gameover po-rz-dialog-wrapper--loss"
+                        : "po-rz-dialog-wrapper po-rz-dialog-wrapper--gameover",
+                });
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && !_dialogOpened && _dialog.Id != default)
-        {
-            // ShowModal places the dialog in the top layer (above fx overlays,
-            // toasts, the kiosk control bar) and traps focus inside it. The
-            // explicit Escape handler navigates before the modal disappears; native
-            // cancel does not reliably reach Blazor's delegated event handler.
-            _dialogOpened = true;
-            // Score roll-up: started before the dialog opens, so the stats are already at
-            // zero in its first painted frame instead of flashing their final values.
-            // The five-beat result ceremony (resultCeremony.js): staged before the dialog
-            // paints so nothing flashes in and out. A no-op under reduced motion; the text and
-            // the Back button are in the DOM and focusable throughout, and Skip ends it.
-            // start() also rolls the numbers up (odometer spring) and captures the game's last frame as
-            // the frosted backdrop, then resolves, so both are ready before the card paints. If the
-            // module is missing the older PoImpact.countUp still counts them.
-            try { await JS.InvokeAsync<bool>("PoCeremony.start", _dialog, NewBest); }
-            catch
-            {
-                try { await JS.InvokeVoidAsync("PoImpact.countUp", _dialog); } catch { /* feel layer missing: the numbers just show */ }
-            }
-            await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _dialog);
-            await _dialog.ShowModalAsync(JS);
-            // Confetti lands on the card instead of falling through it (high tier).
-            await ScreenFx.CollideWithAsync(_dialog);
-        }
-
-        if (firstRender && !_outcomeCued)
-        {
-            _outcomeCued = true;
-            await PlayMomentAsync();
-        }
-
-        // The rank arrives with the board, a render or two after the dialog: land it once.
-        // A climb is assembled out of the swarm instead of popped.
-        if (_myRank is int rank && !_rankLanded)
+        if (_dialogOpen && _myRank is int rank && !_rankLanded)
         {
             _rankLanded = true;
             if (_delta > 0) await CelebrateBestAsync(_rankRef, $"#{rank}");
@@ -323,11 +310,30 @@
             }
         }
 
-        // A new best, whenever the game confirms it.
-        if (_dialogOpened && NewBest && !_bestCelebrated)
+        if (_dialogOpen && NewBest && !_bestCelebrated)
         {
             var hasStat = Stats is { Count: > 0 };
             await CelebrateBestAsync(hasStat ? _firstStatRef : default, hasStat ? Stats![0].Value : null);
+        }
+    }
+
+    private async Task OnDialogMountedAsync()
+    {
+        try { await JS.InvokeAsync<bool>("PoCeremony.start", _dialog, NewBest); }
+        catch
+        {
+            try { await JS.InvokeVoidAsync("PoImpact.countUp", _dialog); } catch { /* feel layer missing */ }
+        }
+        try { await JS.InvokeVoidAsync("PoDialogInterop.trapFocus", _dialog); } catch { /* best effort */ }
+        await ScreenFx.CollideWithAsync(_dialog);
+        if (_backButton is not null)
+        {
+            try { await _backButton.Element.FocusAsync(); } catch { /* gone */ }
+        }
+        if (!_outcomeCued)
+        {
+            _outcomeCued = true;
+            await PlayMomentAsync();
         }
     }
 
@@ -416,6 +422,7 @@
         finally
         {
             _loading = false;
+            if (_dialogOpen) Dialogs.Refresh();
         }
     }
 
@@ -481,40 +488,32 @@
         !string.IsNullOrEmpty(Player) && string.Equals(e.Name, Player, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The modal's one action: back to the main menu.</summary>
-    private async Task Back()
+    private Task Back()
     {
-        if (_leaving) return;
+        if (_leaving) return Task.CompletedTask;
         _leaving = true;
-        // Option #9: close the native dialog before navigating. The dialog
-        // sits in the top layer; if we navigate while it's still open, the
-        // destination route mounts while the previous frame's modal is still
-        // visible on top, and the user sees a frozen dialog over the new page
-        // for the duration of the transition. close() fires the native `close`
-        // event (no callback for it here — we just want the modal gone), then
-        // we navigate home.
-        if (_dialogOpened)
+        if (_dialogOpen)
         {
-            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
+            _dialogOpen = false;
+            Dialogs.Close();
         }
         Navigation.NavigateTo("/");
+        return Task.CompletedTask;
     }
-
-    /// <summary>
-    /// Maps the native <c>cancel</c> event (fires when the user presses
-    /// Escape with the dialog open) to our <see cref="Back"/> flow.
-    /// Without this, Escape would only close the dialog and leave the page
-    /// in an inconsistent "modal is gone, game is over" state. Keep the dialog
-    /// open until navigation, with keydown covering non-bubbling cancel events.
-    /// </summary>
-    private async Task HandleCancel(System.EventArgs e)
-        => await Back();
 
     private Task HandleKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) =>
         e.Key == "Escape" ? Back() : Task.CompletedTask;
 
+    private void OnDialogClosed(dynamic? _) => _dialogOpen = false;
+
     public async ValueTask DisposeAsync()
     {
-        // Nothing left on screen to land on.
+        Dialogs.OnClose -= OnDialogClosed;
+        if (_dialogOpen)
+        {
+            _dialogOpen = false;
+            Dialogs.Close();
+        }
         await ScreenFx.CollideWithAsync();
         try { await JS.InvokeVoidAsync("PoCeremony.finish"); } catch { /* module missing or circuit gone */ }
     }

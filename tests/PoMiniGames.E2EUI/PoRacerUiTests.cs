@@ -81,7 +81,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.Locator(".race-results details summary").ClickAsync();
         (await page.Locator(".race-results tr", new() { Has = page.Locator(".local-driver") }).InnerTextAsync()).Should().Contain("DNF");
         // The end card's one button.
-        (await page.Locator("dialog.gps-modal[open] button").CountAsync()).Should().Be(1);
+        (await page.Locator(".gps-modal[data-po-dialog='gameover'] button").CountAsync()).Should().Be(1);
         await page.GetByRole(AriaRole.Button, new() { Name = "Back to main menu" }).ClickAsync();
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         errors.Should().BeEmpty();

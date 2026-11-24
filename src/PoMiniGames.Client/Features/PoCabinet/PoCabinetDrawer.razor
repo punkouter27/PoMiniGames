@@ -1,39 +1,10 @@
 @*
-    PoCabinetDrawer — Cabinet's car and settings once the start card is gone: a side sheet on
-    desktop, a bottom sheet on phones, opened from the pause card and the lobby (the start card
-    had the same panels as tabs). The car's
-    colour is on top (a change applies from the next race); the settings below it.
-
-    A native <dialog> opened through PoDialogInterop.showModalAlone, which puts the layer
-    under it away (the pause dialog, the intro card) and brings it back on close. Esc closes
-    it natively; input.js ignores Esc inside any dialog but the pause one, so it never also
-    resumes the race. A click on the backdrop closes it too.
+    PoCabinetDrawer — Cabinet's car and settings once the start card is gone: a Radzen side dialog
+    (DialogService.OpenSideAsync), opened from the pause card and the lobby.
 *@
 
-@inject IJSRuntime JS
-
-<dialog @ref="_dialog" class="pocabinet-drawer" aria-labelledby="pocabinet-drawer-title"
-        @onclose="OnClosedAsync" @onclick="CloseAsync">
-    <div class="pocabinet-drawer__panel" @onclick:stopPropagation="true">
-        <header class="pocabinet-drawer__head">
-            <h2 id="pocabinet-drawer-title">Car &amp; settings</h2>
-            <PoButton class="app-btn app-btn--ghost pocabinet-drawer__close" aria-label="Close settings" Click="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
-        </header>
-        <div class="pocabinet-drawer__body">
-            @if (_open)
-            {
-                <section class="pocabinet-drawer__section" aria-label="Car colour and livery">
-                    <h3>Car colour &amp; livery <span class="pocabinet-muted">@Color</span></h3>
-                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged"
-                                        SelectedLivery="@Livery" LiveryChanged="LiveryChanged" />
-                </section>
-                <PoCabinetSettingsPanel Value="Settings" ValueChanged="SettingsChanged"
-                                        ShowWeather="ShowWeather" WeatherNextRace="WeatherNextRace"
-                                        OnCycleCamera="@(ShowCamera ? OnCycleCamera : default)" />
-            }
-        </div>
-    </div>
-</dialog>
+@inject DialogService Dialogs
+@implements IDisposable
 
 @code {
     [Parameter] public PoCabinetUiSettings Settings { get; set; } = new();
@@ -48,27 +19,75 @@
     [Parameter] public bool ShowCamera { get; set; }
     [Parameter] public EventCallback OnCycleCamera { get; set; }
 
-    private ElementReference _dialog;
     private bool _open;
 
-    public async Task OpenAsync()
+    private RenderFragment DrawerContent => @<div class="pocabinet-drawer__panel" role="dialog" aria-modal="true" aria-labelledby="pocabinet-drawer-title">
+        <header class="pocabinet-drawer__head">
+            <h2 id="pocabinet-drawer-title">Car &amp; settings</h2>
+            <PoButton class="app-btn app-btn--ghost pocabinet-drawer__close" aria-label="Close settings" Click="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
+        </header>
+        <div class="pocabinet-drawer__body">
+            <section class="pocabinet-drawer__section" aria-label="Car colour and livery">
+                <h3>Car colour &amp; livery <span class="pocabinet-muted">@Color</span></h3>
+                <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged"
+                                    SelectedLivery="@Livery" LiveryChanged="LiveryChanged" />
+            </section>
+            <PoCabinetSettingsPanel Value="Settings" ValueChanged="SettingsChanged"
+                                    ShowWeather="ShowWeather" WeatherNextRace="WeatherNextRace"
+                                    OnCycleCamera="@(ShowCamera ? OnCycleCamera : default)" />
+        </div>
+    </div>;
+
+    protected override void OnParametersSet()
     {
+        if (_open) Dialogs.Refresh();
+    }
+
+    public Task OpenAsync()
+    {
+        if (_open) return Task.CompletedTask;
         _open = true;
-        StateHasChanged();
-        try { await JS.InvokeVoidAsync("PoDialogInterop.showModalAlone", _dialog); }
-        catch { _open = false; }
-    }
-
-    private async Task CloseAsync()
-    {
-        try { await JS.InvokeVoidAsync("PoDialogInterop.close", _dialog); }
-        catch { /* torn down */ }
-    }
-
-    // Esc, the ✕ and the backdrop all end here, through the dialog's own close event.
-    private Task OnClosedAsync()
-    {
-        _open = false;
+        _ = RunSideDialogAsync();
         return Task.CompletedTask;
+    }
+
+    private async Task RunSideDialogAsync()
+    {
+        try
+        {
+            await Dialogs.OpenSideAsync<PoDialogFragmentHost>(
+                "Car & settings",
+                new Dictionary<string, object?> { [nameof(PoDialogFragmentHost.Content)] = DrawerContent },
+                new SideDialogOptions
+                {
+                    Position = DialogPosition.Right,
+                    ShowTitle = false,
+                    ShowClose = false,
+                    CloseDialogOnOverlayClick = true,
+                    CssClass = "po-rz-side-dialog",
+                    WrapperCssClass = "po-rz-dialog-wrapper po-rz-dialog-wrapper--side",
+                });
+        }
+        finally
+        {
+            _open = false;
+        }
+    }
+
+    private Task CloseAsync()
+    {
+        if (!_open) return Task.CompletedTask;
+        _open = false;
+        Dialogs.CloseSide();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        if (_open)
+        {
+            _open = false;
+            Dialogs.CloseSide();
+        }
     }
 }
