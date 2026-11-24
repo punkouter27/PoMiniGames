@@ -117,6 +117,16 @@ export function applyFx(sh, dt) {
 /** Keep the sun's shadow frustum centred on the action, snapped to texels (no shimmer). */
 export function followShadow(sh) {
     if (!sh.sun.castShadow) return;
+    // When CSMShadowNode is active, cascades track the camera frustum directly; only keep sun direction fresh.
+    if (sh.sunShadows?.csm) {
+        const f = sh.fx.focus;
+        if (f) {
+            sh.sun.target.position.set(f.x, f.y || 0, f.z);
+            sh.sun.position.copy(sh.sun.target.position).addScaledVector(sh.sunDir, 90);
+            sh.sun.target.updateMatrixWorld();
+        }
+        return;
+    }
     const f = sh.fx.focus;
     const cx = f ? f.x : sh.camera.position.x;
     const cz = f ? f.z : sh.camera.position.z;

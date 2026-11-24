@@ -157,7 +157,9 @@ if (missing.length) {
             fs.writeFileSync(src, wav(clean, audio.sampling_rate));
             const dst = path.join(CLIPS, m.file);
             fs.mkdirSync(path.dirname(dst), { recursive: true });
-            execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', src, '-ar', '16000', '-ac', '1',
+            execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', src,
+                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=9',
+                '-ar', '16000', '-ac', '1',
                 '-c:a', 'libmp3lame', '-b:a', '32k', '-map_metadata', '-1', '-write_xing', '0', '-id3v2_version', '0', dst]);
             console.log(`${String(k + 1).padStart(3)}/${missing.length} ${m.id} ${seconds.toFixed(2)} s ${(fs.statSync(dst).size / 1024).toFixed(1)} KB  ${m.text}`);
         }

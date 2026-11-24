@@ -86,6 +86,8 @@ import * as models from './models.js';
 // pulse) and the in-world standings board with its flat HUD fallback.
 import { createStage } from '../platform/stage/stage.js';
 import { createRenderer, attachRenderer, configureRenderer, webgpuAvailable } from '../platform/3d/renderer.js';
+import { POST_LIB } from '../platform/3d/postAddons.js';
+import { applySunShadows } from '../platform/3d/shadows.js';
 import { Anticipation, closestApproach } from '../platform/anticipation.js';
 import { LightRig } from '../platform/lightRig.js';
 import { DiegeticBoard } from '../platform/diegeticBoard.js';
@@ -272,6 +274,7 @@ class SceneHandle {
         this.fps.slow = 0;
         this.renderer.shadowMap.needsUpdate = true;
         this.particleScale = this.budget.particleScale;
+        this.sunShadows?.setSoftness(rung.tier === 'high' ? 1 : rung.tier === 'medium' ? 0.65 : 0);
         this.setQuality(rung.tier);
         this._applyDpr(this.stage.view);
     }
@@ -282,6 +285,7 @@ class SceneHandle {
         if (!rung || !RENDER_SCALE[rung.tier]) return;
         const dpr = Math.min(view.dpr, rung.maxDpr) * rung.resScale * RENDER_SCALE[rung.tier];
         if (Math.abs(dpr - this.renderer.getPixelRatio()) > 1e-4) this.renderer.setPixelRatio(dpr);
+        this.sunShadows?.updateFrustums();
         this.post?.setSize();
     }
 
@@ -792,6 +796,8 @@ class SceneHandle {
         this.lightRig?.restore();
         this.envTarget?.dispose();
         this.pmrem.dispose();
+        this.sunShadows?.dispose();
+        this.sunShadows = null;
         this.post?.dispose();
         this.post = null;
         // The stage disposes the renderer and hands its GL context back.
@@ -854,7 +860,25 @@ export async function mount(canvas, world) {
     sun.shadow.radius = 3;
     scene.add(sun, sun.target);
 
+    // Boot-time cascaded + contact-hardening PCSS sun shadows (platform/3d/shadows.js).
+    let sunShadows = null;
+    try {
+        const tier = appTier();
+        sunShadows = applySunShadows(POST_LIB, sun, {
+            tier,
+            cascades: 2,
+            maxFar: 185,
+            splits: [0.22],
+            lightMargin: 45,
+            pcss: { lightAngle: 0.055, blockerSamples: 8, filterSamples: 12, searchTexels: 7, maxTexels: 9 },
+            renderer,
+        });
+    } catch (e) {
+        console.warn('pocabinet/scene: CSM/PCSS shadows unavailable, using single shadow map', e);
+    }
+
     const handle = new SceneHandle(renderer, scene, camera, hemi, sun, canvas);
+    handle.sunShadows = sunShadows;
     try {
         handle.post = new PostFx(renderer);
     } catch (e) {

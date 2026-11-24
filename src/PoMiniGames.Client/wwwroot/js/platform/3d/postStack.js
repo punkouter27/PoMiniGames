@@ -107,10 +107,13 @@ const reduceFlashing = () => { try { return !!window.PoQuality?.reduceFlashing?.
 export function createPostStack(lib, renderer, scene, camera, opts = {}) {
     const { THREE, TSL, addons } = lib;
     const {
-        Fn, vec2, vec3, vec4, float, uniform, dot, max, clamp, mix, log2, exp2, pass, mrt, output, velocity,
+        Fn, vec2, vec3, vec4, float, uniform, dot, max, min, abs, clamp, mix, select, log2, exp2, pass, mrt, output, velocity,
         normalView, materialMetalness, materialRoughness, convertToTexture, rtt, uv, getViewPosition,
         cameraWorldMatrix, cameraProjectionMatrixInverse,
     } = TSL;
+    // Squash NaN/Inf before they reach temporal history (TRAA) or mip downsamples (bloom/flare):
+    // in WGSL max(NaN, 0) = 0 and min(Inf, hi) = hi, so a single bad pixel never blacks out the frame.
+    const safeRgb = (c, hi = 64) => min(max(c, vec3(0)), vec3(hi));
 
     const tier = opts.tier ?? currentTier();
     const feat = featuresFor(tier, opts.features, postOff());
@@ -200,11 +203,12 @@ export function createPostStack(lib, renderer, scene, camera, opts = {}) {
             const giGain = float(g.intensity ?? 0.6);
             const aoGain = float(g.ao ?? 0.55);
             // The albedo is not in a G-buffer here, so the lit colour stands in for it: bounce light
-            // tints what is already coloured, and never brightens a black pixel.
-            color = vec4(
-                lit.rgb.mul(mix(float(1), mix(float(1), gi.a, uGi), aoGain)).add(lit.rgb.mul(gi.rgb).mul(giGain).mul(uGi)),
-                lit.a,
-            );
+            // tints what is already coloured, and never brightens a black pixel. Select on uGi so a
+            // gated-off pass (uGi == 0) never multiplies NaN * 0 into the frame.
+            const giA = clamp(max(gi.a, float(0)), 0, 1);
+            const giRgb = safeRgb(gi.rgb);
+            const giOut = lit.rgb.mul(mix(float(1), mix(float(1), giA, uGi), aoGain)).add(lit.rgb.mul(giRgb).mul(giGain).mul(uGi));
+            color = vec4(select(uGi.greaterThan(0.001), giOut, lit.rgb), lit.a);
             gateNode(gi);
             disposables.push(gi);
             out.ssgi = gi;
@@ -228,7 +232,7 @@ export function createPostStack(lib, renderer, scene, camera, opts = {}) {
             sr.quality.value = r.quality ?? 0.35;
             sr.resolutionScale = r.scale ?? 0.5;       // the ray march is the cost; half-res reflections read fine
             const base = color;
-            color = vec4(base.rgb.add(sr.rgb.mul(uSr)), base.a);
+            color = vec4(select(uSr.greaterThan(0.001), base.rgb.add(safeRgb(sr.rgb).mul(uSr)), base.rgb), base.a);
             gateNode(sr);
             disposables.push(sr);
             out.ssr = sr;
@@ -250,7 +254,11 @@ export function createPostStack(lib, renderer, scene, camera, opts = {}) {
                     const world = cameraWorldMatrix.mul(vec4(getViewPosition(uv(), depth, cameraProjectionMatrixInverse), 1));
                     const c = curVP.mul(world);
                     const p = prevVP.mul(world);
-                    return vec4(c.xy.div(c.w).sub(p.xy.div(p.w)), 0, 1);
+                    const ok = abs(c.w).greaterThan(1e-4).and(abs(p.w).greaterThan(1e-4));
+                    const cw = select(ok, c.w, float(1));
+                    const pw = select(ok, p.w, float(1));
+                    const v = select(ok, clamp(c.xy.div(cw).sub(p.xy.div(pw)), vec2(-2), vec2(2)), vec2(0));
+                    return vec4(v, 0, 1);
                 })();
                 velTex = rtt(vel);
                 disposables.push(velTex);
@@ -264,6 +272,7 @@ export function createPostStack(lib, renderer, scene, camera, opts = {}) {
                     primed = true;
                 };
             } else velTex = scenePass.getTextureNode('velocity');
+            color = vec4(safeRgb(color.rgb), color.a);
             const t = addons.traa(color, out.depthNode, velTex, camera);
             resolved = t;
             out.traa = t;
@@ -309,11 +318,12 @@ export function createPostStack(lib, renderer, scene, camera, opts = {}) {
     }
 
     // ── lens flare + anamorphic streak (additive, after exposure) ──────────
-    let hdr = resolved;
+    let hdr = vec4(safeRgb(resolved.rgb), resolved.a);
     // The meter target only updates while it is reachable from the output graph, so it is read with a
-    // weight no one can fold away (a uniform that stays 0): the pixels are used on the CPU, not here.
+    // uniform guard that stays 0: using select() instead of `* 0` guarantees a NaN texel in the meter
+    // can never poison the entire screen (`NaN * 0 = NaN` in WGSL).
     const uZero = uniform(0);
-    if (feat.exposure) hdr = vec4(resolved.rgb.mul(uExposure).add(meter.target.sample(vec2(0.5)).rgb.mul(uZero)), resolved.a);
+    if (feat.exposure) hdr = vec4(hdr.rgb.mul(uExposure).add(select(uZero.greaterThan(0.5), meter.target.sample(vec2(0.5)).rgb, vec3(0))), hdr.a);
     const uFlare = uniform(1);
     if (feat.flare) {
         try {

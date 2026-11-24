@@ -136,17 +136,6 @@ public partial class PoBrawlPage
     // pending ladder roll (the LadderResultHoldMs wait) can tell it has been superseded.
     private int _ladderRollGeneration;
 
-    // ── Pause (1P, training, 2P; never online). The engine owns the state (PoBrawl.setPaused)
-    // and reports every change through OnPauseChanged. ──
-    private bool _paused;
-    private bool _focusResume;
-    private ElementReference _resumeButton;
-    private bool CanPause => _mode is "1p" or "2p";
-    // Not between rungs: a restart there would re-fight the president just beaten, on a ladder
-    // that has already moved up.
-    private bool PauseAvailable => CanPause && _introDone && _phase == "fighting" && !_ladderRolling;
-    private bool _ladderRolling;
-
     // ── Online (PoBrawlNetSession; the arena predicts the server's fight and rolls back) ──
     private PoBrawlNetSession? _net;
     private string _code = "";
@@ -333,13 +322,6 @@ public partial class PoBrawlPage
         // 2P select: keep the live portraits (selectStage.js) on the cursors and locks.
         // After _ref: the first call awaits the engine module's load.
         if (_mode == "2p" && !_introDone) await SyncSelectStageAsync();
-        // The pause card just opened: Resume takes focus, so Enter or Space resumes too (the
-        // engine still reads Escape and P with a button focused).
-        if (_focusResume && _paused && PauseAvailable)
-        {
-            _focusResume = false;
-            try { await _resumeButton.FocusAsync(); } catch { /* not rendered yet */ }
-        }
         if (!firstRender) return;
 
         if (_mode == "online")
@@ -575,7 +557,6 @@ public partial class PoBrawlPage
     private async Task InitEngine()
     {
         ResetRoundHud();
-        _paused = false; // a fresh engine starts running
         // 1P difficulty is the ladder rung (1 = pushover Trump … 15 = brutal
         // FDR); 2P and online have no CPU, so the value is only a placeholder.
         object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
@@ -944,7 +925,6 @@ public partial class PoBrawlPage
         _lastKo = elapsedSeconds;
         if (recap is not null) _recap = Accumulate(_recap, recap);
         _lastRecap = recap;
-        _paused = false;
 
         // Online: the engine only presents the server's result (netplay.js ends the fight when
         // the server does). The outcome that counts — and the Elo write — arrive separately as
@@ -1058,9 +1038,7 @@ public partial class PoBrawlPage
 
         if (advanceToNext)
         {
-            _ladderRolling = true;
-            try { await RollToNextRungAsync(); }
-            finally { _ladderRolling = false; }
+            await RollToNextRungAsync();
             return;
         }
 
@@ -1145,52 +1123,12 @@ public partial class PoBrawlPage
         InvokeAsync(StateHasChanged);
     }
 
-    // ── Pause ────────────────────────────────────────────────────────────
-    /// <summary>
-    /// Engine → page whenever the fight pauses or resumes: the pause button, Escape / P, the
-    /// auto-pause when the tab or window loses focus, a restart.
-    /// </summary>
-    [JSInvokable]
-    public void OnPauseChanged(bool paused)
-    {
-        if (!CanPause || _paused == paused) return;
-        _paused = paused;
-        _focusResume = paused;
-        if (paused) _announcement = "Paused. Press Escape or P to resume.";
-        InvokeAsync(StateHasChanged);
-    }
-
-    private async Task PauseAsync()
-    {
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setPaused", true); }
-        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] pause failed: {ex.Message}"); }
-    }
-
-    // The card closes on the engine's OnPauseChanged(false), never here: Escape and P on the
-    // open card reach the engine (data-pb-pause), and a page-side toggle would double it.
-    private async Task ResumeAsync()
-    {
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setPaused", false); }
-        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] resume failed: {ex.Message}"); }
-    }
-
-    /// <summary>The bout again from the countdown — same fighters, same rung (or a fresh training room).</summary>
-    private async Task RestartFightAsync()
-    {
-        ResetRoundState();
-        _announcement = $"Restart — {CharName(_p1Char)} versus {CharName(_p2Char)}.";
-        await RestartEngineAsync();
-    }
-
-    private void QuitFight() => Nav.NavigateTo("/pobrawl", forceLoad: true);
-
-    /// <summary>Returns the page to a bout about to start: no result, no pause, a fresh HUD.</summary>
+    /// <summary>Returns the page to a bout about to start: no result, a fresh HUD.</summary>
     private void ResetRoundState()
     {
         ++_ladderRollGeneration; // a pending ladder roll belongs to a bout that is gone
         _phase = "fighting";
         _winner = 0;
-        _paused = false;
         _campaignBeaten = null;
         _p1DangerAnnounced = _p2DangerAnnounced = false;
         ResetRoundHud();

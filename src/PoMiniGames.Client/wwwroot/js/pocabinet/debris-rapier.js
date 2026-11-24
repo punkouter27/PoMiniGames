@@ -122,6 +122,7 @@ export class RapierDebris {
         this.world.timestep = STEP;
         this.cars = new Map();       // car -> { body, seen }
         this.frame = 0;
+        this.impacts = [];           // velocity-impulse contact events for spatialized debris foley (#7 / #11)
         const mesh = trackMesh(track, ws);
         const flags = R.TriMeshFlags?.FIX_INTERNAL_EDGES ?? 0;
         // Friction and bounce are the piece's own (set from the surface under it): the world's
@@ -263,9 +264,11 @@ export class RapierDebris {
      * and velocity in its record (pp/pq the pose before, for the interpolated draw).
      */
     step(bodies) {
+        this.impacts.length = 0;
         for (const b of bodies) {
             if (!b.rb) continue;
             b.pp.copy(b.p); b.pq.copy(b.q);
+            b._pvx = b.v.x; b._pvy = b.v.y; b._pvz = b.v.z;
             if (b.rb.isSleeping()) continue;
             this.surface(b);
             // A piece still inside a car when its time is up would be shot out of the box: it
@@ -281,6 +284,15 @@ export class RapierDebris {
             const sleeping = b.rb.isSleeping();
             if (sleeping && b.settled) continue;
             const p = b.rb.translation(), q = b.rb.rotation(), v = b.rb.linvel(), w = b.rb.angvel();
+            // Detect significant rigid-body impact impulses (dv > 2.4 m/s) for material-specific 3D foley.
+            if (!sleeping && this.impacts.length < 4 && b.age > 0.12) {
+                const dvx = v.x - (b._pvx || 0), dvy = v.y - (b._pvy || 0), dvz = v.z - (b._pvz || 0);
+                const dv = Math.hypot(dvx, dvy, dvz);
+                if (dv > 2.4) {
+                    const mat = b.cone ? 'plastic' : b.shape === 1 ? 'rubber' : b.kind === 2 ? 'glass' : 'metal';
+                    this.impacts.push({ x: p.x, y: p.y, z: p.z, strength: Math.min(1, (dv - 2.0) / 14), material: mat });
+                }
+            }
             // At rest for debris.js (its clock for clearing a piece away, and a pose that is
             // drawn still): the pose has not left a 2 cm, 2 degree window for half a second. The
             // engine's own sleep waits for the whole pile, and a long part lying across a change

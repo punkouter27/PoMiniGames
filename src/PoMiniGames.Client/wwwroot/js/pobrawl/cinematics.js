@@ -424,7 +424,18 @@ class CinematicsMethods {
     // Evaluated before the branches so it can let go when KO/super take over.
     const directed = this._directorLive();
 
-    if (this.cameraMode === 'ko') {
+    if (this.ffa && this.ffaHuman) {
+      // 1P FFA: keep the camera locked onto the human player (Bob) at all times.
+      this._camVel.set(0, 0, 0);
+      const bob = this.fighters.find((f) => f.human) || f1;
+      const bp = bob.rig.root.position;
+      const target = new THREE.Vector3(
+        THREE.MathUtils.clamp(bp.x, -(RING_HALF + 1.0), RING_HALF + 1.0),
+        2.25,
+        THREE.MathUtils.clamp(bp.z + 5.2, 0.8, RING_HALF + 5.6));
+      this.camera.position.lerp(target, 1 - Math.exp(-dt * 8));
+      this.camera.lookAt(bp.x, bp.y + 1.0, bp.z);
+    } else if (this.cameraMode === 'ko') {
       this._camVel.set(0, 0, 0); // hand off cleanly from the spring boom
       const loser = this.fighters.find((f) => f.state === 'ko') || f2;
       const lp = loser.rig.root.position;

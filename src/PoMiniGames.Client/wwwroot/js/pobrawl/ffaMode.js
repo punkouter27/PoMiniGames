@@ -12,8 +12,11 @@
 // The benchmark and the agent lab still play thousands of rounds with no renderer; that
 // headless simulation lives in ffaSim.js and only feeds the dashboard.
 import * as THREE from 'three-eco/webgpu';
+import * as CANNON from '../platform/physics/cannonCompat.js';
+import { RING_HALF, twangRope } from './arena.js';
 import { MAX_HP, TIME_LIMIT } from './constants.js';
 import { CHARACTERS } from './fighters.js';
+import { createRetiredBody } from './physics.js';
 import { FfaSeason, FFA_PROFILES } from './ffaSeason.js';
 import { getFfaAgentStrategy, getFfaAgentPresets } from './ffaAgents.js';
 import { createWikimediaFacts } from './ffaFacts.js';
@@ -35,6 +38,26 @@ const RING_CLOSE_RATE = 0.2;
 const RING_MIN = 1.4;
 /** Seconds between broadcast snapshots to the page. */
 const BROADCAST_EVERY = 0.5;
+/** Canvas surface height (matches physics.js floorBody). */
+const MAT_FLOOR_Y = 0.04;
+/** Horizontal foot/shin radius used when shoving downed bodies out of the way. */
+const FOOT_PUSH_RADIUS = 0.32;
+/** Maximum height a standing fighter can climb onto a pile of downed bodies. */
+const MAX_STEP_HEIGHT = 1.6;
+/** Keep shoved retired bodies inside the ropes. */
+const CORPSE_RING_LIMIT = RING_HALF - 0.15;
+/** Body parts sampled for downed-body pushing and stacking: [ragdollPart, rigJoint, radius]. */
+const DOWNED_PARTS = [
+  ['pelvis', 'hips', 0.20],
+  ['chest', 'torso', 0.24],
+  ['head', 'head', 0.16],
+  ['thighL', 'hipL', 0.14],
+  ['thighR', 'hipR', 0.14],
+];
+const _partPos = new THREE.Vector3();
+const _yAxis = new CANNON.Vec3(0, 1, 0);
+/** Damage bonus while standing atop a pile of downed bodies ("King of the Pile"). */
+const PILE_HIGH_GROUND_DMG = 1.15;
 
 class FfaModeMethods {
   /** Free-for-all bookkeeping. Called from start() before the first spawn. */
@@ -113,6 +136,13 @@ class FfaModeMethods {
     f.lastAttacker = null;
     f.ffaKoAt = 0;
     f.ffaRetired = false;
+    f.ffaBody = null;
+    f.ffaCorpseBody = null;
+    f.ffaLiftVy = 0;
+    f.ffaOnPile = false;
+    f._wasOnPile = false;
+    f._pileCalloutCd = 0;
+    f._tripCd = 0;
     // The meshes that cast a real shadow; only the camera's pair keep theirs (_ffaShadows).
     f.ffaCasters = [];
     f.rig.root.traverse((o) => { if (o.isMesh && o.castShadow) f.ffaCasters.push(o); });
@@ -211,9 +241,12 @@ class FfaModeMethods {
     return out;
   }
 
-  /** Overtime: past the clock every blow in the free-for-all lands harder. */
-  _ffaDamageMul() {
-    return this.ffa && (this.clock || 0) > TIME_LIMIT ? OVERTIME_DMG : 1;
+  /** Overtime + high-ground pile bonus in the free-for-all. */
+  _ffaDamageMul(attacker = null) {
+    if (!this.ffa) return 1;
+    let mul = (this.clock || 0) > TIME_LIMIT ? OVERTIME_DMG : 1;
+    if (attacker?.ffaOnPile) mul *= PILE_HIGH_GROUND_DMG;
+    return mul;
   }
 
   /** A blow landed: credit it and tell the standings. */
@@ -298,10 +331,10 @@ class FfaModeMethods {
     return best;
   }
 
-  /** Bob while he stands; otherwise the most endangered fighter, held a moment after a KO. */
+  /** Always Bob in 1P FFA; otherwise the most endangered fighter, held a moment after a KO. */
   _ffaFocusFighter() {
     const bob = this.fighters.find((f) => f.human);
-    if (bob?.alive) return (this.ffaFocus = bob);
+    if (bob) return (this.ffaFocus = bob);
     if (this.phase === 'result' || this.phase === 'ko') {
       const champ = this.winner ? this.fighters[this.winner - 1] : null;
       if (champ) return (this.ffaFocus = champ);
@@ -341,17 +374,388 @@ class FfaModeMethods {
     }
   }
 
+  /** Snapshot a fallen fighter's resting body parts relative to its root for pushing & stacking. */
+  _ffaSnapshotBody(f) {
+    const root = f.rig.root.position;
+    const ragBodies = f.koRagdoll?.active ? f.koRagdoll.bodies : null;
+    if (!ragBodies) f.rig.root.updateMatrixWorld(true);
+    const parts = [];
+    let minBottomOff = Infinity;
+    for (const [partName, jointName, radius] of DOWNED_PARTS) {
+      let px, py, pz;
+      const rb = ragBodies?.[partName];
+      if (rb) {
+        px = rb.position.x; py = rb.position.y; pz = rb.position.z;
+      } else {
+        const joint = f.rig.joints?.[jointName];
+        if (!joint) continue;
+        joint.getWorldPosition(_partPos);
+        px = _partPos.x; py = _partPos.y; pz = _partPos.z;
+      }
+      const oy = py - root.y;
+      const ox = px - root.x, oz = pz - root.z;
+      parts.push({ ox, oy, oz, ox0: ox, oz0: oz, radius });
+      minBottomOff = Math.min(minBottomOff, oy - radius);
+    }
+    if (!parts.length) {
+      parts.push({ ox: 0, oy: 0.20, oz: 0, ox0: 0, oz0: 0, radius: 0.24 });
+      minBottomOff = -0.04;
+    }
+    return {
+      parts, minBottomOff, vx: 0, vz: 0, vy: 0,
+      angVel: 0, yawOffset: 0, baseYaw: f.rig.root.rotation.y,
+      skidFrom: null, dustCd: 0, ropeCd: 0, wasAirborne: false,
+      mass: f.rig.config.mass || 1,
+    };
+  }
+
+  /** World-space collision spheres for a downed fighter (live ragdoll or retired body). */
+  _ffaDownedParts(f) {
+    if (f.koRagdoll?.active && f.koRagdoll.bodies) {
+      const out = [];
+      for (const [partName, , radius] of DOWNED_PARTS) {
+        const b = f.koRagdoll.bodies[partName];
+        if (!b) continue;
+        out.push({ x: b.position.x, y: b.position.y, z: b.position.z, radius, topY: b.position.y + radius, body: b });
+      }
+      if (out.length) return out;
+    }
+    const root = f.rig.root.position;
+    if (f.ffaBody) {
+      const c = Math.cos(f.ffaBody.yawOffset), s = Math.sin(f.ffaBody.yawOffset);
+      return f.ffaBody.parts.map((pt) => {
+        const rx = pt.ox0 * c + pt.oz0 * s;
+        const rz = -pt.ox0 * s + pt.oz0 * c;
+        const y = root.y + pt.oy;
+        return { x: root.x + rx, y, z: root.z + rz, radius: pt.radius, topY: y + pt.radius, body: null };
+      });
+    }
+    return [{ x: root.x, y: root.y + 0.20, z: root.z, radius: 0.24, topY: root.y + 0.44, body: null }];
+  }
+
   /**
-   * A fallen body leaves the physics solver once it has had RETIRE_AFTER seconds to land,
-   * keeping its last pose, so a ring full of bodies costs nothing to simulate.
+   * Personality-driven AI steering around downed bodies: heavyweights bulldoze straight through,
+   * while lighter or cautious CPUs gently steer around dense piles ahead of them.
+   */
+  _ffaBodySteer(f, desired) {
+    if (!f.alive || f.human || desired.lengthSq() < 0.04) return;
+    const mass = f.rig.config.mass || 1;
+    const st = this._ffaStrategy(f);
+    const cautious = st.guard < 0.75;
+    if (mass >= 1.12 && !cautious) return;
+    const avoidWeight = (cautious ? 0.95 : 0.65) * Math.max(0.25, 1.15 - mass);
+    const sp = f.rig.root.position;
+    const speed = desired.length();
+    const fx = desired.x / speed, fz = desired.z / speed;
+    let sx = 0, sz = 0;
+    for (const d of this.fighters) {
+      if (d === f || d.alive || d.state !== 'ko') continue;
+      const dp = d.rig.root.position;
+      const dx = dp.x - sp.x, dz = dp.z - sp.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.1 || dist > 1.25) continue;
+      const ahead = (dx * fx + dz * fz) / dist;
+      if (ahead < 0.25) continue;
+      // Lateral push away from the body's side of our forward line.
+      const side = dx * -fz + dz * fx;
+      const dir = side >= 0 ? -1 : 1;
+      const w = ((1.25 - dist) / 1.15) * ahead;
+      sx += -fz * dir * w;
+      sz += fx * dir * w;
+    }
+    const sl = Math.hypot(sx, sz);
+    if (sl > 1e-4) {
+      desired.x += (sx / sl) * speed * Math.min(0.65, sl * avoidWeight);
+      desired.z += (sz / sl) * speed * Math.min(0.65, sl * avoidWeight);
+    }
+  }
+
+  /**
+   * A fallen body leaves the dynamic ragdoll solver once it has had RETIRE_AFTER seconds to land,
+   * keeping its pose plus a lightweight kinematic proxy so later knockouts stack on top of it and
+   * standing fighters still push it aside or climb over it instead of walking through it.
    */
   _ffaRetireBodies() {
     for (const f of this.fighters) {
       if (f.alive || f.ffaRetired || !f.ffaKoAt || this.t - f.ffaKoAt < RETIRE_AFTER) continue;
       if (f.pendingKO) continue; // not built yet
       if (f.koRagdoll?.active) f.koRagdoll.drive();
+      f.ffaBody = this._ffaSnapshotBody(f);
       f.koRagdoll?.dispose();
+      if (this._physics) {
+        f.ffaCorpseBody = createRetiredBody(
+          this._physics.world, this._physics.materials, f.rig.root.position, f.ffaBody.parts);
+      }
       f.ffaRetired = true;
+    }
+  }
+
+  /**
+   * Prevent standing fighters from walking through downed bodies on the mat:
+   * - Walking forward into a body shoves & spins it out of the way (with dust, scuffs & rope twang).
+   * - High-speed knockback into a body trips the fighter over it.
+   * - Walking onto a body or pile lifts the survivor on top ("King of the Pile" high ground).
+   */
+  _ffaResolveDownedBodies(dt) {
+    const downed = this.fighters.filter((f) => !f.alive && f.state === 'ko');
+    if (!downed.length) {
+      for (const s of this.fighters) {
+        if (!s.alive || s.state === 'ko') continue;
+        s.ffaOnPile = false;
+        s._wasOnPile = false;
+        const sp = s.rig.root.position;
+        if (sp.y > 0) {
+          s.ffaLiftVy = Math.max(-6, (s.ffaLiftVy || 0) - 18 * dt);
+          sp.y = Math.max(0, sp.y + s.ffaLiftVy * dt);
+          if (sp.y === 0) s.ffaLiftVy = 0;
+          if (s.rigBody) s.rigBody.position.y = sp.y + 0.9;
+        }
+      }
+      return;
+    }
+
+    const partsByFighter = new Map();
+    for (const d of downed) partsByFighter.set(d, this._ffaDownedParts(d));
+
+    // 1. Standing fighters walking forward (or knocked back) into downed bodies shove & spin them.
+    for (const s of this.fighters) {
+      if (!s.alive || s.state === 'ko') continue;
+      const sp = s.rig.root.position;
+      const svx = s.vel.x + s.knockback.x;
+      const svz = s.vel.z + s.knockback.z;
+      const kbSpeed = Math.hypot(s.knockback.x, s.knockback.z);
+      const sMass = s.rig.config.mass || 1;
+      const bulldoze = sMass >= 1.12 ? 1.12 : 1.0;
+      for (const d of downed) {
+        const parts = partsByFighter.get(d);
+        const dRoot = d.rig.root.position;
+        let pushedRetired = false;
+        let hitBody = false;
+        for (const part of parts) {
+          if (part.y - part.radius > sp.y + 0.9) continue;
+          const dx = part.x - sp.x, dz = part.z - sp.z;
+          const dist = Math.hypot(dx, dz);
+          const reach = part.radius + FOOT_PUSH_RADIUS;
+          if (dist >= reach) continue;
+          hitBody = true;
+          let nx, nz;
+          if (dist > 1e-4) {
+            nx = dx / dist; nz = dz / dist;
+          } else {
+            const vLen = Math.hypot(svx, svz);
+            if (vLen > 1e-4) { nx = svx / vLen; nz = svz / vLen; }
+            else { nx = Math.sin(s.rig.root.rotation.y); nz = Math.cos(s.rig.root.rotation.y); }
+          }
+          const into = svx * nx + svz * nz;
+          if (into <= 0.12) continue;
+          if (d.koRagdoll?.active && part.body) {
+            const massRatio = Math.min(1.6, sMass / (d.rig.config.mass || 1));
+            const shove = Math.min(3.8, into * 1.1 * massRatio * bulldoze);
+            const blend = Math.min(1, dt * 14);
+            for (const b of [part.body, d.koRagdoll.bodies.pelvis, d.koRagdoll.bodies.chest]) {
+              if (!b) continue;
+              const w = b === part.body ? blend : blend * 0.45;
+              b.velocity.x += (nx * shove - b.velocity.x) * w;
+              b.velocity.z += (nz * shove - b.velocity.z) * w;
+            }
+          } else if (d.ffaBody) {
+            const massRatio = Math.min(1.6, sMass / d.ffaBody.mass);
+            const shove = Math.min(3.4, into * 1.15 * massRatio * bulldoze);
+            const blend = Math.min(1, dt * 16);
+            d.ffaBody.vx += (nx * shove - d.ffaBody.vx) * blend;
+            d.ffaBody.vz += (nz * shove - d.ffaBody.vz) * blend;
+            // Off-center push creates yaw torque so the body pivots naturally out of the way.
+            const rx = part.x - dRoot.x, rz = part.z - dRoot.z;
+            const torque = rz * (nx * shove) - rx * (nz * shove);
+            d.ffaBody.angVel += THREE.MathUtils.clamp(torque * 4.5, -5, 5) * blend;
+            pushedRetired = true;
+          }
+        }
+        if (pushedRetired) {
+          const drag = 1 - Math.min(0.18, dt * 3);
+          s.vel.x *= drag;
+          s.vel.z *= drag;
+        }
+        // Knocked backward at high speed into a body on the canvas: trip over it!
+        if (hitBody && kbSpeed > 2.6 && this.t >= (s._tripCd || 0)) {
+          s._tripCd = this.t + 1.4;
+          s.knockback.multiplyScalar(1.18);
+          s.animator?.applyLean?.(-0.32, 0);
+          if (s.state === 'idle' || s.state === 'block') s.animator?.play?.('stumble');
+          this._spawnDust?.(sp.x, sp.z, 0.55);
+          this._spawnCallout?.(new THREE.Vector3(sp.x, sp.y + 1.8, sp.z), 'TRIPPED!');
+        }
+      }
+    }
+
+    // 2. Retired-vs-retired momentum transfer so a shoved body pushes or piles against neighbors.
+    const retired = downed.filter((d) => d.ffaBody);
+    for (let i = 0; i < retired.length; i++) {
+      const a = retired[i], aRoot = a.rig.root.position;
+      for (let j = i + 1; j < retired.length; j++) {
+        const b = retired[j], bRoot = b.rig.root.position;
+        if (Math.abs(aRoot.y - bRoot.y) > 0.28) continue;
+        const dx = bRoot.x - aRoot.x, dz = bRoot.z - aRoot.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist >= 0.72 || dist < 1e-4) continue;
+        const nx = dx / dist, nz = dz / dist;
+        const closing = (a.ffaBody.vx - b.ffaBody.vx) * nx + (a.ffaBody.vz - b.ffaBody.vz) * nz;
+        if (closing > 0.05) {
+          const transfer = closing * 0.45;
+          a.ffaBody.vx -= nx * transfer; a.ffaBody.vz -= nz * transfer;
+          b.ffaBody.vx += nx * transfer; b.ffaBody.vz += nz * transfer;
+          const spinKick = (nx * a.ffaBody.vz - nz * a.ffaBody.vx) * 0.6;
+          b.ffaBody.angVel += THREE.MathUtils.clamp(spinKick, -2, 2) * dt * 8;
+        }
+      }
+    }
+
+    // 3. Integrate sliding/spinning retired bodies, scuffs/dust, rope twang, gravity & proxy sync.
+    const friction = Math.exp(-dt * 7.5);
+    const angFriction = Math.exp(-dt * 6.5);
+    for (const d of retired) {
+      const b = d.ffaBody;
+      const root = d.rig.root.position;
+      b.dustCd = Math.max(0, b.dustCd - dt);
+      b.ropeCd = Math.max(0, b.ropeCd - dt);
+      b.vx *= friction;
+      b.vz *= friction;
+      b.angVel *= angFriction;
+      const speed = Math.hypot(b.vx, b.vz);
+      if (speed < 0.01) { b.vx = 0; b.vz = 0; }
+      if (Math.abs(b.angVel) < 0.01) b.angVel = 0;
+
+      const rawX = root.x + b.vx * dt;
+      const rawZ = root.z + b.vz * dt;
+      root.x = THREE.MathUtils.clamp(rawX, -CORPSE_RING_LIMIT, CORPSE_RING_LIMIT);
+      root.z = THREE.MathUtils.clamp(rawZ, -CORPSE_RING_LIMIT, CORPSE_RING_LIMIT);
+      if (root.x !== rawX) {
+        if (Math.abs(b.vx) > 0.7 && b.ropeCd <= 0) {
+          b.ropeCd = 0.35;
+          const pwr = Math.min(1.6, Math.abs(b.vx) * 0.45);
+          twangRope(this.arena, 'x', rawX > 0 ? 1 : -1, pwr);
+          this.audio?.prop?.({ material: 'rope', power: pwr * 0.75, worldPos: root });
+        }
+        b.vx *= -0.2;
+      }
+      if (root.z !== rawZ) {
+        if (Math.abs(b.vz) > 0.7 && b.ropeCd <= 0) {
+          b.ropeCd = 0.35;
+          const pwr = Math.min(1.6, Math.abs(b.vz) * 0.45);
+          twangRope(this.arena, 'z', rawZ > 0 ? 1 : -1, pwr);
+          this.audio?.prop?.({ material: 'rope', power: pwr * 0.75, worldPos: root });
+        }
+        b.vz *= -0.2;
+      }
+
+      if (b.angVel !== 0) {
+        b.yawOffset += b.angVel * dt;
+        d.rig.root.rotation.y = b.baseYaw + b.yawOffset;
+      }
+
+      // Mat drag scuffs & canvas dust when a shoved body slides fast across the floor.
+      if (speed > 0.85 && root.y < 0.25) {
+        if (b.skidFrom) {
+          this.matWear?.skid(b.skidFrom.x, b.skidFrom.z, root.x, root.z, Math.min(0.75, speed / 3.5));
+        }
+        b.skidFrom = { x: root.x, z: root.z };
+        if (b.dustCd <= 0) {
+          b.dustCd = 0.18;
+          this._spawnDust?.(root.x, root.z, Math.min(0.7, speed * 0.22));
+        }
+      } else {
+        b.skidFrom = null;
+      }
+
+      const cosY = Math.cos(b.yawOffset), sinY = Math.sin(b.yawOffset);
+      let supportY = MAT_FLOOR_Y;
+      for (const other of downed) {
+        if (other === d) continue;
+        const oParts = partsByFighter.get(other);
+        for (const pt of b.parts) {
+          const rx = pt.ox0 * cosY + pt.oz0 * sinY;
+          const rz = -pt.ox0 * sinY + pt.oz0 * cosY;
+          const px = root.x + rx, py = root.y + pt.oy, pz = root.z + rz;
+          for (const opt of oParts) {
+            if (opt.topY > py + 0.16) continue;
+            if (Math.hypot(px - opt.x, pz - opt.z) < pt.radius + opt.radius) {
+              supportY = Math.max(supportY, opt.topY);
+            }
+          }
+        }
+      }
+      const targetRootY = Math.min(MAX_STEP_HEIGHT, supportY - b.minBottomOff);
+      if (root.y > targetRootY + 0.06) b.wasAirborne = true;
+      if (root.y > targetRootY + 0.004) {
+        b.vy = Math.max(-12, b.vy - 20 * dt);
+        root.y = Math.max(targetRootY, root.y + b.vy * dt);
+        if (b.wasAirborne && root.y <= targetRootY + 0.005) {
+          b.wasAirborne = false;
+          this._spawnDust?.(root.x, root.z, 0.55);
+          this.audio?.impact?.({ power: 0.45, worldPos: root });
+        }
+      } else if (root.y < targetRootY) {
+        root.y = Math.min(targetRootY, root.y + 4.0 * dt);
+        b.vy = 0;
+        b.wasAirborne = false;
+      } else {
+        b.vy = 0;
+        b.wasAirborne = false;
+      }
+
+      if (d.ffaCorpseBody) {
+        d.ffaCorpseBody.position.set(root.x, root.y, root.z);
+        d.ffaCorpseBody.quaternion.setFromAxisAngle(_yAxis, b.yawOffset);
+      }
+      partsByFighter.set(d, this._ffaDownedParts(d));
+    }
+
+    // 4. Standing fighters step/stack up onto any downed body or pile beneath their feet.
+    for (const s of this.fighters) {
+      if (!s.alive || s.state === 'ko') continue;
+      const sp = s.rig.root.position;
+      const prevY = sp.y;
+      let supportY = 0;
+      let pileCount = 0;
+      for (const d of downed) {
+        let onThisBody = false;
+        for (const part of partsByFighter.get(d)) {
+          const dist = Math.hypot(sp.x - part.x, sp.z - part.z);
+          const innerR = part.radius + 0.08;
+          const outerR = part.radius + 0.34;
+          if (dist >= outerR) continue;
+          const partTop = Math.min(MAX_STEP_HEIGHT, Math.max(0, part.topY - MAT_FLOOR_Y));
+          if (partTop > sp.y + 0.85) continue;
+          const t = dist <= innerR ? 1 : (outerR - dist) / (outerR - innerR);
+          const w = t * t * (3 - 2 * t);
+          supportY = Math.max(supportY, partTop * w);
+          if (w > 0.35) onThisBody = true;
+        }
+        if (onThisBody) pileCount += 1;
+      }
+      if (supportY > sp.y) {
+        sp.y = Math.min(supportY, sp.y + Math.max(3.5, (supportY - sp.y) * 18) * dt);
+        s.ffaLiftVy = 0;
+        if (sp.y - prevY > 0.008) {
+          s.animator?.applyLean?.(THREE.MathUtils.clamp((sp.y - prevY) * 3.5, -0.18, 0.18), 0);
+        }
+      } else if (sp.y > supportY) {
+        s.ffaLiftVy = Math.max(-6, (s.ffaLiftVy || 0) - 18 * dt);
+        sp.y = Math.max(supportY, sp.y + s.ffaLiftVy * dt);
+        if (sp.y <= supportY + 1e-4) {
+          sp.y = supportY;
+          s.ffaLiftVy = 0;
+          if (prevY - sp.y > 0.025) s.squashT = Math.max(s.squashT || 0, 0.07);
+        }
+      }
+      // "King of the Pile": standing atop 2+ bodies or a high stack gives high-ground power.
+      s.ffaOnPile = pileCount >= 2 || sp.y >= 0.45;
+      if (s.ffaOnPile && !s._wasOnPile && this.t >= (s._pileCalloutCd || 0)) {
+        s._pileCalloutCd = this.t + 6;
+        this._spawnCallout?.(new THREE.Vector3(sp.x, sp.y + 2.0, sp.z), 'KING OF THE PILE!');
+      }
+      s._wasOnPile = s.ffaOnPile;
+      if (s.rigBody) s.rigBody.position.y = sp.y + 0.9;
     }
   }
 
@@ -394,7 +798,7 @@ class FfaModeMethods {
     this._ffaNotify('OnFfaBroadcast', JSON.stringify({
       focus: focus?.id || '', health: focus ? this._hp(focus) : 0,
       attacker: focus?.lastAttacker || '',
-      shot: this.ffaHuman ? (bob?.alive ? 'Bob follow cam' : 'Bob is out · spectating')
+      shot: this.ffaHuman ? 'Bob follow cam'
         : this._dir?.shot ? String(this._dir.shot) : 'Ringside',
       paused: !!this.paused, replay: this.phase === 'replay',
       finalDuel: standing === 2,

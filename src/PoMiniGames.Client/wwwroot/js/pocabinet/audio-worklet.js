@@ -30,6 +30,20 @@ class ModalBankProcessor extends AudioWorkletProcessor {
         this.scrapeLevel = 0;
         this.slipLevel = 0;
         this.stickPhase = 0;
+        this.crunchEnv = 0;
+        this.crunchLp = 0;
+        this.subEnv = 0;
+        this.subPhase = 0;
+        this.subFreq = 54;
+        // Sample-accurate combustion pulse & turbo blow-off flutter layer (#10)
+        this.engRpm = 0;
+        this.engLoad = 0;
+        this.engThrottle = 0;
+        this.engPrevThrottle = 0;
+        this.engPhase = 0;
+        this.engStyle = 0;
+        this.turboFlutter = 0;
+        this.turboPhase = 0;
         this.seed = 0x13579bdf;
 
         this.port.onmessage = (ev) => this.onMsg(ev.data);
@@ -67,9 +81,12 @@ class ModalBankProcessor extends AudioWorkletProcessor {
     onMsg(d) {
         if (!d) return;
         if (d.type === 'strike') {
-            // A hit rings nothing: only what is not a note is made here.
+            // A hit rings nothing: broadband structural crunch + low-end chassis thump + steam/glass.
             const s = Math.min(1.2, Math.max(0.05, d.strength || 0.3));
             const zone = d.zone || 'side';
+            this.crunchEnv = Math.min(0.85, this.crunchEnv + s * 0.62);
+            this.subEnv = Math.min(0.9, this.subEnv + s * 0.7);
+            this.subFreq = 42 + (1 - Math.min(1, s)) * 34;
             // Radiator steam burst on heavy frontal impacts (#6)
             if (zone === 'front' && s > 0.55) {
                 this.steamEnv = Math.min(0.65, this.steamEnv + (s - 0.5) * 0.75);
@@ -84,6 +101,30 @@ class ModalBankProcessor extends AudioWorkletProcessor {
                     this.triggerGrain((delayMs * 0.001 * sampleRate) | 0, (0.018 * sampleRate) | 0, freq, 0.09 * crack * (1 - k * 0.07));
                 }
             }
+        } else if (d.type === 'debris') {
+            // Non-pitched material-specific debris impact foley (#11)
+            const s = Math.min(1, Math.max(0.05, d.strength || 0.25));
+            const mat = d.material || 'metal';
+            if (mat === 'rubber') {
+                this.subEnv = Math.min(0.55, this.subEnv + s * 0.32);
+                this.subFreq = 68 + this.rnd() * 22;
+            } else if (mat === 'plastic') {
+                this.triggerGrain(0, (0.014 * sampleRate) | 0, 520 + this.rnd() * 240, 0.08 * s);
+            } else if (mat === 'glass') {
+                this.triggerGrain(0, (0.012 * sampleRate) | 0, 3400 + this.rnd() * 2800, 0.055 * s);
+            } else {
+                this.crunchEnv = Math.min(0.45, this.crunchEnv + s * 0.24);
+            }
+        } else if (d.type === 'engine') {
+            this.engRpm = Math.max(0, Math.min(9500, d.rpm || 0));
+            this.engLoad = Math.max(0, Math.min(1, d.load || 0));
+            const thr = Math.max(0, Math.min(1, d.throttle || 0));
+            if (this.engPrevThrottle > 0.65 && thr < 0.25 && this.engRpm > 4600) {
+                this.turboFlutter = Math.min(0.55, this.turboFlutter + 0.38);
+            }
+            this.engPrevThrottle = thr;
+            this.engThrottle = thr;
+            this.engStyle = d.style | 0;
         } else if (d.type === 'scrape') {
             this.scrapeLevel = Math.min(1, Math.max(0, d.level || 0));
         } else if (d.type === 'slip') {
@@ -120,6 +161,38 @@ class ModalBankProcessor extends AudioWorkletProcessor {
                 sum += (Math.sin(this.gPhase[g]) * 0.7 + (this.rnd() * 2 - 1) * 0.3) * env;
                 this.gAmp[g] *= 0.985;
                 this.gLen[g]--;
+            }
+
+            // Broadband structural crunch + 25-80 Hz chassis sub-thump (#11)
+            if (this.crunchEnv > 0.001) {
+                const w = this.rnd() * 2 - 1;
+                this.crunchLp += (w - this.crunchLp) * 0.22;
+                sum += this.crunchLp * this.crunchEnv * 0.32;
+                this.crunchEnv *= 0.9986;
+            }
+            if (this.subEnv > 0.001) {
+                this.subPhase += (2 * Math.PI * this.subFreq) / sr;
+                sum += Math.sin(this.subPhase) * this.subEnv * 0.36;
+                this.subEnv *= 0.9988;
+                this.subFreq = Math.max(26, this.subFreq * 0.99985);
+            }
+
+            // Sample-accurate combustion pulse train + turbo flutter (#10)
+            if (this.engRpm > 500) {
+                const cyl = this.engStyle === 1 ? 5 : this.engStyle === 2 ? 2 : this.engStyle === 4 ? 3 : 4;
+                const fireHz = (this.engRpm / 60) * cyl;
+                this.engPhase += fireHz / sr;
+                if (this.engPhase >= 1) this.engPhase -= 1;
+                const pulse = Math.exp(-this.engPhase * 9.5) * Math.sin(this.engPhase * Math.PI * 2);
+                const grit = (this.rnd() * 2 - 1) * 0.14 * this.engLoad;
+                sum += (pulse * (0.045 + 0.055 * this.engLoad) + grit * 0.03);
+            }
+            if (this.turboFlutter > 0.002) {
+                this.turboPhase += (2 * Math.PI * 19.5) / sr;
+                const chop = 0.5 + 0.5 * Math.sin(this.turboPhase);
+                const air = (this.rnd() * 2 - 1);
+                sum += air * chop * this.turboFlutter * 0.12;
+                this.turboFlutter *= 0.99945;
             }
 
             // Radiator steam hiss tail

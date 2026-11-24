@@ -628,7 +628,7 @@ class HitResolutionMethods {
     // the struck region and the attacker's own arm wear.
     // `armMul` is the hand: the lead jab gives a little, the cross behind it takes it back.
     let baseDmg = (attack.dmg * chargeMul * (attacker.armMul ?? 1) + this.rng.randint(-1, 1))
-      * atkMul * regionMod * powerScale * this._ffaDamageMul();
+      * atkMul * regionMod * powerScale * this._ffaDamageMul(attacker);
 
     // ── Per-hit personality modifiers ─────────────────────────────────
     // 1) The attacker may be carrying a temporary atkMul (Reagan's "Morning
@@ -790,7 +790,8 @@ class HitResolutionMethods {
     const lbjKBMul = (attPer?.lbjMissKBUntil && this.t < attPer.lbjMissKBUntil)
       ? (PERSONALITIES.lbj?.onOpponentMissCharge?.kbMul || 1.5)
       : 1.0;
-    defender.knockback.add(knockDir.clone().multiplyScalar(4.5 * chargeMul * (atkMass / defMass) * lbjKBMul));
+    const pileKbMul = (this.ffa && defender.ffaOnPile) ? 1.25 : 1.0;
+    defender.knockback.add(knockDir.clone().multiplyScalar(4.5 * chargeMul * (atkMass / defMass) * lbjKBMul * pileKbMul));
     if (lbjKBMul > 1) attPer.lbjMissKBUntil = 0;
     defender.animator.applyLean(knockDir.z * 0.15, -knockDir.x * 0.15);
     // Impact frame: cartoon squash on the defender (no color flash — per user

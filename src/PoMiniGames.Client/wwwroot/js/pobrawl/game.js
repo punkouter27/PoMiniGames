@@ -539,26 +539,12 @@ export class BrawlGame {
       this._caption(this.muted ? '🔇 Muted (M)' : '🔊 Sound on (M)');
     };
     window.addEventListener('keydown', this._onMuteKey);
-    // Escape or P pauses and resumes (1P, training and 2P; see setPaused). A text field keeps
-    // its keys, and a modal the page has open over the arena owns Escape — except the pause
-    // menu itself, which the page marks data-pb-pause so the same key closes it.
-    this._onPauseKey = (e) => {
-      if ((e.code !== 'Escape' && e.code !== 'KeyP') || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-      const tag = (e.target?.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
-      if (document.querySelector('dialog[open]:not([data-pb-pause]), [aria-modal="true"]:not([data-pb-pause])')) return;
-      if (!this.paused && !this._canPause()) return;
-      e.preventDefault();
-      this.setPaused(!this.paused);
-    };
     // Losing the window never leaves a key held down (input.js does the same per controller,
-    // the pads and the online corner are released here), and in the pausable modes it pauses.
+    // the pads and the online corner are released here).
     this._onFocusLost = () => {
-      if (this._canPause()) this.setPaused(true); // releases the held input too
-      else this._releaseHeldInput();
+      this._releaseHeldInput();
     };
     this._onVisibility = () => { if (document.hidden) this._onFocusLost(); };
-    window.addEventListener('keydown', this._onPauseKey);
     window.addEventListener('blur', this._onFocusLost);
     document.addEventListener('visibilitychange', this._onVisibility);
 
@@ -631,11 +617,9 @@ export class BrawlGame {
 
   // ── Pause ───────────────────────────────────────────────────────────────
 
-  /** Pause exists in 1P (training included) and 2P, never online or in the Cup, and only live. */
+  /** Only FFA's end-card round hold uses pause; 1P/2P have no pause. */
   _canPause() {
-    const m = this.options.mode;
-    if (this.ffa) return !!this.options.human && this.phase !== 'intro';
-    return (m === '1p' || m === '2p') && (this.phase === 'countdown' || this.phase === 'fighting');
+    return !!this.ffa && this.phase !== 'intro';
   }
 
   /**
@@ -1670,6 +1654,7 @@ export class BrawlGame {
           f.rig.root.position.z = p.z;
         }
       }
+      if (this.ffa) this._ffaResolveDownedBodies(dt);
     }
 
     // Post collisions: high-momentum knockback against breakable props.
@@ -2008,13 +1993,19 @@ export class BrawlGame {
     f.expressionT = Math.max(f.expressionT, 0.4);
   }
 
-  // Remove a fighter's live-fight rig root. Used at KO handoff (the ragdoll
-  // replaces it), respawn and dispose. Never call from inside a physics step.
+  // Remove a fighter's live-fight rig root (and any retired FFA corpse proxy).
+  // Used at KO handoff, respawn and dispose. Never call from inside a physics step.
   _removeFighterPhysics(f) {
-    if (!this._physics || !f.rigBody) return;
+    if (!this._physics) return;
     const world = this._physics.world;
-    if (world.bodies.includes(f.rigBody)) world.removeBody(f.rigBody);
-    f.rigBody = null;
+    if (f.rigBody) {
+      if (world.bodies.includes(f.rigBody)) world.removeBody(f.rigBody);
+      f.rigBody = null;
+    }
+    if (f.ffaCorpseBody) {
+      if (world.bodies.includes(f.ffaCorpseBody)) world.removeBody(f.ffaCorpseBody);
+      f.ffaCorpseBody = null;
+    }
   }
 
   _updateEffects(dt) {
@@ -2116,7 +2107,6 @@ export class BrawlGame {
     try { VisualRuntime.enableAudioReactive(false); } catch { /* */ }
     if (this._dropResumeAudio) this._dropResumeAudio();
     window.removeEventListener('keydown', this._onMuteKey);
-    window.removeEventListener('keydown', this._onPauseKey);
     window.removeEventListener('blur', this._onFocusLost);
     document.removeEventListener('visibilitychange', this._onVisibility);
     this._disposeShow();

@@ -16,7 +16,7 @@
 import * as THREE from './three.js';
 import { hash, fbm, dataTexture, normalMap, addHook, clamp01 } from './util.js';
 import {
-    uniform, float, vec2, vec3, vec4, mix, clamp, max, min, pow, dot, sin, cos, fract, smoothstep, normalize, texture,
+    uniform, float, vec2, vec3, vec4, mix, clamp, max, min, pow, dot, sin, cos, abs, fract, floor, length, smoothstep, normalize, texture,
     positionWorld, positionGeometry, positionView, normalView, materialColor, cameraViewMatrix, modelWorldMatrix, instanceIndex,
 } from 'three-eco/tsl';
 
@@ -168,15 +168,34 @@ export function subsurface(material, tintHex = 0x90c864, strength = 0.26) {
 }
 
 /**
- * Asphalt & trackside puddle porosity (#18): low-frequency porous pooling darkens damp
- * aggregate and focuses wet SSR mirrors inside organic road depressions.
+ * Asphalt & trackside puddle porosity (#4 / #18): low-frequency porous pooling darkens damp
+ * aggregate, adds animated concentric TSL raindrop ripples inside puddles, and tightens
+ * grazing-angle wet specular sheen for SSR reflections.
  */
 export function puddlePorosity(material, uWet) {
     return addHook(material, 'puddle-porosity', () => {
-        const pool = smoothstep(0.46, 0.72, noiseAt(wxz().mul(0.032)).r.mul(0.72).add(noiseAt(wxz().mul(0.14)).g.mul(0.28))).mul(uWet);
+        const p = wxz();
+        const pool = smoothstep(0.46, 0.72, noiseAt(p.mul(0.032)).r.mul(0.72).add(noiseAt(p.mul(0.14)).g.mul(0.28))).mul(uWet);
+        // Two overlapping cellular raindrop ripple layers inside standing puddles.
+        const rippleLayer = (scale, speed, phaseOff) => {
+            const g = p.mul(scale);
+            const cell = floor(g), f = fract(g).sub(0.5);
+            const rnd = fract(sin(dot(cell, vec2(127.1, 311.7)).add(phaseOff)).mul(43758.5453));
+            const life = fract(clock.mul(speed).add(rnd));
+            const d = length(f);
+            const ring = sin(d.mul(26).sub(life.mul(14))).mul(smoothstep(0.48, 0.06, d)).mul(float(1).sub(life));
+            return f.div(max(d, float(0.01))).mul(ring);
+        };
+        const rip = rippleLayer(0.65, 1.35, 0).add(rippleLayer(1.15, 1.85, 19.7).mul(0.65)).mul(pool).mul(0.22);
         return {
             color: (c) => vec4(c.rgb.mul(float(1).sub(uWet.mul(0.32)).sub(pool.mul(0.18))), c.a),
-            rough: (r) => mix(r.mul(float(1).sub(uWet.mul(0.45))), float(0.04), pool),
+            rough: (r) => {
+                const viewDir = normalize(positionView.negate());
+                const graze = pow(float(1).sub(clamp(abs(dot(normalView, viewDir)), 0, 1)), 2.2);
+                const wetR = r.mul(float(1).sub(uWet.mul(0.45))).mul(float(1).sub(graze.mul(uWet).mul(0.25)));
+                return mix(wetR, float(0.035), pool);
+            },
+            normal: (n) => normalize(n.add(cameraViewMatrix.transformDirection(vec3(rip.x, 0, rip.y)))),
         };
     });
 }

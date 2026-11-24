@@ -128,9 +128,8 @@ class FighterTickMethods {
       // up it — so this is the AI's cue to load a full coil (ai.js `punishGas`)
       // and ask the player whether they have learned to block yet.
       opponentExhausted: !!opp.gassed,
-      // The grab and the taunt (constants.js GRAB / TAUNT). `grabReach` is absent online,
-      // where neither exists; ai.js reads a missing value as: not in this fight.
-      grabReach: this.online ? undefined : GRAB.reach * (f.rig.config.heightScale || 1),
+      // Grab is removed; leave grabReach undefined so AI never attempts it.
+      grabReach: undefined,
       opponentGrabbing: opp.state === 'grab',
       opponentTaunting: opp.state === 'taunt',
       opponentTauntLeft: opp.state === 'taunt' ? Math.max(0, TAUNT.secs - opp.stateT) : 0,
@@ -229,6 +228,8 @@ class FighterTickMethods {
     }
     // Move slowly even in hitstun/attack windup — the player is "shuffling".
     if (f.state === 'hitstun') desired.multiplyScalar(0.2);
+    // FFA personality steering around downed bodies (light/cautious circle; heavyweights bulldoze).
+    if (this.ffa && canSteer) this._ffaBodySteer(f, desired);
 
     // Lerp velocity toward desired — mass-scaled accel; heavier fighters feel weightier.
     const a = moveAccel * (1 / f.rig.config.mass);
@@ -598,9 +599,9 @@ class FighterTickMethods {
 
   // ── The grab (constants.js GRAB) ──────────────────────────────────────────
 
-  /** A grab needs a hand, and exists only where this engine rules on hits (not online). */
-  _canGrab(f) {
-    return !this.online && this._canPunch(f);
+  /** Grab is removed from PoBrawl. */
+  _canGrab() {
+    return false;
   }
 
   /**

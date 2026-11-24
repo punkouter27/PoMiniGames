@@ -128,9 +128,15 @@ export class Acoustics {
         da = Math.min(da, t.length - da);
         const gantry = Math.max(0, 1 - da / GANTRY_REACH);
         const bridge = this.covered[i] || 0;
-        const w = ph.wallAt(t, i, -1) + ph.wallAt(t, i, 1);
+        const wL = ph.wallAt(t, i, -1), wR = ph.wallAt(t, i, 1);
+        const w = wL + wR;
         const canyon = Math.min(1, Math.max(0, (CANYON_FROM - w) / CANYON_SPAN));
-        const metal = Math.max(gantry, bridge, canyon);
+        // 4-probe lateral/overhead proximity weighting (#12): smooth early-reflection occlusion
+        // as the car hugs either barrier wall or enters a covered stretch.
+        const lat = Number(ear.body?.lateral) || 0;
+        const distL = Math.max(0, wL + lat), distR = Math.max(0, wR - lat);
+        const nearWall = Math.max(0, 1 - Math.min(distL, distR) / 28);
+        const metal = Math.max(gantry, bridge, canyon, nearWall * 0.55);
         // The grandstand.
         let stand = 0;
         const c = this.race.scene.scenery?.crowd?.center;

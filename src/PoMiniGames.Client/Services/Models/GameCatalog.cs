@@ -206,28 +206,16 @@ public static class GameCatalog
             },
         ]),
 
-        // PoFighter (preview): fighters cut from filmed performers. Arcade (you vs the CPU ladder),
-        // a practice room (no score), an arcade-style demo and a CPU tournament.
+        // PoFighter (preview): fighters cut from filmed performers. 1P arcade and Demo mode.
         new(GameKeys.PoFighter, "PoFighter", "sports_martial_arts",
         [
             new(GameMode.OnePlayer, "/pofighter/arcade")
             {
-                ChipLabel = "1P · Arcade",
                 ChipDescription = "Fight every other fighter in turn, then your own Shadow; Easy, Normal or Hard",
-            },
-            new(GameMode.OnePlayer, "/pofighter/1player")
-            {
-                ChipLabel = "Practice",
-                ChipDescription = "Practice room: try every move on a punching bag, and make your own fighter in the Studio",
             },
             new(GameMode.Demo, "/pofighter/demo")
             {
                 ChipDescription = "Kim vs Nick, both CPU, best of three, arcade style",
-            },
-            new(GameMode.Demo, "/pofighter/tournament")
-            {
-                ChipLabel = "Demo · Tournament",
-                ChipDescription = "16-slot CPU tournament: every fighter enters, no-player slots are BYEs, bouts move the fighter Elo board",
             },
         ]),
 

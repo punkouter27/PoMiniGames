@@ -146,14 +146,10 @@ class NetInput {
             this.blockDownAt = now;
           }
         }
-      } else if (code === 'KeyF' || code === 'KeyG' || code === 'KeyH' || code === 'KeyT') {
+      } else if (code === 'KeyF' || code === 'KeyG' || code === 'KeyH') {
         e.preventDefault?.();
         if (e.repeat) return;
-        // The grab has a key of its own here (T). The local modes also take punch and kick
-        // together; online each press is sent the moment it happens, and waiting to see whether
-        // a second one follows would add that wait to every punch.
-        this.onInput(this.held, code === 'KeyF' ? PRESS_PUNCH : code === 'KeyG' ? PRESS_KICK
-          : code === 'KeyT' ? PRESS_GRAB : PRESS_SPECIAL);
+        this.onInput(this.held, code === 'KeyF' ? PRESS_PUNCH : code === 'KeyG' ? PRESS_KICK : PRESS_SPECIAL);
       }
     };
     this._onUp = (e) => {

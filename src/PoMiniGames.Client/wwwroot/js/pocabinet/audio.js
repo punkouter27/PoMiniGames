@@ -683,6 +683,18 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
     road.windBand.frequency.setTargetAtTime(700 + s01 * 1400, t, 0.2);
     // The score ducks under a working engine (sidechain style; impacts punch it separately).
     music?.duck(player.active && phase === 'race' ? load * (0.5 + 0.5 * r01) : 0);
+    // Drive the sample-accurate AudioWorklet combustion pulse & turbo flutter layer (#10).
+    if (modalReady && modalNode) {
+        try {
+            modalNode.port.postMessage({
+                type: 'engine',
+                rpm: player.active ? rpm * pitch : 0,
+                load,
+                throttle: thr,
+                style: playerStyle,
+            });
+        } catch { /* worklet busy */ }
+    }
 
     if (shifted > 0 && player.active) {
         engine.shift.gain.cancelScheduledValues(t);
@@ -1486,4 +1498,54 @@ export function fanfare(podium) {
             window.setTimeout(() => beep(f, 0.22, 'triangle', 0.13), i * 130);
         } catch { /* noop */ }
     });
+}
+
+let lastDebrisFoley = 0;
+
+/**
+ * Spatialized material-specific debris impact foley (#11), triggered by Rapier impulse
+ * callbacks in debris.js. Rate-limited and distance-gated so piles never chatter like a xylophone.
+ */
+export function debrisImpact(x, y, z, strength, material = 'metal') {
+    if (!ctx || hidden || suspended) return;
+    const now = ctx.currentTime;
+    if (now - lastDebrisFoley < 0.11) return;
+    const s = clamp01(strength);
+    if (s < 0.12) return;
+    lastDebrisFoley = now;
+    if (modalReady && modalNode) {
+        try {
+            modalNode.port.postMessage({ type: 'debris', strength: s * 0.7, material });
+        } catch { /* worklet busy */ }
+    }
+    if (!hitBus || !hrtfPool.length) return;
+    const pan = hrtfPool[Math.floor(now * 10) % hrtfPool.length];
+    if (pan && pan.positionX) {
+        pan.positionX.setValueAtTime(x, now);
+        pan.positionY.setValueAtTime(y, now);
+        pan.positionZ.setValueAtTime(z, now);
+    }
+    const freq = material === 'rubber' ? 190 : material === 'plastic' ? 680 : material === 'glass' ? 3200 : 980;
+    const q = material === 'glass' ? 2.4 : 0.9;
+    burst('bandpass', freq, q, 0.045 + s * 0.05, 0.055 * s, now, pan || hitBus);
+}
+
+/**
+ * Tactile procedural UI micro-interaction foley (#18 / #20):
+ * 'hover' | 'press' | 'swatch' | 'spray' | 'error'.
+ */
+export function uiClick(kind = 'press') {
+    if (!ctx || hidden) return;
+    const now = ctx.currentTime;
+    if (kind === 'hover') {
+        beep(1480, 0.018, 'sine', 0.018);
+    } else if (kind === 'swatch') {
+        beep(880, 0.032, 'triangle', 0.04);
+    } else if (kind === 'spray') {
+        burst('bandpass', 3600, 0.7, 0.16, 0.055, now, master || bus);
+    } else if (kind === 'error') {
+        beep(210, 0.09, 'sawtooth', 0.045);
+    } else {
+        beep(640, 0.028, 'triangle', 0.042);
+    }
 }

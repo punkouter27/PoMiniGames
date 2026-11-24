@@ -31,43 +31,22 @@ public static class PoRacerCatalog
     public static readonly IReadOnlyList<string> Liveries = ["stripe", "dual", "carbon", "neon"];
     public static readonly IReadOnlyList<string> Difficulties = ["easy", "medium", "hard"];
 
-    // Medal laps, measured with boost pads, the drift payout and impact damage in play
-    // (a keyboard-only scripted driver through the real page, time trial): clean laps come out at
-    // 14.2-14.8 s on the oval, 17.3 on the figure-8 with four wall touches, 16.6-16.8 on the rally
-    // stage. Gold is a mostly clean lap on an inside line, silver a tidy one, bronze a lap with a few hits.
+    // Consolidated Grand Prix circuit combining all three signature styles:
+    // stadium front straight & sweeper, desert wide hairpin with sand run-off, and neon S-chicane.
     public static IReadOnlyList<PoRacerTrackInfo> Tracks { get; } = Array.AsReadOnly(new[]
     {
-        // Classic stadium oval — two long straights joined by tight 180° hairpins.
-        new PoRacerTrackInfo("circuit", "Grand Prix Circuit", "Classic asphalt with sweeping bends and high grip.",
-            Gold: 15.0, Silver: 17.5, Bronze: 22.0,
-            Knots: [(0, 0), (400, 0), (800, 0), (1200, 0), (1500, 80), (1650, 280), (1650, 500), (1500, 700),
-                (1200, 780), (800, 780), (400, 780), (0, 780), (-300, 700), (-450, 500), (-450, 280), (-300, 80)]),
-        // Figure-8 — a wide fast loop and a tight technical one sharing the crossing at (800, 400).
-        new PoRacerTrackInfo("neonskyline", "Neon Skyline", "Neon city streets with fast chicanes.",
-            Gold: 17.0, Silver: 20.5, Bronze: 26.5,
-            Knots: [(800, 400), (1000, 150), (1400, -50), (1800, 100), (1950, 400), (1800, 700), (1400, 850), (1000, 700),
-                (800, 400), (600, 600), (300, 800), (50, 650), (-50, 400), (50, 150), (300, 0), (600, 150)]),
-        // L-shaped rally stage — a long front straight, a sweeper, a hairpin and a chicane.
-        new PoRacerTrackInfo("desertdustway", "Desert Dustway", "Wide hairpins and loose sand that rewards careful drifting.",
-            Gold: 17.0, Silver: 21.5, Bronze: 27.5,
-            Knots: [(0, 0), (700, 0), (1400, 0), (1750, 200), (1850, 500), (1750, 800), (1200, 950), (600, 950),
-                (100, 950), (-150, 800), (-300, 600), (-100, 400), (-300, 200), (-200, 50)]),
-        // Switchbacks: four legs joined by hairpins, and a main straight along y = 0 that cuts
-        // across all four of them at right angles (x = -480, -160, 160, 480). Seven turns and
-        // four crossings. The knots are 130 units apart along that path, so the spline keeps
-        // every hairpin's radius at about half the track width or more. The centerline flat out
-        // is 21.1 s, which no car can do through the hairpins; the scripted keyboard driver's
-        // time-trial lap through the real page is 29.2 s. Gold is a lap that takes the hairpins
-        // tighter than that driver does, silver is about its lap with a few hits.
-        new PoRacerTrackInfo("crossfire", "Crossfire Switchbacks", "Seven tight turns, and a main straight that cuts across all four legs.",
-            Gold: 28.0, Silver: 32.0, Bronze: 40.0,
-            Knots: [(-710, 0), (-580, 0), (-450, 0), (-320, 0), (-190, 0), (-60, 0), (70, 0), (200, 0), (330, 0), (460, 0),
-                (590, 0), (720, 0), (850, -1), (956, -68), (973, -196), (888, -288), (760, -300), (630, -300),
-                (515, -240), (480, -120), (480, 10), (480, 140), (479, 270), (415, 379), (293, 408), (184, 335),
-                (160, 210), (160, 80), (160, -50), (160, -180), (149, -308), (61, -398), (-65, -396), (-152, -299),
-                (-160, -170), (-160, -40), (-160, 90), (-160, 220), (-190, 343), (-298, 408), (-419, 376), (-479, 265),
-                (-480, 130), (-480, 0), (-480, -130), (-522, -248), (-635, -300), (-765, -300), (-897, -284),
-                (-975, -187), (-953, -64), (-845, -1)]),
+        new PoRacerTrackInfo("circuit", "Grand Prix Circuit", "Stadium straights, desert sand hairpin, and fast neon S-chicanes in one circuit.",
+            Gold: 17.5, Silver: 21.0, Bronze: 26.5,
+            Knots: [
+                // Sector 1: Grand Prix stadium straight & fast sweeper
+                (0, 0), (450, 0), (900, 0), (1350, 0), (1720, 120), (1880, 360),
+                // Sector 2: Desert Dustway wide hairpin (sand run-off on outer apex)
+                (1850, 680), (1550, 920), (1120, 960),
+                // Sector 3: Neon Skyline fast technical S-chicane
+                (740, 820), (440, 600), (120, 820), (-220, 860),
+                // Sector 4: Stadium return sweeper back to start/finish
+                (-480, 640), (-520, 320), (-340, 80),
+            ]),
     });
 
     public static PoRacerTrackInfo GetTrack(string? id) =>

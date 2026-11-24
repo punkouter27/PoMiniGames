@@ -31,14 +31,8 @@
                            Title="@TitleContent"
                            Objective="@IntroObjective"
                            Controls="@ControlsContent"
-                           HowToPlay="@(_mode == RaceMode.Online ? null : TipsContent)"
-                           Options="@(_mode == RaceMode.Solo ? SoloSetup : StartError)"
+                           Options="@StartError"
                            Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                           Wide="@(_mode == RaceMode.Solo)"
-                           Maps="@(_mode == RaceMode.Solo ? TrackMaps : null)"
-                           MapLabel="Track"
-                           MapId="@_selectedTrackId"
-                           MapIdChanged="SelectTrack"
                            OnStart="OnIntroStartAsync" />
             </div>
         }
@@ -50,31 +44,12 @@
                     {
                         <OnlineLobby TPlayer="PoRacerLobbyPlayer"
                                      HubPath="poracer/lobby-hub"
-                                     Hint="First in hosts and picks the track; bots fill open seats."
+                                     Hint="First in hosts; bots fill open seats."
                                      MaxPlayersHint="PoRacerCatalog.CarCount"
                                      StartLabel="Start race"
                                      OnClient="OnLobbyClient"
                                      OnGameStarted="OnLobbyStarted"
-                                     OnLeave="LeaveLobby">
-                            <Picker>
-                                @if (_lobby?.IsHost == true)
-                                {
-                                    <label class="lobby-inline-opt">
-                                        <span>Track</span>
-                                        <select aria-label="Track" value="@LobbyTrackId" @onchange="@(e => PickLobbyTrackAsync(e.Value?.ToString() ?? PoRacerCatalog.DefaultTrackId))">
-                                            @foreach (var t in PoRacerCatalog.Tracks)
-                                            {
-                                                <option value="@t.Id">@t.Name</option>
-                                            }
-                                        </select>
-                                    </label>
-                                }
-                                else
-                                {
-                                    <p class="lobby__hint">Track: @(PoRacerCatalog.Tracks.FirstOrDefault(t => t.Id == LobbyTrackId)?.Name ?? LobbyTrackId)</p>
-                                }
-                            </Picker>
-                        </OnlineLobby>
+                                     OnLeave="LeaveLobby" />
                     }
                     else
                     {
@@ -149,48 +124,6 @@
 
     private RenderFragment ControlsContent => @<PoRacerControls />;
 
-    // The racing craft, behind the start card's How to play tab (the card's controls hide it).
-    private static RenderFragment TipsContent => @<ul>
-        <li>Hold Drift through a bend and let go for a boost.</li>
-        <li>Tuck in behind a car for a tow; arrows on the road are boost pads.</li>
-        <li>Each track has its own weather for the day. Rain and snow mean less grip: brake earlier.</li>
-        <li>Rivals drive in character: bruisers lean on you, late brakers dive in, cautious ones lift.</li>
-    </ul>;
-
-    // The track: the start card's dropdown beside OK (owner rule), your best lap beside each name.
-    private IReadOnlyList<IntroMap> TrackMaps => [.. PoRacerCatalog.Tracks.Select(t =>
-        new IntroMap(t.Id, _bests.TryGetValue(t.Id, out var best) && best > 0 ? $"{t.Name} · best {best:0.00}s" : t.Name))];
-
-    // The solo race's choices, in the card's Options slot. .racer-card keeps them on the
-    // Racer palette (the track cards and paint chips are drawn for a dark panel).
-    private RenderFragment SoloSetup => @<div class="racer-card racer-setup">
-        <div class="racer-options">
-            <div class="racer-chips" role="radiogroup" aria-label="Race">
-                <span class="racer-chips-label">Race</span>
-                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />@(PoRacerCatalog.SoloCarCount - 1) rivals</label>
-                <label><input type="radio" name="poracer-mode" checked="@_trial" @onchange="() => SetTrial(true)" />Time trial</label>
-            </div>
-            @if (!_trial)
-            {
-                <div class="racer-chips" role="radiogroup" aria-label="Rival pace">
-                    <span class="racer-chips-label">Pace</span>
-                    @foreach (var tier in PoRacerCatalog.Difficulties)
-                    {
-                        <label><input type="radio" name="poracer-pace" checked="@(_difficulty == tier)" @onchange="() => SetDifficulty(tier)" />@(char.ToUpperInvariant(tier[0]) + tier[1..])</label>
-                    }
-                </div>
-            }
-        </div>
-        <details>
-            <summary>Car paint and livery</summary>
-            <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
-        </details>
-        <div class="racer-actions">
-            <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.SoloCarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
-        </div>
-        <InlineError Message="@_error" />
-    </div>;
-
-    // Online and demo have nothing to choose on the card; it only carries a failed start.
+    // Online, solo and demo have nothing to choose on the card; it only carries a failed start.
     private RenderFragment? StartError => _error is null ? null : @<InlineError Message="@_error" />;
 }

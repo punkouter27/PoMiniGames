@@ -753,11 +753,32 @@ class CarHandle {
             const k = 1 - Math.exp(-dt * 8);
             const steerTarget = Math.max(-0.45, Math.min(0.45, yawRate * 0.35 * (speed > 0.5 ? 1 : 0)));
             this.steer += (steerTarget - this.steer) * k;
-            this.roll += (Math.max(-0.07, Math.min(0.07, -yawRate * speed * 0.004)) - this.roll) * k;
-            this.pitch += (Math.max(-0.05, Math.min(0.05, accel * 0.0028)) - this.pitch) * k;
+            this.roll += (Math.max(-0.075, Math.min(0.075, -yawRate * speed * 0.0044)) - this.roll) * k;
+            this.pitch += (Math.max(-0.055, Math.min(0.055, accel * 0.0031)) - this.pitch) * k;
             const brake = accel < -3 ? 1 : 0;
             if (brake !== this.braking) { this.braking = brake; this.applyLights(); }
             this.spin -= speed * dt / WHEEL_R;
+
+            // 4-corner visual suspension spring-damper solver (#6): per-wheel load transfer,
+            // kerb/sausage hop excitation, and damaged-corner sag.
+            const latLoad = Math.max(-1, Math.min(1, yawRate * speed * 0.045));
+            const longLoad = Math.max(-1, Math.min(1, accel * 0.055));
+            const surf = Number(snap.surface) || 0;
+            const kerbHit = (surf === 1 || surf === 2) && speed > 1.5 ? (surf === 2 ? 0.085 : 0.032) : 0;
+            const suspBase = Math.max(-0.1, Math.min(0.1, Number(snap.susp) || 0)) * 0.11;
+            const tSec = now * 0.001;
+            for (let wi = 0; wi < this.wheels.length; wi++) {
+                const w = this.wheels[wi];
+                if (w.baseY === undefined) { w.baseY = w.pivot.position.y; w.comp = 0; w.compV = 0; }
+                const sideSign = w.pivot.position.z > 0 ? 1 : -1;
+                const endSign = w.front ? 1 : -1;
+                const bump = kerbHit > 0 ? Math.sin(tSec * (28 + speed * 2.2) + wi * 1.9) * kerbHit : 0;
+                const targetComp = suspBase + (-longLoad * endSign * 0.045) + (latLoad * sideSign * 0.04) + bump;
+                const fSpring = (targetComp - w.comp) * 95 - w.compV * 14;
+                w.compV += fSpring * dt;
+                w.comp = Math.max(-0.11, Math.min(0.11, w.comp + w.compV * dt));
+                w.pivot.position.y = w.baseY + w.comp;
+            }
         }
         this.last = { t: now, h: snap.heading, v: speed };
         // A crushed corner sits low: the body sags onto whatever is bent under it (+ x roll

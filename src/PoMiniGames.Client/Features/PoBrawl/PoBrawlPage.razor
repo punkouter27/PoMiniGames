@@ -77,13 +77,6 @@
                             Below="@HudBelow" />
             }
 
-            @* Touch players have no Esc or P: the pause button (the CSS hides it for a mouse). *@
-            @if (PauseAvailable && !_paused)
-            {
-                <button type="button" class="pb-pause-btn" aria-label="Pause" title="Pause (Esc or P)"
-                        @onmousedown:preventDefault="true" @onclick="PauseAsync">⏸</button>
-            }
-
             @* Online: joining, and anything the network is doing to the fight. *@
             @if (_mode == "online" && !_netMissing && !_netConnectFailed && (!_everJoined || NetNotice is not null))
             {
@@ -127,24 +120,6 @@
                 <p>It already ended, or it never started.</p>
                 <a class="pb-net-btn" href="/pobrawl/multi">Back to the lobby</a>
             </div>
-        }
-
-        @* Paused (1P, training, 2P): the engine froze the fight; it reports every change through
-           OnPauseChanged, its own Esc / P keys and the auto-pause on a hidden tab included. *@
-        @if (PauseAvailable && _paused)
-        {
-            @* data-pb-pause: the engine leaves Escape alone under any other modal, but this one
-               it closes with the same key (game.js _onPauseKey) — so the page handles no keys. *@
-            <GamePauseDialog Class="pb-pause" LabelledBy="pb-pause-title" OnResume="ResumeAsync" data-pb-pause>
-                <h2 id="pb-pause-title" class="pb-pause-title">Paused</h2>
-                <div class="pb-pause-actions">
-                    <button type="button" class="pb-pause-act pb-pause-act--go" @ref="_resumeButton"
-                            @onclick="ResumeAsync">▶ Resume</button>
-                    <button type="button" class="pb-pause-act" @onclick="RestartFightAsync">↺ Restart fight</button>
-                    <button type="button" class="pb-pause-act" @onclick="QuitFight"><span class="material-symbols-outlined" aria-hidden="true">close</span> Quit</button>
-                </div>
-                <p class="pb-pause-hint">Esc or P resumes</p>
-            </GamePauseDialog>
         }
 
         @* Training (1P, entered from the intro card's "Training first"). mousedown:preventDefault

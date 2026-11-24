@@ -119,12 +119,34 @@ export function createRootBody(world, mats, initialPos) {
     position: new CANNON.Vec3(initialPos.x, 0.9, initialPos.z),
     type: CANNON.Body.KINEMATIC,
   });
+  // Lower shin/foot sphere reaching down to the canvas (y = 0.04) so standing
+  // fighters physically shove active KO ragdolls instead of walking through them.
+  body.addShape(new CANNON.Sphere(0.34), new CANNON.Vec3(0, -0.52, 0));
   body.collisionFilterGroup = G_ROOT;
   // Ragdolls: the standing winner shoves the KO'd body aside. Props: a
   // standing fighter nudges the corner crates as a fallback to the explicit
   // shove impulses props.js applies.
   body.collisionFilterMask = G_ROOT | G_RAGDOLL | G_PROP;
   body.userData = { kind: 'rigRoot' };
+  world.addBody(body);
+  return body;
+}
+
+// Lightweight kinematic proxy for a retired FFA corpse so newly falling ragdolls
+// and crates collide with and stack on top of bodies already on the mat.
+export function createRetiredBody(world, mats, rootPos, parts) {
+  const body = new CANNON.Body({
+    mass: 0,
+    material: mats.ragdoll,
+    position: new CANNON.Vec3(rootPos.x, rootPos.y, rootPos.z),
+    type: CANNON.Body.KINEMATIC,
+  });
+  for (const part of parts) {
+    body.addShape(new CANNON.Sphere(part.radius), new CANNON.Vec3(part.ox, part.oy, part.oz));
+  }
+  body.collisionFilterGroup = G_RAGDOLL;
+  body.collisionFilterMask = G_RAGDOLL | G_PROP;
+  body.userData = { kind: 'retiredBody' };
   world.addBody(body);
   return body;
 }
@@ -176,11 +198,11 @@ export function buildArenaColliders(world, mats) {
   return bodies;
 }
 
-// Drive the kinematic rig root to the fighter's XZ. Y is pinned to 0.9 (the
-// rig's mid-body height) so the sphere sits at the center of mass.
+// Drive the kinematic rig root to the fighter's world position. Y tracks p.y + 0.9
+// so a fighter stepping onto a downed body lifts their collider with them.
 export function syncRigRoot(rigRoot, fighter) {
   const p = fighter.rig.root.position;
   rigRoot.position.x = p.x;
   rigRoot.position.z = p.z;
-  rigRoot.position.y = 0.9;
+  rigRoot.position.y = p.y + 0.9;
 }

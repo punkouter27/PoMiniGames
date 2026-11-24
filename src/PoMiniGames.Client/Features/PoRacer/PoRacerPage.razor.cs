@@ -66,8 +66,6 @@ public partial class PoRacerPage
     /// <summary>Only a solo race can stop its clock; a shared one keeps running under the menu.</summary>
     private bool CanPause => !IsDemo && !_raceOnline;
     private bool IsDemo => _mode == RaceMode.Demo;
-    private string LobbyTrackId =>
-        _lobby?.State?.Players.FirstOrDefault(p => p.ConnectionId == _lobby.State.HostConnectionId)?.TrackId ?? PoRacerCatalog.DefaultTrackId;
 
     protected override void OnInitialized()
     {
@@ -165,8 +163,6 @@ public partial class PoRacerPage
     private void OnLobbyStarted(OnlineLobbyStart start) =>
         Nav.NavigateTo($"/poracer/multi?code={Uri.EscapeDataString(start.MatchCode)}");
 
-    private Task PickLobbyTrackAsync(string trackId) => _lobby?.SendAsync("PickTrack", trackId) ?? Task.CompletedTask;
-
     private void LeaveLobby() => Nav.NavigateTo("/poracer/1player");
 
     // ── Start card ────────────────────────────────────────────────────────
@@ -189,15 +185,6 @@ public partial class PoRacerPage
     {
         _introDone = false;
     }
-
-    private void SelectTrack(string trackId)
-    {
-        PoRacerPreferences.SaveTrack(_selectedTrackId = PoRacerCatalog.GetTrack(trackId).Id);
-    }
-
-    private void SetTrial(bool trial) => PoRacerPreferences.SaveTrial(_trial = trial);
-
-    private void SetDifficulty(string tier) => PoRacerPreferences.SaveDifficulty(_difficulty = tier);
 
     private async Task StartRaceAsync()
     {

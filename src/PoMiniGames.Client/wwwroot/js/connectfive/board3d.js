@@ -367,12 +367,8 @@ export async function mount(board, api) {
         for (const i of fresh) spawn(i, state[i] === 2 ? 'yellow' : 'red', instant, bulk);
 
         const g = snap.ghost;
-        ghostWanted = g && (hoverCapable() || document.activeElement === board) ? g : null;
-        if (ghostWanted) {
-            ghost.material = ghostMats[ghostWanted.color];
-            ghost.position.set(ghostWanted.col - 4, 4 - ghostWanted.row, 0);
-        }
-        ghost.visible = !!ghostWanted;
+        ghostWanted = null;
+        ghost.visible = false;
         targetCol = g ? g.col : snap.cursor;
         dirty = true;
     }

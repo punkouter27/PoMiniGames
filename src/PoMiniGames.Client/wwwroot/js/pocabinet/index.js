@@ -96,6 +96,7 @@ const api = {
     countdownBeep: audio.countdownBeep,
     lapChime: audio.lapChime,
     fanfare: audio.fanfare,
+    uiClick: audio.uiClick,
 
     mountMinimap,
     unmountMinimap,

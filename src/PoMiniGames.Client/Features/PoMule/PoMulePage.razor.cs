@@ -56,11 +56,34 @@ public partial class PoMulePage : IAsyncDisposable
     private bool _finished;
     private bool _plotsDirty;
     private bool _disposed;
+    private bool _confirmQuit;
     private int _demoSpeed = 4;
     private Phase _shownPhase;
     private long _lastRender;
 
-    protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
+    private string PlayerLabel => string.IsNullOrWhiteSpace(_playerName) ? "You" : _playerName.Trim();
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        PlayerNameService.StateChanged += OnPlayerIdentityChanged;
+    }
+
+    private void OnPlayerIdentityChanged()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(async () =>
+        {
+            var next = PlayerNameService.GetPlayerName();
+            if (string.Equals(next, _playerName, StringComparison.Ordinal)) return;
+            _playerName = next;
+            if (_stage == Stage.Intro && !_demo)
+            {
+                _saved = await Saves.LoadAsync(_playerName);
+            }
+            StateHasChanged();
+        });
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -81,9 +104,11 @@ public partial class PoMulePage : IAsyncDisposable
     {
         try
         {
+            await PlayerNameService.Initialized;
+            _playerName = PlayerNameService.GetPlayerName();
             if (!await JS.InvokeAsync<bool>("loadEngine", "pomule")) throw new InvalidOperationException("engine");
             _radzenReady = await JS.InvokeAsync<bool>("PoMule.ensureRadzen");
-            _saved = _demo ? null : await Saves.LoadAsync();
+            _saved = _demo ? null : await Saves.LoadAsync(_playerName);
             _stage = Stage.Intro;
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException)
@@ -104,30 +129,61 @@ public partial class PoMulePage : IAsyncDisposable
         await StopEngineAsync();
         _match = null;
         _finished = false;
+        _confirmQuit = false;
         _outcome = GameResult.InProgress;
-        _saved = _demo ? null : await Saves.LoadAsync();
+        _playerName = PlayerNameService.GetPlayerName();
+        _saved = _demo ? null : await Saves.LoadAsync(_playerName);
         _stage = Stage.Intro;
     }
 
     private Task StartNewAsync() =>
         BeginAsync(PoMuleMatch.New((ulong)Random.Shared.NextInt64(1, long.MaxValue), _demo ? null : _species, fast: _demo, classic: _classic && !_demo));
 
-    // The start card's OK: the saved match when "Continue" is ticked (the default), else a new one.
-    private Task StartAsync() => _resume && _saved is { } saved ? BeginAsync(new PoMuleMatch(saved)) : StartNewAsync();
+    // Always continue the saved match for the current initials until the player explicitly quits and starts a new game.
+    private Task StartAsync() => _saved is { } saved ? BeginAsync(new PoMuleMatch(saved)) : StartNewAsync();
 
-    private bool _resume = true;
+    /// <summary>A saved match keeps its species, so the picker only shows when no match is in progress for these initials.</summary>
+    private bool PickingSpecies => _saved is null;
 
-    /// <summary>A saved match keeps its species, so the picker only shows when a new one is being started.</summary>
-    private bool PickingSpecies => _saved is null || !_resume;
+    private void RequestQuit()
+    {
+        _confirmQuit = true;
+        _hud?.Refresh();
+    }
+
+    private void CancelQuit()
+    {
+        _confirmQuit = false;
+        _hud?.Refresh();
+    }
+
+    private async Task QuitAndStartNewAsync()
+    {
+        _confirmQuit = false;
+        await Saves.ClearAsync(_playerName);
+        await StopEngineAsync();
+        _match = null;
+        _saved = null;
+        _finished = false;
+        _outcome = GameResult.InProgress;
+        _stage = Stage.Intro;
+        StateHasChanged();
+    }
 
     private async Task BeginAsync(PoMuleMatch match)
     {
         _match = match;
         _saved = null;
         _finished = false;
+        _confirmQuit = false;
         _outcome = GameResult.InProgress;
         _shownPhase = match.State.Phase;
-        if (!_demo) match.State.Players[0].Name = string.IsNullOrWhiteSpace(_playerName) ? "You" : _playerName;
+        if (!_demo)
+        {
+            match.State.Players[0].Name = PlayerLabel;
+            // Persist immediately so even a Month 1 reload continues for these initials until explicitly quit.
+            _ = Saves.SaveAsync(match.State, _playerName);
+        }
         _rows = PoMuleUi.Rows(match.State);
         _stage = Stage.Playing;
         StateHasChanged();
@@ -168,7 +224,7 @@ public partial class PoMulePage : IAsyncDisposable
         }
         else if (monthStarted && !_demo)
         {
-            _ = Saves.SaveAsync(state);
+            _ = Saves.SaveAsync(state, _playerName);
         }
 
         var phaseChanged = state.Phase != _shownPhase;
@@ -430,7 +486,7 @@ public partial class PoMulePage : IAsyncDisposable
             return;
         }
 
-        await Saves.ClearAsync();
+        await Saves.ClearAsync(_playerName);
         var mine = _rows.First(r => r.Seat == 0);
         _outcome = mine.Rank == 1 ? GameResult.Win : GameResult.Loss;
         _endLine = (mine.Rank == 1 ? "You are First Founder" : $"You finished {Ordinal(mine.Rank)} of {PoMuleTuning.Seats}")
@@ -471,6 +527,7 @@ public partial class PoMulePage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        PlayerNameService.StateChanged -= OnPlayerIdentityChanged;
         // A match abandoned mid-month resumes from the last month start; nothing to save here.
         await StopEngineAsync();
         try { await JS.InvokeVoidAsync("PoMule.removeRadzen"); }

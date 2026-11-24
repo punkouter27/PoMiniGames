@@ -35,10 +35,10 @@
 // Render only: race.js hands in the surface a car is on; nothing here writes the sim.
 
 import * as THREE from './three.js';
-import { noise } from './materials.js';
+import { noise, sunDirUniform } from './materials.js';
 import {
-    uniform, varying, texture, reference, positionGeometry, normalGeometry, positionView, normalView, materialColor, vec2, vec3, vec4, float,
-    length, dot, floor, fract, step, smoothstep, clamp, mix, max, min, sqrt, abs, pow, cos, log2, normalize, fwidth, select, mod,
+    uniform, varying, texture, reference, positionGeometry, normalGeometry, positionView, normalView, materialColor, cameraViewMatrix, vec2, vec3, vec4, float,
+    length, dot, floor, fract, step, smoothstep, clamp, mix, max, min, sqrt, abs, pow, cos, sin, log2, normalize, fwidth, select, mod,
 } from 'three-eco/tsl';
 import { SURF_GRASS, SURF_GRAVEL, SURF_RUNOFF } from './physics.js';
 import { fnv1a, addHook } from './util.js';
@@ -184,7 +184,7 @@ export function livingPaint(material, kind, paint) {
         const pcSeed = uCar.y;
         const so = vec2(pcSeed.mul(0.37), pcSeed.mul(0.71));
         // Triplanar fbm weighted by the face's normal (an explicit LOD from the position's derivatives).
-        let pcW = pcN.mul(pcN); pcW = pcW.mul(pcW); pcW = pcW.div(pcW.x.add(pcW.y).add(pcW.z));
+        let pcW = pcN.mul(pcN); pcW = pcW.mul(pcW); pcW = pcW.div(max(pcW.x.add(pcW.y).add(pcW.z), 1e-4));
         const pcFw = fwidth(pcP).mul(70.4);
         const pcLod = log2(max(max(pcFw.x, pcFw.y), max(pcFw.z, 1e-4)));
         const nz = nzAt(pcP.xy.mul(0.55).add(so), pcLod).mul(pcW.z).add(nzAt(pcP.zy.mul(0.55).add(so.yx), pcLod).mul(pcW.x))
@@ -357,10 +357,24 @@ export function livingPaint(material, kind, paint) {
                     e2 = e2.add(disp.mul(rim).mul(float(0.14).sub(wet.mul(0.07))));
                 }
                 if (isPaint) {
-                    // Subtle wrapped clearcoat/toy-enamel scatter along steep silhouette rims.
+                    // Subtle wrapped clearcoat/toy-enamel scatter along steep silhouette rims,
+                    // plus dual-lobe metallic micro-flake sparkle and bare-metal brushed glint (high tier).
                     const viewV = normalize(positionView.negate());
-                    const wrap = pow(float(1).sub(clamp(abs(dot(viewV, normalView)), 0, 1)), 2.5);
+                    const nV = normalize(normalView);
+                    const sunV = normalize(cameraViewMatrix.transformDirection(sunDirUniform));
+                    const halfV = normalize(viewV.add(sunV));
+                    const ndh = clamp(dot(nV, halfV), 0, 1);
+                    const wrap = pow(float(1).sub(clamp(abs(dot(viewV, nV)), 0, 1)), 2.5);
                     e2 = e2.add(materialColor.rgb.mul(wrap).mul(float(0.045).mul(float(1).sub(dirt))).mul(step(0.5, quality)));
+                    // High-frequency metallic flake cells in object space (fade out when sub-pixel).
+                    const fCell = floor(pcP.mul(48));
+                    const fHash = fract(sin(dot(fCell, vec3(127.1, 311.7, 74.7)).add(pcSeed)).mul(43758.5453));
+                    const fSpec = pow(ndh, float(28).add(fHash.mul(52))).mul(smoothstep(0.72, 0.98, fHash));
+                    const fClean = float(1).sub(dirt).mul(float(1).sub(max(primer, bare).mul(scarOn))).mul(step(1.5, quality));
+                    e2 = e2.add(mix(materialColor.rgb, vec3(1, 0.97, 0.92), 0.65).mul(fSpec).mul(fClean).mul(0.55));
+                    // Bare-metal brushed scrape glint along damaged panels.
+                    const glint = pow(ndh, 18).mul(scr.mul(0.6).add(0.4)).mul(bare).mul(scarOn);
+                    e2 = e2.add(vec3(0.85, 0.88, 0.94).mul(glint).mul(0.45));
                 }
                 return e2;
             },

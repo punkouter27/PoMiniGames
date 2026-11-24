@@ -78,6 +78,21 @@
                 <RadzenButton Text="Next month" ButtonStyle="ButtonStyle.Warning" autofocus
                               Click="@(_ => OnContinue.InvokeAsync())" />
                 <span class="pm-standings-hint">or press Space</span>
+                @if (OnQuit.HasDelegate)
+                {
+                    @if (_confirmQuit)
+                    {
+                        <RadzenButton Text="Confirm new game" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small"
+                                      Click="@(_ => OnQuit.InvokeAsync())" />
+                        <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
+                                      Click="@(_ => _confirmQuit = false)" />
+                    }
+                    else
+                    {
+                        <RadzenButton Text="Quit &amp; new game" ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
+                                      Click="@(_ => _confirmQuit = true)" />
+                    }
+                }
             </div>
         }
     </RadzenCard>
@@ -89,9 +104,11 @@
     [Parameter] public bool Final { get; set; }
     [Parameter] public bool CanContinue { get; set; }
     [Parameter] public EventCallback OnContinue { get; set; }
+    [Parameter] public EventCallback OnQuit { get; set; }
 
     private ElementReference _dialog;
     private bool _narrow;
+    private bool _confirmQuit;
 
     // A human's match: the table blocks the board until they carry on.
     private bool Modal => CanContinue;

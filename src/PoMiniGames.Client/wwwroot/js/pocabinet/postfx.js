@@ -32,9 +32,9 @@
 // SCREEN UV: the pipeline's uv runs y down; the scene (fx.sun) speaks GL, y up. The graph works in
 // y-up `up` space like the GLSL did and flips once where it reads a texture.
 
-import { RenderPipeline, Vector3, Color } from './three.js';
+import { RenderPipeline, Vector3, Vector4, Color } from './three.js';
 import {
-    mat3, uniform, screenUV, vec2, vec3, vec4, float, mix, clamp, smoothstep, length, dot, fract, floor, sin, cos, abs, exp, max, min,
+    mat3, uniform, uniformArray, screenUV, vec2, vec3, vec4, float, mix, clamp, smoothstep, length, dot, fract, floor, sin, cos, abs, exp, max, min,
     atan, step, pow, select, renderOutput, screenSize, convertToTexture,
 } from 'three-eco/tsl';
 import { POST_LIB } from '../platform/3d/postAddons.js';
@@ -79,10 +79,16 @@ export class PostFx {
         // The values scene.js's fx bag writes each frame (same meaning as the GLSL uniforms).
         this.u = {
             time: uniform(0), speed: uniform(0), motion: uniform(1), rain: uniform(0), flash: uniform(0), slow: uniform(0),
-            bloom: uniform(0.7), exposure: uniform(1), threshold: uniform(1),
+            bloom: uniform(0.7), exposure: uniform(1), threshold: uniform(1), heat: uniform(0),
             // sun: x, y (screen uv, y up here), z = visibility; sunColor: linear rgb.
             sun: uniform(new Vector3()), sunColor: uniform(new Color(1, 1, 1)),
+            // Dynamic point-light accumulation (brake lights, backfire flashes, wreck fires, spark bursts):
+            // up to 8 screen-projected emitters: pos = (uvX, uvY, radius, intensity), col = (r, g, b, 0).
+            lightPos: uniformArray(Array.from({ length: 8 }, () => new Vector4(0, 0, 0.08, 0))),
+            lightCol: uniformArray(Array.from({ length: 8 }, () => new Vector4(1, 0.4, 0.15, 0))),
+            lightCount: uniform(0),
         };
+        this._projV = new Vector3();
     }
 
     /**
@@ -131,15 +137,16 @@ export class PostFx {
         const bloomNode = bloom(sceneTex, 1, 0.55, U.threshold);
         const bloomTex = bloomNode.getTextureNode();
         const aoTex = aoNode ? aoNode.getTextureNode() : null;
-        const out = this.composite(sceneTex, bloomTex, aoTex, SHAFT_TAPS[q] ?? 14);
+        const depthTex = stack.depthNode ? convertToTexture(stack.depthNode) : null;
+        const out = this.composite(sceneTex, bloomTex, aoTex, depthTex, SHAFT_TAPS[q] ?? 14);
         const pipeline = new RenderPipeline(this.renderer);
         pipeline.outputColorTransform = false;
         pipeline.outputNode = fxaa(renderOutput(out));
         this.pipeline = pipeline;
-        this.nodes = { scenePass, aoNode, bloomNode, sceneTex };
+        this.nodes = { scenePass, aoNode, bloomNode, sceneTex, depthTex };
     }
 
-    composite(sceneTex, bloomTex, aoTex, taps) {
+    composite(sceneTex, bloomTex, aoTex, depthTex, taps) {
         const U = this.u;
         const q = screenUV;
         const up = vec2(q.x, float(1).sub(q.y));
@@ -147,8 +154,8 @@ export class PostFx {
         const aspect = screenSize.x.div(screenSize.y);
         const asp = vec2(aspect, 1);
         const lit = (uv) => {
-            const c = sceneTex.sample(at(uv)).rgb;
-            return aoTex ? c.mul(mix(float(1), aoTex.sample(at(uv)).r, AO_STRENGTH)) : c;
+            const c = max(sceneTex.sample(at(uv)).rgb, vec3(0));
+            return aoTex ? c.mul(mix(float(1), clamp(max(aoTex.sample(at(uv)).r, float(0)), 0, 1), AO_STRENGTH)) : c;
         };
         const center = vec2(0.5, 0.5);
         const toC = up.sub(center);
@@ -187,18 +194,44 @@ export class PostFx {
         const rained = mix(col, dropCol, dm).mul(float(1).sub(dm.mul(float(1).sub(dm))));
         col = mix(col, rained, step(0.001, U.rain));
 
-        // ── Bloom + light shafts toward the sun ──
-        col = col.add(bloomTex.sample(at(up)).rgb.mul(U.bloom));
+        // ── Bloom + depth-occluded volumetric light shafts toward the sun ──
+        col = col.add(max(bloomTex.sample(at(up)).rgb, vec3(0)).mul(U.bloom));
         const sp = U.sun.xy, vis = U.sun.z;
         const dlt = sp.sub(up).div(taps);
         let shafts = vec3(0), p = up, decay = float(1);
         for (let i = 0; i < taps; i++) {
             p = p.add(dlt);
-            shafts = shafts.add(bloomTex.sample(at(p)).rgb.mul(decay));
+            const sampleUv = at(p);
+            const bSample = max(bloomTex.sample(sampleUv).rgb, vec3(0));
+            const skyMask = depthTex ? smoothstep(0.985, 0.9995, depthTex.sample(sampleUv).r) : float(1);
+            shafts = shafts.add(bSample.mul(mix(float(0.35), float(1.15), skyMask)).mul(decay));
             decay = decay.mul(0.95 ** (28 / taps));
         }
         const sunCol = U.sunColor;
-        col = col.add(shafts.div(taps).mul(sunCol).mul(vis).mul(0.9));
+        col = col.add(shafts.div(taps).mul(sunCol).mul(vis).mul(0.95));
+
+        // ── Clustered screen-space dynamic point-light accumulation (brakes, backfires, wreck fires, sparks) ──
+        let dynLight = vec3(0);
+        const wetBoost = float(1).add(U.rain.mul(0.65));
+        for (let i = 0; i < 8; i++) {
+            const lp = U.lightPos.element(i);
+            const lc = U.lightCol.element(i);
+            const lInt = lp.w.mul(step(float(i + 0.5), U.lightCount));
+            const ld = length(up.sub(lp.xy).mul(asp));
+            const rad = max(lp.z, float(0.015));
+            const att = float(1).div(float(1).add(ld.div(rad).mul(ld.div(rad)).mul(4.5)));
+            const core = exp(ld.div(rad).mul(-2.2));
+            dynLight = dynLight.add(lc.xyz.mul(att.mul(0.35).add(core.mul(0.65))).mul(lInt));
+        }
+        col = col.add(dynLight.mul(wetBoost));
+
+        // ── Subtle exhaust / wreck heat-haze shimmer (lower-center band when heat > 0) ──
+        const heatZone = smoothstep(0.45, 0.08, up.y).mul(smoothstep(0.36, 0.05, abs(up.x.sub(0.5)))).mul(U.heat).mul(U.motion);
+        const hWave = vec2(
+            sin(up.y.mul(58).sub(U.time.mul(16))).mul(0.0022),
+            cos(up.x.mul(44).add(U.time.mul(13))).mul(0.0014),
+        ).mul(heatZone);
+        col = mix(col, max(sceneTex.sample(at(up.add(hWave))).rgb, vec3(0)), clamp(heatZone.mul(0.55), 0, 0.55));
         const ds = up.sub(sp).mul(asp);
         const glare = exp(length(ds).mul(-7)).mul(0.35).add(exp(abs(ds.y).mul(-90)).mul(exp(abs(ds.x).mul(-3))).mul(0.12));
         let ghosts = float(0);
@@ -210,7 +243,8 @@ export class PostFx {
         col = col.add(sunCol.mul(glare.add(ghosts)).mul(vis));
 
         // ── Speed lines (after bloom so they stay crisp) ──
-        const dir = toC.mul(asp), len = length(dir), ang = atan(dir.y, dir.x);
+        // Guard atan2(0, 0) at the exact screen centre (undefined/NaN on D3D12/WGSL).
+        const dir = toC.mul(asp), len = length(dir), ang = select(len.greaterThan(1e-5), atan(dir.y, dir.x), float(0));
         const laneF = ang.mul(180 / Math.PI), lane = floor(laneF), lr = hash12(vec2(lane, 3.1));
         let streak = step(0.94, lr).mul(smoothstep(0.42, 0.9, len));
         const travel = fract(len.mul(1.1).sub(U.time.mul(float(1.6).add(lr.mul(2)))).add(lr.mul(7)));
@@ -242,8 +276,30 @@ export class PostFx {
         U.bloom.value = fx.bloom ?? 0.7;
         U.exposure.value = fx.exposure || 1;
         U.threshold.value = fx.bloomThreshold || 1.0;
+        U.heat.value = Math.min(1, Math.max(0, fx.heat || ((fx.speed || 0) * 0.35 + (fx.wreckNear || 0) * 0.7)));
         if (fx.sun) U.sun.value.set(fx.sun.x, 1 - fx.sun.y, fx.sun.v); else U.sun.value.set(0, 0, 0);
         if (fx.sunColor) U.sunColor.value.copy(fx.sunColor);
+        // Project up to 8 dynamic world-space point lights into screen-space UVs for TSL accumulation.
+        const lights = fx.lights;
+        let lCount = 0;
+        if (lights && lights.length && camera) {
+            const v = this._projV;
+            for (let i = 0; i < lights.length && lCount < 8; i++) {
+                const L = lights[i];
+                if (!L || !(L.intensity > 0.01)) continue;
+                v.set(L.x, L.y, L.z).project(camera);
+                if (v.z < -1 || v.z > 1) continue;
+                const uX = v.x * 0.5 + 0.5;
+                const uY = v.y * 0.5 + 0.5;
+                if (uX < -0.25 || uX > 1.25 || uY < -0.25 || uY > 1.25) continue;
+                const dist = Math.max(2, camera.position.distanceTo(new Vector3(L.x, L.y, L.z)));
+                const rad = Math.min(0.28, Math.max(0.025, (L.radius || 3.5) / dist));
+                U.lightPos.array[lCount].set(uX, uY, rad, Math.min(2.2, L.intensity * (10 / (dist + 6))));
+                U.lightCol.array[lCount].set(L.r ?? 1, L.g ?? 0.35, L.b ?? 0.12, 0);
+                lCount++;
+            }
+        }
+        U.lightCount.value = lCount;
         // Reflections only matter on the wet road; a dry race should not even bid for the pass.
         this.stack?.setReflections((fx.rain || 0) > 0);
         this.stack?.update();

@@ -10,26 +10,11 @@ public static class PoRacerTrackRegistry
     // sit, and the surface zones. The knots, names and medal laps are in the shared PoRacerCatalog.
     static PoRacerTrackRegistry()
     {
-        // The oval: one pad on each straight.
-        Register("circuit", trackWidth: 230, stepsPerKnot: 10, pads: (0.10, 0.60),
-            Zone("Main Tarmac", SurfaceKind.Asphalt, 600, 390, 2000, grip: 1.0));
-        // The figure-8: a pad on the fastest arc of each loop, well clear of the crossing.
-        Register("neonskyline", trackWidth: 210, stepsPerKnot: 12, pads: (0.16, 0.69),
-            Zone("Cyber Tarmac", SurfaceKind.Asphalt, 900, 400, 2500, grip: 1.0));
-        // The rally stage: pads on the front straight and the long back straight, sand in the
-        // outer hairpin run-off areas.
-        Register("desertdustway", trackWidth: 255, stepsPerKnot: 14, pads: (0.07, 0.46),
-            Zone("Dune Run-off East", SurfaceKind.Sand, 1850, 500, 260, grip: 0.65),
-            Zone("Dune Run-off West", SurfaceKind.Sand, -150, 800, 240, grip: 0.65));
-        // Crossfire is narrower than the other three: the four legs are 320 apart, and 180 leaves
-        // grass between them. Six steps per knot: the knots are 130 apart, so a node every 22
-        // units, about half the other tracks' spacing. The bots judge the bend ahead over a window
-        // counted in nodes, and here a hairpin is never far off: at the usual spacing that window
-        // always held one, and the whole field crawled round at its slowest corner speed (a 136 s
-        // race; this is 114 s). Pads: the middle of the main straight (between the second and
-        // third crossing) and the run down to the last hairpin.
-        Register("crossfire", trackWidth: 180, stepsPerKnot: 6, pads: (0.108, 0.90),
-            Zone("Yard Tarmac", SurfaceKind.Asphalt, 0, 0, 2000, grip: 1.0));
+        // Consolidated circuit: stadium tarmac + desert sand run-off at the east hairpin,
+        // with boost pads on the front straight and exiting the hairpin into the S-chicane.
+        Register("circuit", trackWidth: 230, stepsPerKnot: 12, pads: (0.08, 0.56),
+            Zone("Main Tarmac", SurfaceKind.Asphalt, 600, 420, 2200, grip: 1.0),
+            Zone("Dune Run-off East", SurfaceKind.Sand, 1860, 620, 240, grip: 0.65));
     }
 
     private static void Register(string id, double trackWidth, int stepsPerKnot, (double First, double Second) pads,

@@ -81,9 +81,25 @@
                 </div>
             }
 
+            @if (!_demo && !_finished)
+            {
+                <div class="pm-bar pm-bar--quit">
+                    @if (_confirmQuit)
+                    {
+                        <span class="pm-hint">Abandon match?</span>
+                        <RadzenButton Text="New game" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Click="@(_ => QuitAndStartNewAsync())" />
+                        <RadzenButton Text="Cancel" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Secondary" Click="@(_ => CancelQuit())" />
+                    }
+                    else
+                    {
+                        <RadzenButton Text="Quit &amp; new game" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Secondary" Click="@(_ => RequestQuit())" />
+                    }
+                </div>
+            }
+
             @if (state.Phase is Phase.Standings or Phase.Finished)
             {
-                <PoMuleStandings State="state" Rows="_rows" Final="@(state.Phase == Phase.Finished)" CanContinue="@(!_demo)" OnContinue="SkipStandings" />
+                <PoMuleStandings State="state" Rows="_rows" Final="@(state.Phase == Phase.Finished)" CanContinue="@(!_demo)" OnContinue="SkipStandings" OnQuit="QuitAndStartNewAsync" />
             }
 
             <div class="pm-rotate" role="status">Turn your phone sideways to play.</div>
@@ -109,14 +125,6 @@
     </ul>;
 
     private RenderFragment SpeciesPicker => @<div class="pm-species">
-        @* A saved match is a choice, not a second button: OK starts whichever is ticked. *@
-        @if (_saved is { } saved)
-        {
-            <div class="pm-continue" role="radiogroup" aria-label="Match">
-                <label><input type="radio" name="pomule-match" checked="@_resume" @onchange="() => _resume = true" /> Continue (month @saved.Month)</label>
-                <label><input type="radio" name="pomule-match" checked="@(!_resume)" @onchange="() => _resume = false" /> New match</label>
-            </div>
-        }
         @if (PickingSpecies)
         {
             <label class="pm-classic">
@@ -137,11 +145,12 @@
             @* A small screen shows the cards as name and cash only; the pick's trait is said once, here. *@
             <p class="pm-species-picked">@(_classic ? "No trait" : PoMuleSpecies.Get(_species).Trait)</p>
         }
-        else
+        else if (_saved is { } saved)
         {
-            @* A saved match keeps the species it started with, so a picker whose ticks did
-               nothing would only be a promise the card cannot keep. *@
-            <p class="pm-species-picked">Continuing with the species from your saved match.</p>
+            <div class="pm-continue">
+                <strong>Continuing Month @saved.Month (@PlayerLabel)</strong>
+            </div>
+            <p class="pm-species-picked">Resuming your saved match. Use Quit &amp; New Game in-match to start over.</p>
         }
     </div>;
 

@@ -6,6 +6,8 @@
 
 import * as THREE from './three.js';
 import { mountCar, unmountCar } from './cars.js';
+import { pulseUiShader } from './uishader.js';
+import { uiClick } from './audio.js';
 import { createStage } from '../platform/stage/stage.js';
 import { attachRenderer, configureRenderer } from '../platform/3d/renderer.js';
 
@@ -65,6 +67,8 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
     });
 
     let yaw = 0.58;
+    let yawVel = 0.55;
+    let wipeFlash = 0;
     let dragging = false;
     let lastX = 0;
     let disposed = false;
@@ -72,11 +76,14 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
     const onDown = (e) => {
         dragging = true;
         lastX = e.clientX;
+        yawVel = 0;
         canvas.setPointerCapture?.(e.pointerId);
     };
     const onMove = (e) => {
         if (!dragging) return;
-        yaw += (e.clientX - lastX) * 0.012;
+        const dx = (e.clientX - lastX) * 0.012;
+        yaw += dx;
+        yawVel = Math.max(-6, Math.min(6, dx * 48));
         lastX = e.clientX;
     };
     const onUp = (e) => {
@@ -89,7 +96,22 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
     const stage = createStage({
         kind: '3d', container: canvas, maxDt: 0.05, exclude: ['shake'],
         onFrame: (dt) => {
-            if (!dragging) yaw += dt * 0.55;
+            if (!dragging) {
+                yaw += yawVel * dt;
+                yawVel += (0.55 - yawVel) * (1 - Math.exp(-dt * 2.8));
+            }
+            if (wipeFlash > 0.002) {
+                wipeFlash *= Math.exp(-dt * 5.2);
+                rim.intensity = 1.65 + wipeFlash * 2.2;
+                plinthMat.opacity = 0.22 + wipeFlash * 0.48;
+                const sc = 1 + wipeFlash * 0.08;
+                plinth.scale.set(sc, sc, 1);
+            } else if (wipeFlash > 0) {
+                wipeFlash = 0;
+                rim.intensity = 1.65;
+                plinthMat.opacity = 0.22;
+                plinth.scale.set(1, 1, 1);
+            }
             car.group.rotation.y = yaw;
             car.livery?.tick(dt, 0, 0);
             renderer.render(scene, camera);
@@ -111,6 +133,10 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
             if (nextLivery !== undefined && nextLivery !== null) {
                 car.setLivery(Number(nextLivery) || 0);
             }
+            wipeFlash = 1;
+            yawVel = Math.max(yawVel, 1.8);
+            pulseUiShader(0.5, 0.5, 0.9);
+            uiClick('spray');
         },
         dispose() {
             if (disposed) return;

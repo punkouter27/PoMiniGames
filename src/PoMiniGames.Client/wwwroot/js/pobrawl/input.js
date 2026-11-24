@@ -43,12 +43,12 @@ export const LAYOUTS = {
   1: {
     left: 'KeyA', right: 'KeyD',
     depthAway: 'KeyW', depthToward: 'KeyS',
-    block: 'KeyR', punch: 'KeyF', kick: 'KeyG', grab: 'KeyT',
+    block: 'KeyR', punch: 'KeyF', kick: 'KeyG',
   },
   2: {
     left: 'ArrowLeft', right: 'ArrowRight',
     depthAway: 'ArrowUp', depthToward: 'ArrowDown',
-    block: 'Semicolon', punch: 'KeyK', kick: 'KeyL', grab: 'KeyO',
+    block: 'Semicolon', punch: 'KeyK', kick: 'KeyL',
   },
 };
 
@@ -102,7 +102,6 @@ export class KeyboardController {
       this.down.add(e.code);
       if (e.code === this.map.punch) this._pressAttack('punch');
       else if (e.code === this.map.kick) this._pressAttack('kick');
-      else if (e.code === this.map.grab) { this._pressAttack('punch'); this._pressAttack('kick'); }
       else if (e.code === this.map.block) this._pressBlock();
     };
     this._onUp = (e) => {
@@ -249,8 +248,7 @@ export function buildTouchControls(container, online) {
   const left = cluster(
     [mk(K.depthAway, '↺', 'Circle counter-clockwise', true), mk(K.depthToward, '↻', 'Circle clockwise', true)],
     [mk(K.left, '◀', 'Move left'), mk(K.right, '▶', 'Move right')]);
-  // The grab's own button: two thumbs on 👊 and 🦵 at once is not a phone move.
-  const guard = [mk(K.block, '🛡', 'Block (hold; twice from range to taunt)', true), mk(K.grab, '🤼', 'Grab', true)];
+  const guard = [mk(K.block, '🛡', 'Block (hold; twice from range to taunt)', true)];
   // Online has a special (full energy); the local modes fire theirs by themselves.
   if (online) guard.push(mk('KeyH', '⚡', 'Special', true));
   const right = cluster(guard,

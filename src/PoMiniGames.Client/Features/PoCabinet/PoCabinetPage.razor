@@ -44,7 +44,6 @@
                                Controls="@ControlsContent"
                                Options="@OptionsContent"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                               Wide="@(Mode == GameMode.OnePlayer)"
                                OnStart="StartRaceAsync" />
                 </div>
             }
@@ -309,20 +308,9 @@
         }
     </span>;
 
-    // The card's Options slot, in 1P: one tabbed sheet, Car / Settings, under the scan-detail
-    // choice. In a race the same panels are in the drawer, from the pause card. Otherwise only
-    // a failed start says so here.
-    private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
-        ? @<div class="pocabinet-start">
-            <PoCabinetPreRace Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
-                              Color="@_color" PaintChanged="OnPaintChanged"
-                              Livery="@_livery" LiveryChanged="OnLiveryChanged" />
-            @if (!string.IsNullOrEmpty(_status))
-            {
-                @StatusLine
-            }
-        </div>
-        : string.IsNullOrEmpty(_status) ? null : StatusLine;
+    // No settings on the intro modal: Cabinet uses its default settings, and only a failed start
+    // shows a status line here.
+    private RenderFragment? OptionsContent => string.IsNullOrEmpty(_status) ? null : StatusLine;
 
     private RenderFragment StatusLine => @<p class="pocabinet-status" role="alert">@_status</p>;
 

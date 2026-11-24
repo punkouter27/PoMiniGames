@@ -50,18 +50,28 @@ function skyMaterial(p, baseZenith) {
     const h = d.y;
     const up = pow(smoothstep(-0.02, 0.65, h), 0.65);
     const zen = mix(U.uZenith, vec3(dot(U.uZenith, vec3(0.33))).mul(1.4), U.uRain.mul(0.6));
-    let col = mix(U.uHorizon, zen, up);
+    // Physically inspired Rayleigh + Mie aerial perspective: optical air-mass thickens near the horizon
+    // and forward-scatters sunlight via a Henyey-Greenstein Mie lobe (g = 0.78).
+    const airMass = float(1).div(max(h, 0.03).add(0.14));
+    const rayleighTint = mix(vec3(1.0, 0.96, 0.90), vec3(0.74, 0.86, 1.04), up);
+    let col = mix(U.uHorizon, zen.mul(rayleighTint), up);
     const day = float(1).sub(U.uRain.mul(0.85));
     const s = max(dot(d, normalize(U.uSunDir)), 0);
+    const g = float(0.78);
+    const miePhase = float(1).sub(g.mul(g)).div(pow(float(1).add(g.mul(g)).sub(g.mul(2).mul(s)), 1.5).mul(12.566));
+    col = col.add(U.uSunColor.mul(miePhase.mul(0.28).mul(clamp(airMass.mul(0.35), 0.35, 2.2))).mul(day));
     col = col.add(U.uSunColor.mul(pow(s, float(1400).div(max(U.uSunSize, 0.01))).mul(5).add(pow(s, 14).mul(0.3))).mul(day).mul(step(0.01, U.uSunSize)));
-    col = col.add(U.uSunColor.mul(pow(s, 3)).mul(0.18).mul(float(1).sub(up)).mul(day));
-    // Clouds: fbm on a plane overhead.
-    const cp = d.xz.div(h.add(0.12)).mul(0.9).add(U.uTime.mul(vec2(0.011, 0.004)));
+    col = col.add(U.uSunColor.mul(pow(s, 3)).mul(0.22).mul(float(1).sub(up)).mul(day));
+    // Clouds: fbm on a plane overhead. Clamp h >= 0 so h + 0.12 never hits 0 (which divided by 0
+    // on the lower hemisphere / PMREM capture and injected NaN into the HDR buffer and bloom pyramid).
+    const cp = d.xz.div(max(h, 0).add(0.12)).mul(0.9).add(U.uTime.mul(vec2(0.011, 0.004)));
     const n = fbm(cp.mul(1.6));
     const cover = clamp(U.uCloud.add(U.uRain.mul(0.55)), 0, 0.95);
     const c = smoothstep(float(1).sub(cover), float(1).sub(cover).add(0.32), n).mul(smoothstep(0, 0.22, h)).mul(step(0, h));
-    let lit = mix(U.uCloudColor.mul(0.55), U.uCloudColor.mul(1.1), smoothstep(0.3, 1, n));
-    lit = lit.add(U.uSunColor.mul(pow(s, 6)).mul(0.4).mul(day));
+    let lit = mix(U.uCloudColor.mul(0.55), U.uCloudColor.mul(1.12), smoothstep(0.3, 1, n));
+    // Silver-lining forward scatter along thinner cloud edges toward the sun.
+    const edgeRim = smoothstep(0.2, 0.55, n).mul(smoothstep(0.92, 0.55, n));
+    lit = lit.add(U.uSunColor.mul(pow(s, 6).mul(0.45).add(pow(s, 18).mul(edgeRim).mul(0.9))).mul(day));
     lit = mix(lit, vec3(0.28, 0.3, 0.33), U.uRain.mul(0.7));
     col = mix(col, lit, c.mul(0.88));
     const m = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false });

@@ -58,6 +58,7 @@ import { wallFace } from './terrain.js';
 import { surfaceAt, SURF_GRAVEL, SURF_GRASS } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 import { loadRapier, RapierDebris } from './debris-rapier.js';
+import { debrisImpact } from './audio.js';
 import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
 import { placeProps, TYRE, CONE } from './props.js';
 
@@ -933,6 +934,15 @@ export function updateDebris(dt, race) {
             if (!engine(() => rapier.step(bodies))) {
                 for (const b of bodies) if (!b.asleep && b.sink < 0) stepBody(b, STEP);
                 collidePieces();
+            } else if (rapier?.impacts?.length) {
+                const cam = world?.scene?.camera?.position;
+                for (const ev of rapier.impacts) {
+                    if (cam) {
+                        const dx = ev.x - cam.x, dy = ev.y - cam.y, dz = ev.z - cam.z;
+                        if (dx * dx + dy * dy + dz * dz > 784) continue;   // 28 m distance gate
+                    }
+                    debrisImpact(ev.x, ev.y, ev.z, ev.strength, ev.material);
+                }
             }
             acc -= STEP;
             steps++;

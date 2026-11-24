@@ -13,16 +13,46 @@ namespace PoMiniGamesClient.Features.PoMule;
 /// </remarks>
 public sealed class PoMuleSaveStore(IBrowserStorage storage)
 {
-    private const string Key = "pomule.save.v1";
+    private const string LegacyKey = "pomule.save.v1";
 
-    /// <summary>The saved match, or null when there is none or it is from older rules.</summary>
-    public async Task<MatchState?> LoadAsync()
+    private static string KeyFor(string? initials)
     {
+        var clean = string.IsNullOrWhiteSpace(initials) ? "_" : initials.Trim().ToUpperInvariant();
+        return $"{LegacyKey}.{clean}";
+    }
+
+    /// <summary>The saved match for <paramref name="initials"/>, or null when there is none or it is finished.</summary>
+    public async Task<MatchState?> LoadAsync(string? initials)
+    {
+        var key = KeyFor(initials);
         try
         {
-            var state = PoMuleSave.FromJson(await storage.GetItemAsStringAsync(Key));
-            // A finished match has nothing left to continue.
-            return state is { Phase: not Phase.Finished } ? state : null;
+            var raw = await storage.GetItemAsStringAsync(key);
+            if (!string.IsNullOrEmpty(raw))
+            {
+                var state = PoMuleSave.FromJson(raw);
+                // A finished match has nothing left to continue.
+                return state is { Phase: not Phase.Finished } ? state : null;
+            }
+
+            // Migrate a legacy single-slot save if it belongs to these initials.
+            var legacyRaw = await storage.GetItemAsStringAsync(LegacyKey);
+            if (!string.IsNullOrEmpty(legacyRaw))
+            {
+                var legacy = PoMuleSave.FromJson(legacyRaw);
+                if (legacy is { Phase: not Phase.Finished })
+                {
+                    var savedName = legacy.Players.Length > 0 ? legacy.Players[0].Name?.Trim() : null;
+                    var clean = initials?.Trim();
+                    if (string.IsNullOrEmpty(clean) || string.Equals(savedName, clean, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await storage.SetItemAsStringAsync(key, legacyRaw);
+                        await storage.RemoveItemAsync(LegacyKey);
+                        return legacy;
+                    }
+                }
+            }
+            return null;
         }
         catch
         {
@@ -30,15 +60,15 @@ public sealed class PoMuleSaveStore(IBrowserStorage storage)
         }
     }
 
-    public async Task SaveAsync(MatchState state)
+    public async Task SaveAsync(MatchState state, string? initials)
     {
-        try { await storage.SetItemAsStringAsync(Key, PoMuleSave.ToJson(state)); }
+        try { await storage.SetItemAsStringAsync(KeyFor(initials), PoMuleSave.ToJson(state)); }
         catch { /* storage unavailable */ }
     }
 
-    public async Task ClearAsync()
+    public async Task ClearAsync(string? initials)
     {
-        try { await storage.RemoveItemAsync(Key); }
+        try { await storage.RemoveItemAsync(KeyFor(initials)); }
         catch { /* storage unavailable */ }
     }
 }
