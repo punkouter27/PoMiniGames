@@ -51,14 +51,14 @@ builder.Services.AddSignalR(options =>
     // In Production this would leak internal exception messages/stack traces
     // over the wire to every connected client.
     options.EnableDetailedErrors = builder.Environment.IsDevOrTest();
-    // Server-side idle timeout + keep-alive. The earlier ~150s hang I observed
-    // in the browser was the client WebSocket waiting for an idle close from
-    // the server. These match SignalR's documented defaults for ASP.NET Core
-    // 9 but pin them explicitly so the contract is grep-able.
-    //   • KeepAlive: server pings the client every 30s
+    // Server-side idle timeout + keep-alive, pinned so the contract is grep-able.
+    //   • KeepAlive: server pings the client every 15s (SignalR's default). It must stay at most HALF the
+    //     clients' server timeout (30s, HubConnectionBuilder's default): at 30s a client that only SENDS,
+    //     like the Marble Race host streaming frames, heard nothing for 30s, closed its connection and
+    //     reconnected, and the server told the guest "the host has left" (E2E UI, v4 audit 2026-11-24).
     //   • ClientTimeoutInterval: server tears the connection down after 60s
     //     without a pong. Clients should configure WithAutomaticReconnect().
-    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
     // Per-message caps: the largest JSON we've seen in this app is the
     // PoMarbleRace leaderboard (~250KB). 256KB headroom keeps a single game

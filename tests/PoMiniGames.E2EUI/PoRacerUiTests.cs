@@ -20,12 +20,15 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var errors = new List<string>();
         page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
+        // Isolate lap timing and persistence from 63-car traffic: the keyboard driver follows the centerline and
+        // does not plan overtakes. 5bc1f7f7 took the Rivals / Time trial choice off the start card; the saved
+        // preference it wrote (PoRacerPreferences "PoRacer.Mode") still selects the empty track. Full-field input
+        // is tested below.
+        await context.AddInitScriptAsync("localStorage.setItem('PoRacer.Mode', 'trial')");
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
-        await page.Locator(".gps-intro-map-select").SelectOptionAsync(track);
-        // Isolate lap timing and persistence from 63-car traffic: the keyboard driver
-        // follows the centerline and does not plan overtakes. Full-field input is tested below.
-        await page.GetByText("Time trial", new() { Exact = true }).ClickAsync();
+        // One circuit (owner 5bc1f7f7): the start card has no track dropdown any more.
+        (await page.Locator(".gps-intro-map-select").CountAsync()).Should().Be(0);
         var save = page.WaitForResponseAsync(r => r.Url.EndsWith("/api/poracer/scores", StringComparison.Ordinal) && r.Request.Method == "POST", new() { Timeout = 200000 });
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-countdown").WaitForAsync();
@@ -48,9 +51,11 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
-        // The lap just driven is shown beside the track name in the start card's track dropdown.
-        var trackOption = page.Locator($".gps-intro-map-select option[value='{track}']");
-        (await trackOption.InnerTextAsync()).Should().Contain("best ");
+        // The lap just driven is kept for the next visit (PoRacerPreferences, the ghost's best lap); the start
+        // card no longer lists it beside a track name since 5bc1f7f7 removed the track dropdown.
+        var kept = await page.EvaluateAsync<string?>("t => localStorage.getItem('PoRacer.Best.' + t)", track);
+        kept.Should().NotBeNullOrEmpty("the best lap is kept for the next visit");
+        double.Parse(kept!.Trim('"'), System.Globalization.CultureInfo.InvariantCulture).Should().BeGreaterThan(0);
         driver.Reset();
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();

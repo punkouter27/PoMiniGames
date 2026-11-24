@@ -62,7 +62,7 @@ public class PoCabinetRouteUiTests
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
         // Every mode opens on the shared intro card. There is one circuit, so no card carries a
-        // track picker: Solo's has the scan-detail choice and the Car / Settings tabs, Online's
+        // track picker: Solo's has no setup either (5bc1f7f7), Online's
         // only OK, and Demo's times out into the race reel.
         if (path.EndsWith("/multi", StringComparison.OrdinalIgnoreCase))
         {
@@ -79,17 +79,13 @@ public class PoCabinetRouteUiTests
         }
         else
         {
-            var setupTab = page.GetByRole(AriaRole.Tab, new() { Name = "Setup", Exact = true });
-            if (await setupTab.IsVisibleAsync())
-            {
-                await setupTab.ClickAsync();
-            }
-
-            await page.Locator(".pocabinet-prerace__room").WaitForAsync(new() { Timeout = 30_000 });
+            // Owner 5bc1f7f7: no settings on the intro modal any more (Cabinet starts on its defaults; the drawer
+            // from the pause card still has Car / Settings). The solo card is OK and nothing else to pick.
+            await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60_000 });
             (await page.Locator(".gps-intro-map-select").CountAsync()).Should().Be(0,
                 "one circuit: the solo start card has no track dropdown beside OK");
-            (await page.Locator(".pocabinet-prerace__room input[type=radio]").CountAsync()).Should().Be(3,
-                "the scan-detail choice (Auto / Full / Lite) is on the card, since the circuit crosses the scanned court");
+            (await page.Locator(".pocabinet-prerace__room").CountAsync()).Should().Be(0,
+                "the solo start card carries no setup since 5bc1f7f7");
         }
     }
 }

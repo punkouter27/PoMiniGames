@@ -269,45 +269,53 @@ public class LinkAuditUiTests
 
         // Desktop pass: the start cards again, on a laptop screen. Most game pages read their
         // mode once, on first mount, so each route is a full load here.
-        await page.SetViewportSizeAsync(Desktop.Width, Desktop.Height);
+        // Each route gets its own tab, and the last one is closed without waiting on it: one tab driven through
+        // every game in turn hung for 60 s navigating away from a page whose game still held its main thread
+        // (v4 audit 2026-11-24, /pofighter/arcade). The phone pass above already checked every route for
+        // console errors and 404s; this pass judges the start cards.
+        IPage? desk = null;
         foreach (var route in routes.Where(r => !MainPages.Contains(r) && !r.Contains("/demo", StringComparison.OrdinalIgnoreCase)))
         {
             current = route;
-            await page.GotoAsync(new Uri(origin, route.TrimStart('/')).ToString(), new PageGotoOptions
+            if (desk is not null) await desk.CloseAsync(new PageCloseOptions { RunBeforeUnload = false });
+            desk = await context.NewPageAsync();
+            desk.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+            await desk.SetViewportSizeAsync(Desktop.Width, Desktop.Height);
+            await desk.GotoAsync(new Uri(origin, route.TrimStart('/')).ToString(), new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.Load,
                 Timeout = 60_000,
             });
             try
             {
-                await page.Locator(".gps-intro-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+                await desk.Locator(".gps-intro-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
             }
             catch (TimeoutException)
             {
                 continue; // no start card on this route
             }
-            await page.WaitForTimeoutAsync(SettleMs);
-            if (await page.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
+            await desk.WaitForTimeoutAsync(SettleMs);
+            if (await desk.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
                 failures.Add($"{route}: at {Desktop.Width}×{Desktop.Height} the start card {problems}");
-            var intro = page.Locator("dialog.gps-intro-overlay[open]");
+            var intro = desk.Locator("dialog.gps-intro-overlay[open]");
             if (await intro.CountAsync() > 0)
             {
                 var buttons = intro.Locator("button:enabled");
                 if (await buttons.CountAsync() > 0)
                 {
                     await buttons.Last.FocusAsync();
-                    await page.Keyboard.PressAsync("Tab");
+                    await desk.Keyboard.PressAsync("Tab");
                     if (!await intro.EvaluateAsync<bool>("el => el.contains(document.activeElement)"))
                         failures.Add($"{route}: Tab escaped the intro");
                     await buttons.First.FocusAsync();
-                    await page.Keyboard.PressAsync("Shift+Tab");
+                    await desk.Keyboard.PressAsync("Shift+Tab");
                     if (!await intro.EvaluateAsync<bool>("el => el.contains(document.activeElement)"))
                         failures.Add($"{route}: Shift+Tab escaped the intro");
                     await buttons.First.FocusAsync();
-                    await page.Keyboard.PressAsync("Escape");
+                    await desk.Keyboard.PressAsync("Escape");
                     try
                     {
-                        await page.WaitForURLAsync(origin.ToString(), new PageWaitForURLOptions { Timeout = 5_000 });
+                        await desk.WaitForURLAsync(origin.ToString(), new PageWaitForURLOptions { Timeout = 5_000 });
                     }
                     catch (TimeoutException)
                     {
@@ -316,6 +324,7 @@ public class LinkAuditUiTests
                 }
             }
         }
+        if (desk is not null) await desk.CloseAsync(new PageCloseOptions { RunBeforeUnload = false });
 
         // The end card, on the small phone where it is tightest: the shared GameOverModal every
         // game ends on, so one game's result card stands for the component.

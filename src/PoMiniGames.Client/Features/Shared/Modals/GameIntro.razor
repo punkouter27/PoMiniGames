@@ -164,7 +164,7 @@
                 </label>
             }
             @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
-            <span class="gps-intro-contents" style="display: contents" @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)">
+            <span class="gps-intro-contents" style="display: contents" @onkeydown="HandleOkKey" @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)">
                 <PoButton class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
                           @ref="_ok"
                           Disabled="@(!StartEnabled)"
@@ -491,6 +491,13 @@
 
     private Task HandleControlKey(KeyboardEventArgs e) =>
         e.Key == "Escape" ? CancelAsync() : Task.CompletedTask;
+
+    // The OK button keeps its keys from the page (1P / demo), like the tabs and options above, but Escape still
+    // cancels: on a card whose only button is OK (Racer since 5bc1f7f7), Escape from the focused OK never reached
+    // HandleKey and the card could not be cancelled (LinkAuditUiTests, v4 audit 2026-11-24). In 2P the key
+    // bubbles to HandleKey, which cancels there.
+    private Task HandleOkKey(KeyboardEventArgs e) =>
+        Mode != IntroMode.TwoPlayer ? HandleControlKey(e) : Task.CompletedTask;
 
     private async Task CancelAsync()
     {

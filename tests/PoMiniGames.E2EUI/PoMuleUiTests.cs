@@ -112,12 +112,11 @@ public class PoMuleUiTests
         await page.Keyboard.PressAsync("Space");
         await WaitForPhase(page, Land, 2, 30_000);
 
-        // A reload offers the match back from the start of month 2: Continue is the ticked
-        // choice, and OK takes it.
-        await page.ReloadAsync(new() { WaitUntil = WaitUntilState.NetworkIdle });
-        var resume = page.GetByRole(AriaRole.Radio, new() { Name = "Continue (month 2)" });
+        // A reload resumes the match from the start of month 2 (owner 5bc1f7f7: no Continue / New match choice on
+        // the card any more; Quit & new game is in the match), and OK takes it.
+        await page.ReloadAsync(new() { WaitUntil = WaitUntilState.Load });
+        var resume = page.Locator(".pm-continue").GetByText("Continuing Month 2");
         await resume.WaitForAsync(new() { Timeout = 60_000 });
-        (await resume.IsCheckedAsync()).Should().BeTrue("a saved match is offered back by default");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await WaitForPhase(page, Land, 2, 30_000);
         (await page.EvaluateAsync<int>("() => window.__pomule().owner.filter(o => o >= 0).length"))
