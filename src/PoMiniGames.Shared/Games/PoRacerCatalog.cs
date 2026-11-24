@@ -64,13 +64,8 @@ public static class PoRacerWeather
 {
     public const string Clear = "clear", Rain = "rain", Snow = "snow", Fog = "fog";
 
-    public static string For(string trackId, DateOnly utcDay)
-    {
-        var seed = "\"" + trackId + "\"" + utcDay.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        uint h = 2166136261;
-        foreach (var ch in seed) { h ^= ch; unchecked { h *= 16777619; } }
-        return (h % 100) switch { < 58 => Clear, < 83 => Rain, < 94 => Snow, _ => Fog };
-    }
+    // Dry weather only (owner rule): always Clear.
+    public static string For(string trackId, DateOnly utcDay) => Clear;
 
     public static string Today(string trackId) => For(trackId, DateOnly.FromDateTime(DateTime.UtcNow));
 

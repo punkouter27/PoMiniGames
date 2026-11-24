@@ -5,7 +5,7 @@
 // The effect layer that sits on top of this scene — particles, the night light pass, track
 // wear, speed streaks, ambient motes and the minimap — lives in fx.js.
 import * as Fx from './fx.js';
-import { addTrauma, getShake, getPunch } from '../platform/impactBus.js';
+import { addTrauma } from '../platform/impactBus.js';
 import { makeLayer } from '../platform/2d/canvas2d.js';
 import { clamp, damp } from '../platform/2d/tween.js';
 
@@ -1077,52 +1077,37 @@ export function draw(cars, w, h, ghost) {
     lastCars = cars;
     Fx.syncTier(now);
 
-    // ── Where the camera wants to be ──
+    // ── Where the camera wants to be (smoothly damped look-ahead, no shake/roll/punch) ──
     const player = cars.find(c => c.isPlayer);
     const base = Math.min(w, h) / 900;
     let wantX, wantY, wantScale;
     if (!player && centerXY && centerN > 0) {
         // Spectator / demo view: follow the leader.
         const lead = cars.reduce((a, c) => c.position < a.position ? c : a, cars[0]);
-        wantX = lead.x + Math.cos(lead.h) * 80;
-        wantY = lead.y + Math.sin(lead.h) * 80;
+        wantX = lead.x + Math.cos(lead.h) * 60;
+        wantY = lead.y + Math.sin(lead.h) * 60;
         wantScale = clamp(base * 1.1, 0.35, 1.2);
     } else {
-        // Follow-cam on the local player. The look-ahead grows with speed so the corner
-        // arrives on screen before the car does, and leans into the slide by the slip angle.
+        // Smooth follow-cam on the local player with gentle speed look-ahead.
         const target = player || cars[0];
         const speed = Math.abs(target.v || 0);
-        const look = 48 + Math.min(110, speed * 0.32);
-        const lean = clamp((target.slip || 0) * 90, -26, 26);
-        wantX = target.x + Math.cos(target.h) * look + Math.cos(target.h + Math.PI / 2) * lean;
-        wantY = target.y + Math.sin(target.h) * look + Math.sin(target.h + Math.PI / 2) * lean;
-        // Zoom out a touch at speed: the same frame holds more road when the road matters.
-        wantScale = clamp(base * (1 + Math.min(0.07, speed / 5200)), 0.25, 1.2);
+        const look = 32 + Math.min(80, speed * 0.22);
+        wantX = target.x + Math.cos(target.h) * look;
+        wantY = target.y + Math.sin(target.h) * look;
+        // Zoom out gently at speed: smooth, no sudden pops.
+        wantScale = clamp(base * (1 + Math.min(0.05, speed / 6500)), 0.25, 1.2);
     }
 
-    // ── The spring ──
+    // ── Smooth critically-damped camera glide (no impact shake, zoom punch, or roll) ──
     if (!springReady) { springX = wantX; springY = wantY; springScale = wantScale; springRoll = 0; springReady = true; }
     else {
-        // A heavy hit locks the camera for a few dozen ms before it resumes chasing.
-        springX = damp(springX, wantX, now < hitstopUntil ? 2.6 : 9, dt);
-        springY = damp(springY, wantY, now < hitstopUntil ? 2.6 : 9, dt);
-        springScale = damp(springScale, wantScale, 6, dt);
+        springX = damp(springX, wantX, 5.2, dt);
+        springY = damp(springY, wantY, 5.2, dt);
+        springScale = damp(springScale, wantScale, 3.0, dt);
     }
-    // The whole frame leans into a drift, by less than a degree and a half.
-    const rollWant = calm() ? 0 : clamp((player?.slip || 0) * -0.06, -0.018, 0.018);
-    springRoll += (rollWant - springRoll) * Math.min(1, dt * 6);
+    springRoll = 0;
 
     let camX = springX, camY = springY, scale = springScale;
-    // Impact shake is applied in screen pixels converted back to world units, so a hit moves
-    // the picture by the same distance at any zoom. Punch is the zoom kick that goes with it.
-    const shake = getShake();
-    const punch = getPunch();
-    if (shake > 0.001) {
-        const t = now * 0.001;
-        camX += Math.sin(t * 13.7) * (11 * shake / scale);
-        camY += Math.sin(t * 17.3) * (9 * shake / scale);
-    }
-    if (punch > 0.01) scale *= 1 + punch * 0.035;
 
     // Finish pull-back. The live camera above is where it starts from; the end is the track's
     // bounding box, fitted. Captured once so the start point does not drift under the ease.
@@ -1220,7 +1205,7 @@ export function draw(cars, w, h, ghost) {
 
     // Speed streaks + ambient motes: both screen space, both switched off by reduced motion.
     const speedFrac = player ? Math.min(1, Math.abs(player.v || 0) / 345) : 0;
-    Fx.streaks(g, w, h, Math.pow(speedFrac, 3) * 0.85 + punch * 0.5, now);
+    Fx.streaks(g, w, h, Math.pow(speedFrac, 3) * 0.85, now);
     Fx.ambient(g, w, h, currentTheme, dt, now);
 
     // A constant 10% dusk tint, then the vignette. Both were the "ambient" and "post" steps
