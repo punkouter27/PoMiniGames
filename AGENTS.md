@@ -118,6 +118,7 @@ date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) 
 | CSS lint | `pwsh scripts/ci/css-lint.ps1` | PowerShell 7 |
 | Python lint | `uvx ruff check .` (CI runs it only when `ruff.toml` exists; the owner removed it in `1bb7cc8b`, 2026-11-22) | uv |
 | Bicep | `az bicep build --file infra/main.bicep` and `az bicep build-params --file infra/main.bicepparam` | Azure CLI |
+| UI before/after | `pwsh scripts/screenshots.ps1 -Feature <name> [-Before <ref>\|-BeforeDir <pngs>] [-Routes /,/diag] [-Notes '...']`: Release-publishes each ref in a temp worktree, runs it locally on its own Azurite container, captures 1366×768 + 390×844 with Playwright (`scripts/screenshots/`), writes `SCREENSHOTS/{YYMMDD}-{feature}.html`, small thumbnails in `SCREENSHOTS/{YYMMDD}-{feature}/` and one side-by-side `.png` | Docker, Node, .NET SDK; never the live site |
 | Run locally | `docker compose up -d azurite` then `dotnet run --project src/PoMiniGames.Api --launch-profile http` → http://localhost:5080 (status: http://localhost:5080/diag) | Docker for Azurite |
 | Deploy | push to `master` → `.github/workflows/deploy.yml` (format, ruff, build, Unit, Integration, publish, deploy to `vars.AZURE_WEBAPP_NAME` = `app-5ln5hfdrvof5u-f1win2`) | — |
 | Deploy check | `curl -sI https://app-5ln5hfdrvof5u-f1win2.azurewebsites.net/health/live` shows `X-Commit: <pushed sha>` (the workflow waits for it) | — |
@@ -357,7 +358,8 @@ uvx ruff check .                                               # Python lint (sc
 
 - **UI Previews:** For visual changes, save before-and-after HTML mockups to
   `SCREENSHOTS/{YYMMDD}-{feature}.html`, and annotate screenshots showing the before and after with
-  notes in a single PNG. Give the full path.
+  notes in a single PNG. Give the full path. One command does it: `pwsh scripts/screenshots.ps1 -Feature <name>`
+  (see section 3).
 - **Proposed Solutions:** When reporting a problem, include a proposed solution for approval.
 - **Clarifying Questions:** If modifying more than 100 lines and no pending questions exist, list 3
   key follow-up questions about future direction or logic.

@@ -350,6 +350,7 @@ sign-in: a player is a random browser id plus three initials.
 | Document | What it covers |
 |---|---|
 | [Shared game UI](#shared-game-ui) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
+| [SCREENSHOTS/](SCREENSHOTS/) | Before/after pages for UI changes: `{YYMMDD}-{feature}.html` + one side-by-side `.png`, made by `pwsh scripts/screenshots.ps1 -Feature <name>` (local captures, never the live site). First one: [SCREENSHOTS/261124-v4-audit.html](SCREENSHOTS/261124-v4-audit.html) |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
 ## Games (`src/PoMiniGames.Client/Features/`)

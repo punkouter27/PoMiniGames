@@ -101,5 +101,6 @@
 .pocabinet-livery--selected {
     background: rgba(56, 189, 248, 0.22);
     border-color: rgba(56, 189, 248, 0.75);
-    color: #fff;
+    /* The page's text colour, not white: on the light theme white on this tint was 1.2:1 (axe). */
+    color: var(--po-text);
 }

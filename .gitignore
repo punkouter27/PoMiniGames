@@ -69,9 +69,8 @@ blob-report/
 blob-report/**
 
 # ─── Adhoc screenshots / debug captures ──────────────────────────────
-# SCREENSHOTS/ is where the old-vs-new UI captures land (CLAUDE.md); they are
-# review artefacts, not source, so they stay local.
-SCREENSHOTS/
+# SCREENSHOTS/ (before/after pages from scripts/screenshots.ps1) is committed: the owner kept the UI-preview
+# rule and README links the folder (v4, 2026-11-24). The thumbnails are small PNGs.
 
 # ─── Node / npm (npm-installed Azurite fallback writes here) ────────
 node_modules/
