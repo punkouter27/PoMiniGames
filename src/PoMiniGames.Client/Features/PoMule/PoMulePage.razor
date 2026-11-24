@@ -127,10 +127,10 @@
     private RenderFragment SpeciesPicker => @<div class="pm-species">
         @if (PickingSpecies)
         {
-            <label class="pm-classic">
-                <input type="checkbox" @bind="_classic" />
-                Classic 1983 rules: no species traits
-            </label>
+            <div class="pm-classic">
+                <RadzenCheckBox TValue="bool" @bind-Value="_classic" AriaLabel="Classic 1983 rules: no species traits" />
+                <span aria-hidden="true" @onclick="() => _classic = !_classic">Classic 1983 rules: no species traits</span>
+            </div>
             <div class="pm-species-label">Choose your species</div>
             <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" AllowPaging="false">
                 <Template Context="s">

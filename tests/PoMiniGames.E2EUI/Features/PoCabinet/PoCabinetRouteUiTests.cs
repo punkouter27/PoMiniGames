@@ -28,7 +28,7 @@ public class PoCabinetRouteUiTests
         // GameShell would correctly show its "needs 3D graphics" fallback and
         // the page would not reach the in-race HUD. Harmless for the track
         // selector and paint shop panels.
-        options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {

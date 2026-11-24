@@ -8,8 +8,8 @@ namespace PoMiniGamesClient.Features.Shared;
 /// Radzen's theme classes.
 /// </summary>
 /// <remarks>
-/// Radzen's theme stylesheet is loaded only while a Radzen-heavy page is open (js/platform/radzenTheme.js), and its
-/// <c>.rz-button.rz-variant-*</c> rules would restyle the shell's buttons on exactly those pages (uppercase, new
+/// Radzen's theme stylesheet is linked on every page (index.html), and its
+/// <c>.rz-button.rz-variant-*</c> rules would restyle the shell's buttons (uppercase, new
 /// padding, no fill). Dropping the <c>rz-button</c> classes keeps the shell looking the same on every page;
 /// <c>.po-rz-plain &gt; .rz-button-box</c> in app.css lets the button's children lay out as before.
 /// </remarks>

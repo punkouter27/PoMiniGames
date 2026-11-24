@@ -79,7 +79,7 @@
             @* The only player setting left: the initials shown on the leaderboards. Everything
                else runs on fixed defaults (graphics high, rich audio on). *@
             <PoButton class="po-header__initials" data-no-press-sound
-                    aria-label="Change initials" title="Change initials" Click="OpenInitials">
+                    aria-label="@($"{InitialsLabel}: change initials")" title="Change initials" Click="OpenInitials">
                 @InitialsLabel
             </PoButton>
         </div>

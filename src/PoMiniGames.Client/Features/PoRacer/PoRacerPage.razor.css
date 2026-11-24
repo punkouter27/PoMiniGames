@@ -88,8 +88,6 @@
     transition: transform .12s ease, border-color .15s ease, background .15s ease, color .15s ease; }
 .racer-card ::deep .racer-chips label:hover { border-color: var(--racer-accent-line); }
 .racer-card ::deep .racer-chips label:active { transform: scale(.96); }
-.racer-ghost-toggle input { transition: transform .12s ease; }
-.racer-ghost-toggle:active input { transform: scale(.9); }
 @media (prefers-reduced-motion: reduce) {
     ::deep .racer-primary, ::deep .racer-ghost, .racer-card ::deep .racer-chips label { transition: none; }
     ::deep .racer-primary:hover:not(:disabled), ::deep .racer-ghost:hover { transform: none; }
@@ -123,7 +121,6 @@
 .racer-pause-card { width: min(420px, 100%); padding: 20px; display: grid; gap: 14px; border-radius: 16px; background: var(--racer-panel); border: 1px solid var(--racer-line); box-shadow: 0 20px 60px #0008; }
 .racer-pause-card h2 { margin: 0; font-size: 22px; }
 .racer-ghost-toggle { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: 15px; cursor: pointer; }
-.racer-ghost-toggle input { width: 20px; height: 20px; accent-color: var(--color-accent, #38bdf8); }
 
 /* Finish: a chequered band sweeps across while the camera pulls back, then the results come in. */
 .race-flag { position: absolute; inset: 0; pointer-events: none;

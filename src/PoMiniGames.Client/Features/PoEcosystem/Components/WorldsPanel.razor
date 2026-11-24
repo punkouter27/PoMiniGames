@@ -31,10 +31,10 @@
                     title="@($"Everyone who opens today's island watches the same world unfold (seed {(DailySeed)}). The island is deterministic: the same seed tells the same story.")">Today's island</PoButton>
         </div>
 
-        <label class="poeco-persist-toggle">
-            <input type="checkbox" checked="@LocalPersist" @onchange="e => OnLocalPersistChanged.InvokeAsync(e.Value is bool b && b)" />
-            <span>Auto-save island in this browser (resume on next visit)</span>
-        </label>
+        <div class="poeco-persist-toggle">
+            <RadzenCheckBox TValue="bool" Value="@LocalPersist" Change="@((bool on) => OnLocalPersistChanged.InvokeAsync(on))" AriaLabel="Auto-save island in this browser (resume on next visit)" />
+            <span aria-hidden="true" @onclick="() => OnLocalPersistChanged.InvokeAsync(!LocalPersist)">Auto-save island in this browser (resume on next visit)</span>
+        </div>
 
         <div class="poeco-cloud-head">
             <h3>Cloud slots</h3>
@@ -89,11 +89,7 @@
             {
                 <div class="poeco-gallery-tools">
                     <PoTextBox type="search" class="poeco-finder-input" Placeholder="Filter…" aria-label="Filter the gallery by name or owner" Value="@_filter" Immediate="true" ValueChanged="@((string v) => _filter = v ?? string.Empty)" />
-                    <select value="@_sort" @onchange="e => _sort = e.Value?.ToString() ?? string.Empty" aria-label="Sort the gallery">
-                        <option value="new">Newest</option>
-                        <option value="old">Oldest island</option>
-                        <option value="alive">Most alive</option>
-                    </select>
+                    <PoSelect AriaLabel="Sort the gallery" Options="@SortOptions" Value="@_sort" ValueChanged="@((string v) => _sort = v ?? string.Empty)" />
                 </div>
             }
         </div>
@@ -163,6 +159,7 @@
 
     private string _filter = "";
     private string _sort = "new";
+    private static readonly IReadOnlyList<(string Value, string Text)> SortOptions = [("new", "Newest"), ("old", "Oldest island"), ("alive", "Most alive")];
 
     private IEnumerable<EcoSharedWorld> Shown
     {

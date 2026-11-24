@@ -23,10 +23,10 @@
         }
         @if (Rows.Length >= 2)
         {
-            <label class="poeco-legend-item poeco-timeline-diversity-key">
-                <input type="checkbox" checked="@_showDiversity" @onchange="e => _showDiversity = e.Value is true" />
-                <span class="poeco-legend-label" title="Shannon diversity H′ (0 = one species, 1.39 = all four equally common)">Diversity H′</span>
-            </label>
+            <div class="poeco-legend-item poeco-timeline-diversity-key">
+                <RadzenCheckBox TValue="bool" @bind-Value="_showDiversity" AriaLabel="Diversity H′" />
+                <span class="poeco-legend-label" aria-hidden="true" title="Shannon diversity H′ (0 = one species, 1.39 = all four equally common)" @onclick="() => _showDiversity = !_showDiversity">Diversity H′</span>
+            </div>
         }
     </div>
 
@@ -51,23 +51,18 @@
     else
     {
         <div class="poeco-timeline-controls">
-            <label class="poeco-field">
+            <div class="poeco-field">
                 <span>From year @WindowStart</span>
-                <input type="range" min="@MinYear" max="@Math.Max(MinYear, MaxYear - 1)" value="@WindowStart" @oninput="OnStart" aria-label="First year shown" />
-            </label>
-            <label class="poeco-field">
+                <RadzenSlider TValue="int" Min="@MinYear" Max="@Math.Max(MinYear, MaxYear - 1)" Value="@WindowStart" Change="@OnStart" HandleLabel="First year shown" />
+            </div>
+            <div class="poeco-field">
                 <span>Span</span>
-                <select value="@_span" @onchange="OnSpan">
-                    @foreach (var span in Spans)
-                    {
-                        <option value="@span">@(span == 0 ? "All years" : $"{span} years")</option>
-                    }
-                </select>
-            </label>
-            <label class="poeco-switch">
-                <input type="checkbox" checked="@_follow" @onchange="e => _follow = e.Value is true" />
-                <span>Follow the present</span>
-            </label>
+                <PoSelect AriaLabel="Span" Options="@SpanOptions" Value="@_span.ToString(System.Globalization.CultureInfo.InvariantCulture)" ValueChanged="OnSpan" />
+            </div>
+            <div class="poeco-switch">
+                <RadzenSwitch @bind-Value="_follow" InputAttributes="@(new Dictionary<string, object> { ["aria-label"] = "Follow the present" })" />
+                <span aria-hidden="true">Follow the present</span>
+            </div>
             <PoButton class="poeco-btn poeco-btn--sm" title="Play these years as chords — one voice per species, pitch is how many there were"
                     Click="PlayWindowAsync">♪ Hear it</PoButton>
         </div>
@@ -155,6 +150,8 @@
     private const int H = 190;
     private const int MarkTop = 12;
     private static readonly int[] Spans = [10, 25, 50, 100, 0];
+    private static readonly IReadOnlyList<(string Value, string Text)> SpanOptions =
+        [.. Spans.Select(s => (s.ToString(System.Globalization.CultureInfo.InvariantCulture), s == 0 ? "All years" : $"{s} years"))];
     private static readonly (string Kind, string Label)[] Kinds =
     [
         ("tech", "Tech"), ("diplomacy", "Diplomacy"), ("weather", "Weather"), ("outbreak", "Outbreaks"),
@@ -251,17 +248,16 @@
     private Task PlayWindowAsync() =>
         OnSonify.InvokeAsync((WindowRows.Where(r => r.Length >= 5).Select(Voices).ToArray(), PeakCount));
 
-    private async Task OnStart(ChangeEventArgs e)
+    private async Task OnStart(int v)
     {
-        if (!int.TryParse(e.Value?.ToString(), out var v)) return;
         _start = v; _follow = false;
         // Scrubbing is heard: the year under the handle, as one chord.
         if (Rows.FirstOrDefault(r => r[0] == v && r.Length >= 5) is { } row) await OnSonify.InvokeAsync((new[] { Voices(row) }, PeakCount));
     }
 
-    private void OnSpan(ChangeEventArgs e)
+    private void OnSpan(string value)
     {
-        if (int.TryParse(e.Value?.ToString(), out var v)) { _span = v; _start = WindowStart; }
+        if (int.TryParse(value, out var v)) { _span = v; _start = WindowStart; }
     }
 
     private void Toggle(string kind)

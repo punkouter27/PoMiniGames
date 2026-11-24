@@ -187,19 +187,17 @@
                        whenever the last input was a touch). *@
                     @if (_phase == "racing" && !_demo)
                     {
-                        <div class="mr-nudge-pads">
-                            <button class="mr-nudge-pad"
-                                    @onpointerdown="() => Steer(-1, true)"
-                                    @onpointerup="() => Steer(-1, false)"
-                                    @onpointerleave="() => Steer(-1, false)"
-                                    @oncontextmenu:preventDefault="true"
-                                    aria-label="Steer left">◀</button>
-                            <button class="mr-nudge-pad"
-                                    @onpointerdown="() => Steer(1, true)"
-                                    @onpointerup="() => Steer(1, false)"
-                                    @onpointerleave="() => Steer(1, false)"
-                                    @oncontextmenu:preventDefault="true"
-                                    aria-label="Steer right">▶</button>
+                        <div class="mr-nudge-pads" @oncontextmenu:preventDefault="true">
+                            <PoButton class="mr-nudge-pad"
+                                      @onpointerdown="() => Steer(-1, true)"
+                                      @onpointerup="() => Steer(-1, false)"
+                                      @onpointerleave="() => Steer(-1, false)"
+                                      aria-label="Steer left">◀</PoButton>
+                            <PoButton class="mr-nudge-pad"
+                                      @onpointerdown="() => Steer(1, true)"
+                                      @onpointerup="() => Steer(1, false)"
+                                      @onpointerleave="() => Steer(1, false)"
+                                      aria-label="Steer right">▶</PoButton>
                         </div>
                     }
                 </ChildContent>

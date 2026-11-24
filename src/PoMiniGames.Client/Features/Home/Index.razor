@@ -236,10 +236,10 @@
             ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
                   href="@(m.ChipUrl ?? m.Url)" data-hub-nav data-spring data-sonify
                   title="@($"{game.Title} — {ModeDescription(m)}")"
-                  aria-label="@($"{game.Title}, {ModeDescription(m)}")">@ModeLabel(m)</a>
+                  aria-label="@($"{ModeLabel(m)}: {game.Title}, {ModeDescription(m)}")">@ModeLabel(m)</a>
             : @<span class="home-mode-chip home-mode-chip--offline"
                      aria-disabled="true"
-                     aria-label="@($"{game.Title}, {ModeDescription(m)} — unavailable offline")"
+                     aria-label="@($"{ModeLabel(m)}: {game.Title}, {ModeDescription(m)} — unavailable offline")"
                      title="Needs a connection — unavailable offline">@ModeLabel(m)</span>;
 
     protected override void OnInitialized()

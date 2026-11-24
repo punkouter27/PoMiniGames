@@ -368,7 +368,7 @@
     .pc-day { display: none; }
     .pc-inspector-card { top: max(64px, env(safe-area-inset-top)); bottom: auto; left: 50%; translate: -50% 0; }
     /* The 44px floor for the small controls. */
-    ::deep .pc-debug-close, ::deep .pc-radar-toggle, .pc-keycap { min-width: 44px; min-height: 44px; }
+    ::deep .pc-debug-close, ::deep .pc-radar-toggle, ::deep .pc-keycap { min-width: 44px; min-height: 44px; }
 }
 @media (max-width: 650px) {
     .pc-root { min-height: min(420px, var(--gps-area-h)); }
@@ -458,14 +458,8 @@
 .pc-opts ::deep .rz-tabview-nav li button { padding: 10px 6px; font-size: 13px; letter-spacing: 0.02em; }
 .pc-opts ::deep .rz-selectbar { display: flex; flex-wrap: wrap; max-width: 100%; }
 .pc-opts ::deep .rz-tabview-panel { padding: 12px 2px 4px; }
-/* Sliders: a gold fill up to the value (--p, written by the page) and a thumb that grows on use. */
-.pc-range { display: block; width: 100%; height: 22px; margin: 4px 0 12px; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
-.pc-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #b98c45 var(--p, 50%), color-mix(in srgb, currentColor 18%, transparent) 0); }
-.pc-range::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #b98c45 var(--p, 50%), color-mix(in srgb, currentColor 18%, transparent) 0); }
-.pc-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; background: #f3e2bd; border: 2px solid #b98c45; box-shadow: 0 2px 8px #00000055; transition: scale 150ms ease; }
-.pc-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #f3e2bd; border: 2px solid #b98c45; }
-.pc-range:hover::-webkit-slider-thumb, .pc-range:active::-webkit-slider-thumb { scale: 1.2; }
-.pc-range:focus-visible { outline: 2px solid #b98c45; outline-offset: 2px; border-radius: 4px; }
+/* The options sliders are RadzenSliders; the gold track and cream handle come from Radzen's own variables. */
+::deep .pc-range { display: block; width: auto; margin: 12px 9px 16px; --rz-slider-range-background-color: #b98c45; --rz-slider-handle-background-color: #f3e2bd; --rz-slider-handle-hover-background-color: #f3e2bd; --rz-slider-handle-border: 2px solid #b98c45; --rz-slider-handle-focus-outline: 2px solid #b98c45; }
 ::deep .pc-opt-button { margin-top: 12px; }
 ::deep .pc-model-input { min-width: 150px; }
 /* These lines change length or appear late; holding their height keeps the card still. */
@@ -476,17 +470,17 @@
 .pc-key-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; font-size: 13px; color: inherit; }
 .pc-pad-glyph { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--color-text-secondary); padding: 2px 6px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 999px; }
 .pc-pad-glyph:empty { display: none; }
-.pc-keycap {
+::deep .pc-keycap {
     min-width: 84px; min-height: 36px; padding: 4px 12px;
     font: 700 13px/1 ui-monospace, Consolas, monospace; color: inherit;
     background: linear-gradient(color-mix(in srgb, currentColor 6%, transparent), color-mix(in srgb, currentColor 12%, transparent));
     border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-bottom-width: 3px; border-radius: 7px;
     cursor: pointer; transition: transform 90ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
-.pc-keycap:hover { border-color: #b98c45; }
-.pc-keycap:active { transform: translateY(2px); border-bottom-width: 1px; }
-.pc-keycap--listening { border-color: #b98c45; box-shadow: 0 0 0 3px #b98c4544; animation: pc-listen 1s ease-in-out infinite; font-family: inherit; font-weight: 600; }
-.pc-keycap--swapped { animation: pc-swap 700ms cubic-bezier(0.2, 0.9, 0.3, 1.3) 1; border-color: #b98c45; }
+::deep .pc-keycap:hover { border-color: #b98c45; }
+::deep .pc-keycap:active { transform: translateY(2px); border-bottom-width: 1px; }
+::deep .pc-keycap--listening { border-color: #b98c45; box-shadow: 0 0 0 3px #b98c4544; animation: pc-listen 1s ease-in-out infinite; font-family: inherit; font-weight: 600; }
+::deep .pc-keycap--swapped { animation: pc-swap 700ms cubic-bezier(0.2, 0.9, 0.3, 1.3) 1; border-color: #b98c45; }
 @keyframes pc-listen { 50% { box-shadow: 0 0 0 6px #b98c4522; } }
 @keyframes pc-swap { 0% { transform: translateY(-10px) scale(1.1); background-color: #b98c4544; } 100% { transform: none; } }
 ::deep .pc-key-select { min-width: 110px; min-height: 32px; padding: 4px 8px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, currentColor 40%, transparent); border-radius: 4px; font: inherit; font-size: 13px; }
@@ -522,7 +516,7 @@
 
 @media (prefers-reduced-motion: reduce) {
     .pc-rec-pill i, .pc-ring--bad, .pc-shake, ::deep .pc-command-line--fallen, .pc-leader line, .pc-leader circle,
-    .pc-keycap--listening, .pc-keycap--swapped, .pc-stat, .pc-flap span, .pc-toast::before { animation: none; }
+    ::deep .pc-keycap--listening, ::deep .pc-keycap--swapped, .pc-stat, .pc-flap span, .pc-toast::before { animation: none; }
     .pc-toast { animation: pc-toast-calm 4.8s linear forwards; }
     .pc-day { animation: pc-toast-calm 5s linear forwards; }
     .pc-root[data-anchored] .pc-inspector-card { animation: none; }

@@ -454,11 +454,12 @@ scripts/                        Working scripts only — see scripts/README.md
   (`"   "`), paired with a persistent browser `playerId` sent via `X-Player-Id` /
   `X-Player-Initials` headers (and SignalR query params) and resolved by `UsePlayerIdentity()`
   (`Infrastructure/PlayerIdentityExtensions.cs`) on the server.
-- UI is native Blazor + plain CSS for thirteen of the games. PoMule was the first screen built
-  on Radzen (Material Dark), and Brawl HQ (`/pobrawl/hq`) is the second; the hub, settings,
-  leaderboards and the other games move to Radzen next. Until then each of those pages loads
-  the Radzen stylesheet itself and removes it on the way out (`wwwroot/js/platform/radzenTheme.js`,
-  sharing PoMule's element id). In-game HUDs stay custom CSS.
+- Controls are Radzen components: Radzen's theme is linked once, first, in `index.html`, and the
+  app's own wrappers in `Features/Shared/Shell/` keep each game's look (`PoButton`, `PoTextBox`
+  carry only the plain class `po-rz-plain`; `PoSelect` is a `RadzenDropDown` over (value, text)
+  pairs). Switches, checkboxes, select bars, sliders, grids, tabs and charts are Radzen's own.
+  The start, pause and end cards are still native `<dialog>`s (open item, AGENTS.md). In-game
+  HUDs and in-canvas UI stay custom CSS / JS.
 - **Each game is a Razor page plus a JavaScript engine, except PoMule**, whose rules are C# in
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and

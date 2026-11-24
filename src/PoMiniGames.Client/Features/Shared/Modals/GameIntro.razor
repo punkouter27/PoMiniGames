@@ -149,18 +149,13 @@
             }
             @if (ShowMapPicker)
             {
-                @* The map, beside OK (owner rule 2026-11-18): the card's one other control, a native
+                @* The map, beside OK (owner rule 2026-11-18): the card's one other control, a
                    dropdown, in 1P and 2P only. Keydowns stop so arrows and Enter in the list pick
                    a map instead of starting the game. *@
                 <label class="gps-intro-map" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
                     <span class="gps-intro-map-label">@MapLabel</span>
-                    <select class="gps-intro-map-select" value="@MapId" @onchange="OnMapChangedAsync"
-                            aria-label="@MapLabel">
-                        @foreach (var map in Maps!)
-                        {
-                            <option value="@map.Id">@map.Name</option>
-                        }
-                    </select>
+                    <PoSelect Class="gps-intro-map-select" Options="@MapOptions" Value="@MapId"
+                              ValueChanged="OnMapChangedAsync" AriaLabel="@MapLabel" />
                 </label>
             }
             @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
@@ -234,10 +229,27 @@
 
     private bool ShowMapPicker => Maps is { Count: > 1 } && Mode is IntroMode.OnePlayer or IntroMode.TwoPlayer;
 
-    private async Task OnMapChangedAsync(ChangeEventArgs e)
+    private async Task OnMapChangedAsync(string id)
     {
-        if (e.Value?.ToString() is { Length: > 0 } id && id != MapId)
+        if (id is { Length: > 0 } && id != MapId)
             await MapIdChanged.InvokeAsync(id);
+    }
+
+    private IReadOnlyList<IntroMap>? _mapsShown;
+    private IReadOnlyList<(string Value, string Text)> _mapOptions = [];
+
+    /// <summary>The maps as dropdown options, rebuilt only when the map list itself changes.</summary>
+    private IReadOnlyList<(string Value, string Text)> MapOptions
+    {
+        get
+        {
+            if (!ReferenceEquals(_mapsShown, Maps))
+            {
+                _mapsShown = Maps;
+                _mapOptions = [.. (Maps ?? []).Select(m => (m.Id, m.Name))];
+            }
+            return _mapOptions;
+        }
     }
 
     [Parameter] public IntroMode Mode { get; set; } = IntroMode.OnePlayer;

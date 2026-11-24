@@ -1,5 +1,5 @@
-// Radzen's script, on demand, for a page that uses Radzen components (Brawl HQ, Leaderboards,
-// Profile, Mule, Capitol). The theme stylesheets are linked once, first, in index.html (Po
+// Radzen's script and theme for a page that uses Radzen components (Brawl HQ, Leaderboards,
+// Profile, Mule, Capitol). Both are linked once in index.html (the theme first, the script before Blazor; Po
 // standard: Radzen CSS before the app's CSS); ensure() only adds them if that link is missing
 // (same ids), and remove() leaves them in place so the theme is never loaded twice or reordered.
 // The service worker's Radzen allowlist (service-worker.published.js) covers these files.

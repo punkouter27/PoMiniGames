@@ -122,10 +122,10 @@
         {
             <div class="poeco-photo-bar" role="toolbar" aria-label="Naturalist photo mode">
                 <PoButton class="poeco-btn poeco-btn--primary" Click="CapturePostcardAsync">📷 Capture Postcard</PoButton>
-                <label class="poeco-photo-fov">
+                <div class="poeco-photo-fov">
                     <span>FOV @((int)_photoFov)°</span>
-                    <input type="range" min="30" max="95" step="1" value="@_photoFov" @oninput="OnPhotoFovInputAsync" aria-label="Camera field of view" />
-                </label>
+                    <RadzenSlider TValue="double" Min="30" Max="95" Value="@_photoFov" Change="@OnPhotoFovInputAsync" HandleLabel="Camera field of view" />
+                </div>
                 <PoButton class="poeco-pill" Click="TogglePhotoModeAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span> Exit</PoButton>
             </div>
         }

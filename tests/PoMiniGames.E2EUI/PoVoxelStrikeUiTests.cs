@@ -26,7 +26,7 @@ public class PoVoxelStrikeUiTests
         // panel — which is also why no other three.js game has a canvas smoke here).
         // Allow SwiftShader software GL for this one test.
         var options = BrowserLaunch.Options();
-        options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions { ViewportSize = Portrait });
 

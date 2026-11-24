@@ -76,7 +76,7 @@
     box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
-.arcade-hidden-input {
+::deep .arcade-hidden-input {
     position: absolute;
     inset: 0;
     width: 100%;

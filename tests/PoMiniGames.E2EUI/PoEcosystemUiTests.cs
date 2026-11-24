@@ -25,7 +25,7 @@ public class PoEcosystemUiTests
         // GameShell would correctly show its fallback.
         var options = BrowserLaunch.Options();
         if (!OperatingSystem.IsWindows())
-            options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+            options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions { ViewportSize = MobileViewport.Portrait });
 
