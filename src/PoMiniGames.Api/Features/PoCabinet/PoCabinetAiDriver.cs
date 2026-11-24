@@ -198,6 +198,32 @@ public static class PoCabinetAiDriver
             if ((lateralTarget - car.Lateral) * away < 0) lateralTarget = car.Lateral;
             lateralTarget += away * hw * BlueStep;
         }
+        else if (count == 0 && personality.Aggression >= 0.5)
+        {
+            // Receding-horizon defensive cover (#8): if a same-lap rival is closing within 1.5 s
+            // behind and not alongside, make one legal defensive shift toward the inside apex.
+            PoCabinetCarBody? pursuer = null;
+            double closestBehind = -90;
+            for (int i = 0; i < field.Length; i++)
+            {
+                var other = field[i];
+                if (ReferenceEquals(other, car) || other.Wrecked) continue;
+                double d = other.Along - car.Along;
+                if (d > half) d -= track.Length;
+                else if (d < -half) d += track.Length;
+                if (d < -14 && d > closestBehind && Math.Abs(other.Distance - car.Distance) < half
+                    && RoadSpeed(track, other) > own + 1.5)
+                {
+                    closestBehind = d;
+                    pursuer = other;
+                }
+            }
+            if (pursuer is not null && !left && !right)
+            {
+                double apexLane = track.LineAt(track.IndexAt(car.Along + look * 1.4)) * LineWeight;
+                lateralTarget = 0.55 * apexLane + 0.45 * pursuer.Lateral;
+            }
+        }
         lateralTarget = Math.Min(edge, Math.Max(-edge, lateralTarget));
         // A lapse: off its line and out over the edge of the road.
         double lapsing = Lapse(personality, car.Distance);

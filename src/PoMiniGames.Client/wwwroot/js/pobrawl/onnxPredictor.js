@@ -1,11 +1,17 @@
-// pobrawl/onnxPredictor.js — lightweight ONNX Runtime Web neural intent predictor for PoBrawl.
-// Evaluates a compact (8 -> 16 -> 6) action-intent policy over fight state features on Hard / top
-// ladder rungs, falling back seamlessly to predictor.js's n-gram table when no ONNX weights or
-// runtime session are loaded.
+// pobrawl/onnxPredictor.js — WebGPU/WASM ONNX Runtime Web neural intent predictor (#11).
+// Evaluates a compact (8 -> 16 -> 6) action-intent policy over fight state features with:
+//   - executionProviders: ['webgpu', 'wasm'] (free client-side inference)
+//   - single-slot conflating async queue (drops stale frames while inference is in flight)
+//   - 150 ms prediction cache so combat frames never stall
+//   - seamless fallback to predictor.js's n-gram table when no ONNX session is loaded.
 const ACTIONS = ['jab', 'cross', 'kick', 'grab', 'guard', 'taunt'];
 const DEFAULT_MODEL_URL = '/models/pobrawl/intent-v1.onnx';
+const CACHE_TTL_MS = 150;
 
 let _sessionPromise = null;
+let _inFlight = false;
+let _cachedProbs = null;
+let _cachedAt = 0;
 
 async function loadSession(url = DEFAULT_MODEL_URL) {
   _sessionPromise ??= (async () => {
@@ -14,7 +20,8 @@ async function loadSession(url = DEFAULT_MODEL_URL) {
     const tf = await import('transformers');
     const ort = tf.onnxruntime || globalThis.ort;
     if (!ort?.InferenceSession) return null;
-    return ort.InferenceSession.create(url, { executionProviders: ['wasm'] });
+    const providers = (typeof navigator !== 'undefined' && navigator.gpu) ? ['webgpu', 'wasm'] : ['wasm'];
+    return ort.InferenceSession.create(url, { executionProviders: providers });
   })().catch(() => null);
   return _sessionPromise;
 }
@@ -37,6 +44,28 @@ export function extractIntentFeatures(ctx) {
 }
 
 /**
+ * Non-blocking cached read for the 60 Hz loop: returns the freshest cached distribution
+ * within CACHE_TTL_MS and kicks off a background inference if idle. Never awaits.
+ */
+export function pollIntentOnnx(ctx, modelUrl = DEFAULT_MODEL_URL) {
+  const now = performance.now();
+  if (!_inFlight && now - _cachedAt >= CACHE_TTL_MS) {
+    _inFlight = true;
+    predictIntentOnnx(ctx, modelUrl)
+      .then((probs) => {
+        if (probs) {
+          _cachedProbs = probs;
+          _cachedAt = performance.now();
+        }
+      })
+      .finally(() => {
+        _inFlight = false;
+      });
+  }
+  return now - _cachedAt <= CACHE_TTL_MS * 2 ? _cachedProbs : null;
+}
+
+/**
  * Predict the opponent's next action distribution. Returns null when ONNX weights are not present
  * so tactics.js uses its deterministic n-gram predictor.
  */
@@ -48,7 +77,6 @@ export async function predictIntentOnnx(ctx, modelUrl = DEFAULT_MODEL_URL) {
     const input = new ort.Tensor('float32', extractIntentFeatures(ctx), [1, 8]);
     const out = await session.run({ [session.inputNames[0]]: input });
     const logits = out[session.outputNames[0]].data;
-    // Softmax
     let maxL = -Infinity;
     for (let i = 0; i < ACTIONS.length; i++) if (logits[i] > maxL) maxL = logits[i];
     const probs = {};
@@ -59,4 +87,10 @@ export async function predictIntentOnnx(ctx, modelUrl = DEFAULT_MODEL_URL) {
   } catch {
     return null;
   }
+}
+
+export function resetOnnxPredictorCache() {
+  _cachedProbs = null;
+  _cachedAt = 0;
+  _inFlight = false;
 }

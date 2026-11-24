@@ -254,6 +254,9 @@ public static class PoMuleAi
         var objective = ChooseObjective(match, seat);
         var prices = ForecastPrices(match);
         var ledger = BuildLedger(match, seat);
+        var facts = PoMuleGoapPlanner.BuildWorldFacts(
+            match, seat, empty.Count, ledger.Making[(int)Good.Energy], ledger.Drawing, ledger.Making[(int)Good.Food]);
+        var goapSequence = PoMuleGoapPlanner.PlanGoodSequence(match, seat, objective, facts);
         var carrying = player.HasMule && player.Outfit != MatchState.Nobody;
         var budget = player.Cash - (player.HasMule ? 0 : match.Store.MulePrice);
         var monthsLeft = PoMuleTuning.Months - match.Month + 1;
@@ -268,6 +271,7 @@ public static class PoMuleAi
                 if (carrying ? player.Outfit != g : PoMuleTuning.OutfitCost[g] > budget) continue;
                 var score = Utility(match, seat, objective, prices, ledger, first, good);
                 if (score <= Never / 2) continue;
+                if (goapSequence.Count > 0 && goapSequence[0] == good) score += 35;
 
                 // Look one M.U.L.E. further: what the next plot is worth once this one is working.
                 var after = ledger.With(match.Map.Plots[first], good);
@@ -277,8 +281,10 @@ public static class PoMuleAi
                     if (second == first) continue;
                     for (var h = 0; h < 4; h++)
                     {
-                        var nextScore = Utility(match, seat, objective, prices, after, second, (Good)h, first, good);
-                        if (nextScore > next.Score) next = (second, (Good)h, nextScore);
+                        var nextGood = (Good)h;
+                        var nextScore = Utility(match, seat, objective, prices, after, second, nextGood, first, good);
+                        if (goapSequence.Count > 1 && goapSequence[1] == nextGood) nextScore += 25;
+                        if (nextScore > next.Score) next = (second, nextGood, nextScore);
                     }
                 }
                 var total = score + next.Score;
