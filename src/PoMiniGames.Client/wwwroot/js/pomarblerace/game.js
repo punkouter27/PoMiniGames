@@ -448,6 +448,7 @@ export class Game {
       this._markContacts();
       this._applySetPieces(sdt);   // trampolines, belts, magnets, sand, the flume (course.js)
       this._applyDrive(sdt);
+      this._applyAir(sdt);      // air drag ∝ v² and rolling resistance (course.js)
       this._unstick(sdt);
       this._surface = this._surfaceOf(this._lastFocus, dt);
       this.marbleSet.sync(this.track, this.scene.camera.position, this._leaders);

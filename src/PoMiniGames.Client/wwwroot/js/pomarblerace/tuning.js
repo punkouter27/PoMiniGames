@@ -20,6 +20,18 @@ export const GHOST_KEY = 'pomarblerace.ghost.v1.';
 // The Daily Canyon is the one procedural map that does keep a ghost: its seed is the UTC day, so
 // the course stands still until midnight. store.js rollDaily drops yesterday's with the day.
 
+// ── Air and rolling (real-world drag) ──
+// The world is 1 unit = 7.5 cm with Earth gravity (physics.js), so a marble is a 15 cm glass ball.
+// Instead of a flat linear damping, a moving ball meets the two forces a real one does:
+//   · air drag grows with the SQUARE of speed (½ρC_dA v² / m), so it is nothing at a crawl and
+//     what caps a marble on a long steep drop — speed keeps climbing on a descent, just more slowly;
+//   · rolling resistance (C_rr · g) while it is on the surface, a steady small brake that is why a
+//     real marble on the flat rolls a long way but does stop.
+// AIR_DRAG is above the literal value for a 15 cm glass ball (~8.5e-5 per unit) so a race still
+// runs about 35 s on this course; the shape of the force is the real one.
+export const AIR_DRAG = 0.00045;    // per unit: deceleration = AIR_DRAG · v²
+export const ROLL_RESIST = 0.012;   // C_rr: glass on a hard track; deceleration = C_rr · g
+
 // ── Staying on the map ──
 // A marble is only retired when it is BOTH outside the course envelope AND has touched nothing
 // for LOST_AIR seconds. Touching any static body means it is on the map, whatever the centerline

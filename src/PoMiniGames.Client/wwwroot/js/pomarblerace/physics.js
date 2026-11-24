@@ -29,8 +29,11 @@ export { loadRapier };
 // gravity-independent. What holds the pack in is the authored geometry: 24° of bank on the
 // start helix rising to near-vertical through the Track-LowerA/B loops, with a wall 8.3 units
 // tall (four marble diameters) at every channel edge.
-export const GRAVITY = 72;        // world gravity magnitude (down -Y) — weighty, and enough to
-                                  // keep pace once rolling friction scrubs speed on the turns
+// 2026-11-23 ("move like real life on Earth"): the course is read as a big marble run of 15 cm
+// glass balls, so one unit is 7.5 cm and Earth's 9.81 m/s² is 981 / 7.5 = 131 u/s². Falls, hops
+// and bounces now take the time they would on Earth at that size; air drag and rolling resistance
+// (course.js _applyAir) replace the old flat damping, and a race runs about 35 s.
+export const GRAVITY = 131;       // world gravity magnitude (down -Y): Earth's g at 7.5 cm per unit
 // 1/60, not 1/120. Not a preference — a budget. Colliding 101 marbles against a trimesh course costs
 // ~16.5 ms per step at the start line (the worst case, with the whole field still bunched), so at
 // 1/120 the physics alone wanted ~33 ms per rendered frame and the race would have run in slow
@@ -40,7 +43,9 @@ export const GRAVITY = 72;        // world gravity magnitude (down -Y) — weigh
 // marbles observed on this course run ~55 u/s, which is 0.92 units per step here, against a
 // marble 2 units across. The surface catches it with better than 2x to spare, and would keep
 // doing so up to ~120 u/s. Raising this to 1/120 is safe for physics and NOT safe for the
-// frame budget — check the step cost before considering it.
+// frame budget — check the step cost before considering it. Since Earth gravity (2026-11-23) marbles
+// pass 120 u/s on the steep drops; Rapier's CCD covers that: `harness.mjs tunnel 7` fires 299 shots
+// at MAX_SPEED (200) into the course and none escape.
 export const FIXED_DT = 1 / 60;   // fixed physics step
 export const MAX_SUBSTEPS = 4;
 
@@ -81,10 +86,10 @@ export function createWorld() {
     { friction: 0.09, restitution: 0.35 }));
   world.addContactMaterial(new CANNON.ContactMaterial(marble, obstacle,
     { friction: 0.25, restitution: 0.45 }));
-  // Glass on glass is the bounciest contact in the world (COR ≈ 0.55 here), with a little
+  // Glass on glass is the bounciest contact in the world (COR ≈ 0.7 here; real glass is ~0.9, kept lower so a pile-up settles), with a little
   // friction so a knock also imparts spin.
   world.addContactMaterial(new CANNON.ContactMaterial(marble, marble,
-    { friction: 0.15, restitution: 0.55 }));
+    { friction: 0.15, restitution: 0.7 }));
   // Rumble bands: extra friction to shave speed and reshuffle the pack, but kept below the
   // ramp's tan(slope) so a rolling marble slows without ever stopping (non-blocking guarantee).
   world.addContactMaterial(new CANNON.ContactMaterial(marble, rumble,

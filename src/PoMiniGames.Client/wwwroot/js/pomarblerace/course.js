@@ -7,8 +7,9 @@ import * as CANNON from '../platform/physics/cannonCompat.js';
 import {
   LOST_AIR, REACQUIRE_AFTER, RESPAWN_HOLD, RESPAWN_SPEED, RESPAWN_LIFT, AIR_HOLD, BRAKE_RATE, STALL_AFTER, STALL_REPEAT, STALL_GAIN, STALL_NUDGE, STALL_STEP, STALL_MAX, STALL_LOOKAHEAD, STALL_SIDESTEP, STALL_SIDE_SHARE, BOOST_ACCEL, BOOST_MAX_SPEED, KICK_DV, KICK_UP, KICK_CHARGE,
   TRAMP_V, TRAMP_FWD, TRAMP_COOLDOWN, CONVEYOR_SPEED, CONVEYOR_GRIP, MAGNET_ACCEL, MAGNET_PERIOD, MAGNET_DUTY,
-  SAND_DRAG, SAND_MIN_SPEED, FLUME_CURRENT, FLUME_DRAG, FLUME_FLOOR,
+  SAND_DRAG, SAND_MIN_SPEED, FLUME_CURRENT, FLUME_DRAG, FLUME_FLOOR, AIR_DRAG, ROLL_RESIST,
 } from './tuning.js';
+import { GRAVITY } from './physics.js';
 
 // Scratch: centerAt()/dirAt() hand back a shared vector unless given an output.
 const _camRoad = new THREE.Vector3();
@@ -66,6 +67,21 @@ export class CourseMixin {
       const v = m.body.velocity;
       const sp = v.length();
       if (sp > cap) v.scale(Math.max(cap / sp, 1 - BRAKE_RATE * sdt), v);
+    }
+  }
+
+  // Air drag (∝ v²) on every live marble, rolling resistance (C_rr·g) on the ones touching the
+  // course. Both act against the motion and never reverse it. See AIR_DRAG in tuning.js.
+  _applyAir(sdt) {
+    const roll = ROLL_RESIST * GRAVITY;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || m.respawnT > 0) continue;
+      const v = m.body.velocity;
+      const sp = Math.hypot(v.x, v.y, v.z);
+      if (sp < 1e-3) continue;
+      const dec = AIR_DRAG * sp * sp + (this._touch.has(m.body) ? roll : 0);
+      const k = Math.max(0, 1 - (dec * sdt) / sp);
+      v.x *= k; v.y *= k; v.z *= k;
     }
   }
 

@@ -90,7 +90,9 @@ function el(tag, cls, parent) {
 
 export function createHud(container) {
   const noop = () => { };
-  if (!container || typeof document === 'undefined') {
+  // Headless (the node harness's DOM stub) or anything without real element styles: no overlays.
+  const probe = typeof document !== 'undefined' && document.createElement ? document.createElement('div') : null;
+  if (!container || !probe || typeof probe.style?.setProperty !== 'function' || typeof probe.animate !== 'function') {
     return { tower: noop, hideTower: noop, threats: noop, pipLabel: noop, iris: noop, tags: noop, clearTags: noop, dispose: noop };
   }
   ensureStyle();

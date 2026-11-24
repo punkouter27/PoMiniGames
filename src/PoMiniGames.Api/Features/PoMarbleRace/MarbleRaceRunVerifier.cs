@@ -42,9 +42,10 @@ public static class MarbleRaceRunVerifier
         [7] = 2786,
     };
 
-    // ponytail: a speed bound, not a replay — marbles.js MAX_SPEED (85) doubled, because a marble
-    // that drops off one ring of a spiral onto the next advances `s` faster than it moves. Proves a
-    // time is reachable, not that a human steered it; a server-side sim is the upgrade path.
+    // ponytail: a speed bound, not a replay. Average pace over the whole course: with Earth gravity
+    // and air drag (2026-11-23) the fastest measured winners average ~100 u/s (2786 units in 28 s),
+    // so 170 leaves room for a lucky line and a drop that advances `s` faster than the marble moves.
+    // Proves a time is reachable, not that a human steered it; a server-side sim is the upgrade path.
     private const double FastestUnitsPerSecond = 170;
 
     /// <summary>

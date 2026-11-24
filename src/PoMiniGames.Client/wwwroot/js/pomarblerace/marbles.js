@@ -126,7 +126,8 @@ const packMass = (i) => {
 export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
   name: i === PLAYER_INDEX ? 'You' : 'Marble',
   color: marbleColor(i),
-  radius: 1.0, mass: packMass(i), linDamp: 0.04, angDamp: 0.002,
+  // No linear damping: air drag (∝ v²) and rolling resistance are applied as forces (course.js _applyAir).
+  radius: 1.0, mass: packMass(i), linDamp: 0, angDamp: 0.002,
 }));
 
 // Hard ceiling on marble speed, world units/s. This is a SAFETY interlock, not a game feel knob.
@@ -148,7 +149,10 @@ export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
 // the bottom just to crest, before friction. An earlier cap of 55 was under that, and the entire
 // field piled up at the foot of the LowerA loop and never finished. Anything below ~75 will do
 // that again.
-export const MAX_SPEED = 85;
+// 2026-11-23: with Earth gravity for the 7.5 cm unit (physics.js) speed is set by air drag, not
+// by this ceiling, which is now only a safety net (Rapier CCD on every marble stops tunnelling).
+// MarbleRaceRunVerifier.cs bounds the whole-course AVERAGE pace separately (170 u/s).
+export const MAX_SPEED = 200;
 
 // ── Player choices (intro card) ──
 // Skins change the red marble's finish, never its hue. `need` is the best run score that unlocks
