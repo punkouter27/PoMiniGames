@@ -89,6 +89,23 @@ export const KICK_DV = 16;          // lateral velocity punch at mass 1 when it 
 export const KICK_UP = 4;           // small upward pop so the kick reads as a jolt, not a slide
 export const KICK_CHARGE = 0.34;    // fraction of each cycle spent visibly charging up — the TELL
 
+// ── Set-piece obstacles and surfaces (composer.js deals them; course.js runs them) ──
+// Every one is push-only or free-moving, so none can hold a marble: the non-trapping rule.
+export const TRAMP_V = 30;          // up-velocity a trampoline pad sets (apex ≈ v²/2g ≈ 6 units)
+export const TRAMP_FWD = 6;         // and a little push down-track, so a bounce carries the marble on
+export const TRAMP_COOLDOWN = 0.45; // s before the same marble can be launched again
+export const CONVEYOR_SPEED = 26;   // lateral belt speed, units/s
+export const CONVEYOR_GRIP = 4;     // 1/s — how fast a marble on a belt is dragged to its speed
+export const MAGNET_ACCEL = 95;     // lateral units/s² at the coil (÷ mass), falling to 0 at the reach
+export const MAGNET_PERIOD = 3.0;   // s per on/off cycle
+export const MAGNET_DUTY = 0.62;    // share of the cycle a magnet pulls
+export const SAND_DRAG = 1.1;       // 1/s speed bleed on sand…
+export const SAND_MIN_SPEED = 24;   // …down to here and no further, so sand slows but never stops a marble
+export const FLUME_CURRENT = 44;    // units/s the water carries a marble down the flume
+export const FLUME_DRAG = 1.6;      // 1/s — how hard the water drags a marble toward its own velocity
+export const FLUME_FLOOR = 0.75;    // the water's down-flume speed never drops under this share of the current
+export const FOAM_LIFE = 2.4;       // s for a wake to fade to 1/e
+
 // ── Scoring ──
 // Placement-weighted across the 101-marble field: finishing anywhere in the top SCORE_TOP
 // scores, more for a higher place, with a dominant-win bonus and a streak multiplier on top.

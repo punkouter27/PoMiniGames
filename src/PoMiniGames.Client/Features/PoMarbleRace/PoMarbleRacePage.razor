@@ -23,7 +23,7 @@
            Player="@_playerName"
            BackTo="/"
            Stats="@_statItems"
-           GameOver="@(_phase == "result" && !_demo && (_online || !_lastWon))"
+           GameOver="@_summaryReady"
            GameKey="pomarblerace"
            RequiresWebGl="true"
            Fullscreen="true"
@@ -116,14 +116,10 @@
                                 }
                                 else
                                 {
-                                    <text>Building Grand Circuit…</text>
+                                    <text>Dealing a new course…</text>
                                 }
                             </p>
-                            <div class="mr-lights" aria-hidden="true">
-                                <span class="mr-light @(!_loading && _pickCountdown <= 3 ? "is-lit" : "")"></span>
-                                <span class="mr-light @(!_loading && _pickCountdown <= 2 ? "is-lit" : "")"></span>
-                                <span class="mr-light @(!_loading && _pickCountdown <= 1 ? "is-lit is-go" : "")"></span>
-                            </div>
+                            @* The start lights are on the gantry over the grid now (gantry.js). *@
                             <p class="mr-prerace-hint">@SteerHint</p>
                         </div>
                     }
@@ -133,7 +129,7 @@
                        race to end (or a demo, where there is no place of yours to show). *@
                     @* A HUD island: the race tick (ten a second) refreshes only this chip. *@
                     <HudRegion @ref="_hud">
-                    @if (ShowPlace || _podium.Count > 0)
+                    @if ((ShowPlace || _podium.Count > 0) && !_summaryReady)
                     {
                         <div class="mr-place" role="status" aria-label="@StandingsLabel">
                             @if (ShowPlace)
@@ -249,7 +245,6 @@
         @{ var p = _menu?.Prefs ?? new MarblePrefs(); }
         @SettingSwitch("Ghost of your best run", "Replays your fastest finish (G)", p.GhostOn, v => SetPrefAsync("ghost", v))
         @SettingSwitch("Sound", "All race audio (M)", !p.Muted, v => SetPrefAsync("sound", v))
-        @SettingSwitch("Race music", "4-stem adaptive procedural synth score", p.Music, v => SetPrefAsync("music", v))
         @SettingSwitch("Announcer", "Calls Act transitions, lead changes and photo finishes", p.Announcer, v => SetPrefAsync("announcer", v))
         <p class="mr-setting-hint">Tab or Stats opens frame rate, Rapier WASM physics time and draw calls.</p>
         <div class="mr-setting">
@@ -288,10 +283,6 @@
             case "sound":
                 p.Muted = !on;
                 await TryJsAsync("PoMarbleRace.setMuted", !on);
-                break;
-            case "music":
-                p.Music = on;
-                await TryJsAsync("PoMarbleRace.setMusic", on);
                 break;
             case "announcer":
                 p.Announcer = on;
@@ -342,12 +333,12 @@
             : "WR: be the first";
     }
 
-    // Track thumbnail for the unified Grand Circuit course.
+    // Track thumbnail for Grand Circuit (a new course every race, so the glyph is a generic descent).
     private static RenderFragment TrackGlyph(int mapId)
     {
         var (path, color) = mapId switch
         {
-            7 => ("M4 8 C 14 26, 20 2, 28 16 C 34 26, 40 6, 46 20 L 58 28", "#22d3ee"), // Grand Circuit: helix + funnel + plunge + slide
+            7 => ("M4 8 C 14 26, 20 2, 28 16 C 34 26, 40 6, 46 20 L 58 28", "#22d3ee"), // Grand Circuit: a winding descent
             _ => ("M6 6 L58 30", "#94a3b8"),
         };
         return @<svg class="mr-track-glyph" viewBox="0 0 64 34" aria-hidden="true" focusable="false">
@@ -388,6 +379,10 @@
                 : IsOnlineGuest ? "💀 Outside the top 10" : $"💀 Run over · {(_lastPlace > 0 ? $"you placed {Ordinal(_lastPlace)}" : "you didn't finish")}")
         </div>
         @ResultStandings
+        @if (_placeHistory.Length > 1)
+        {
+            @PlaceChart
+        }
     </div>;
 
     private RenderFragment ResultStandings => @<div>
@@ -414,7 +409,16 @@
         }
         @if (!IsOnlineGuest)
         {
-            <div class="mr-result-run">@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
+            <div class="mr-result-run">
+                @if (_lastWon)
+                {
+                    <text>Run: </text>@CountUp(_score)<text> · Streak: </text>@CountUp(_streak)
+                }
+                else
+                {
+                    <text>Best run: </text>@CountUp(_best)
+                }
+            </div>
         }
         @if (!_online && IsDailyMap(_mapId) && _dailyBoard.Length > 0)
         {
@@ -439,6 +443,38 @@
             <div class="mr-series">Series: You @_seriesMine – @_seriesTheirs @_opponentName</div>
         }
     </div>;
+
+    // #11 a number that counts up from zero as the card opens (CSS @property counter); the real
+    // value is in the accessible text, the animated one is decoration.
+    private static RenderFragment CountUp(int value) => @<span class="mr-countup"><span class="mr-count" style="--to:@value" aria-hidden="true"></span><span class="mr-sr-only">@value</span></span>;
+
+    // #10 your place through the race (showcase.js samples it every half second). Top of the chart
+    // is P1; a square-root scale gives the top ten room; the shaded band is where a race scores.
+    private RenderFragment PlaceChart => @<figure class="mr-chart">
+        @{
+            var h = _placeHistory;
+            var n = h.Length;
+            var pts = string.Join(" ", h.Select((p, i) => $"{ChartX(i, n).ToString("0.#", Inv)},{ChartY(p).ToString("0.#", Inv)}"));
+            var bestP = h.Min();
+            var last = h[^1];
+        }
+        <svg class="mr-chart-svg" viewBox="0 0 300 92" role="img" aria-label="@($"Your place through the race: best P{bestP}, finished P{last}")">
+            <rect class="mr-chart-band" x="0" y="@ChartY(1).ToString("0.#", Inv)" width="300" height="@((ChartY(10.5) - ChartY(1)).ToString("0.#", Inv))" />
+            <text class="mr-chart-label" x="296" y="@((ChartY(10.5) - 3).ToString("0.#", Inv))" text-anchor="end">TOP 10</text>
+            @foreach (var a in _placeActs)
+            {
+                var x = ChartX(a, n).ToString("0.#", Inv);
+                <line class="mr-chart-act" x1="@x" x2="@x" y1="2" y2="90" />
+            }
+            <polyline class="mr-chart-line" points="@pts" pathLength="1" />
+            <circle class="mr-chart-end" cx="@ChartX(n - 1, n).ToString("0.#", Inv)" cy="@ChartY(last).ToString("0.#", Inv)" r="3.6" />
+        </svg>
+        <figcaption class="mr-result-run">Your race · best P@(bestP) · finished P@(last)</figcaption>
+    </figure>;
+
+    private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+    private static double ChartX(int i, int n) => 4 + 292.0 * i / Math.Max(1, n - 1);
+    private static double ChartY(double place) => 6 + 80 * Math.Sqrt(Math.Max(0, place - 1) / (MarbleCount - 1.0));
 
     // Inline SVG rather than 🥇🥈🥉: emoji render at the platform font's size and colour and
     // fall back to tofu where the font is missing.

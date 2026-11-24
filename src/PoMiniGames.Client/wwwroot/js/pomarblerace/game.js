@@ -19,6 +19,9 @@ import { ResultsMixin } from './results.js';
 import { OnlineMixin } from './online.js';
 import { RivalsMixin } from './rivals.js';
 import { PerfMixin } from './perf.js';
+import { FlumeMixin } from './flume.js';
+import { ShowcaseMixin } from './showcase.js';
+import { createHud } from './hud.js';
 // Weather + glass: classic-style IIFE modules imported as modules, they self-register
 // on window and run once.
 import '../platform/weather.js';
@@ -29,6 +32,9 @@ import {
 } from './tuning.js';
 
 const ACOUSTIC_M_PER_UNIT = 0.04;   // metres the audio probe counts per physics unit (see _buildTrack)
+const BACKDROP_STEP = 20;           // course units between the backdrop's samples of the centerline
+// Act thresholds for a track that brings none of its own.
+const DEFAULT_ACTS = [0.02, 0.22, 0.52, 0.695, 0.86].map((from) => ({ from, line: '' }));
 
 
 export class Game {
@@ -80,6 +86,7 @@ export class Game {
     this.materials = w.materials;
     this.audio = createAudio();
     this.minimap = createMinimap(this.container);
+    this.hud = createHud(this.container);   // tower, threat arrows, leader-cam label, iris, flyover tags
     this._actAnnounced = -1;
 
     this.phase = 'pick';
@@ -196,9 +203,11 @@ export class Game {
     for (const m of this.marbleSet.marbles) m.prevPlace = -1;
     this.scene.followTarget(this.marbleSet.marbles[index].mesh.position, 0, true);
     this.scene.punchFov();   // a quick FOV widen as the race kicks off
+    this._showcaseGo();      // gantry green, the iris opens out of your marble
     this.audio.resume();
     this.audio.playGun();
     this._armGhost();
+    this._showCourseCard();
   }
 
   regenerate() {
@@ -216,13 +225,16 @@ export class Game {
 
   setMuted(m) { this.audio.setMuted(m); }
 
-  beep(final) { this.audio.playBeep(!!final); }
+  beep(final) { this.audio.playBeep(!!final); this._gantryBeat(!!final); }
 
   dispose() {
     this.disposed = true;
     this._unbindKeys();
     this._perfDispose();
+    this._showcaseDispose();
     this._dropGhost();
+    this._dropFlume();
+    this.scene.setBackdrop?.(null);
     if (this.marbleSet) this.marbleSet.dispose();
     if (this.track) this.track.dispose();
     if (this.minimap) this.minimap.dispose();
@@ -251,9 +263,12 @@ export class Game {
     if (!this.track) {
       this.track = this.map.build(this.world, this.materials, MARBLE_COUNT, this.mapAsset, this.seed);
       this.scene.add(this.track.group);
+      this._dressCourse();
     }
-    // The map's acoustics (maps.js `reverb`); zones are measured against the course length.
-    this.audio.setReverb(this.map.reverb, this.track.length);
+    // The map's acoustics (maps.js `reverb`); zones are measured against the course length. A
+    // dealt course brings its own zones (a drop tunnel's boxed-in reverb, wherever it landed).
+    const reverb = this.track.reverbZones ? { ...this.map.reverb, zones: this.track.reverbZones } : this.map.reverb;
+    this.audio.setReverb(reverb, this.track.length);
     // Acoustic probe (audio.js -> platform/acousticProbe.js): 3 rays a frame from the camera through the SAME
     // Rapier world the marbles roll in, so the early reflections follow the course walls, tubes and funnels.
     // The probe thinks in metres; the world is in cm-scale units, but a course the size of a living room
@@ -282,6 +297,8 @@ export class Game {
         // The same heavy hit holds the frame for a beat. Local races only: online, the host's
         // clock is the guest's race, and one player's hit should not stall the other's view.
         if (v > 14 && !this.online) window.PoImpact?.hitstop?.(45);
+        // #20 you feel the hits on your own marble: low motor for weight, high for the crack.
+        if (v > 6) this._rumble(Math.min(1, v / 30), Math.min(1, v / 16), 45 + Math.min(90, v * 4));
       },
       // Marble-only specular environment (realism pass #3). Bound as `envMap` on the marble
       // materials alone — deliberately NOT scene.environment, so the track stays matte.
@@ -305,9 +322,36 @@ export class Game {
     this._lastFocus = null;
     this._leaders = [];
     this.minimap.setTrack(this.track);
+    this._showcaseTrack();   // gantry, flyover, HUD reset (showcase.js)
     this._setPhase('pick');
     // frame the start gate from above, looking along the track rather than down world +Z
     this.scene.followTarget(this.track.overviewTarget, 0, true, this.track.dirAt(0));
+  }
+
+  // A freshly dealt course (composer.js): its theme and act lighting, its water, its far scenery,
+  // and the course card on the minimap. Runs once per build, before the start.
+  _dressCourse() {
+    const t = this.track;
+    this.scene.setTheme(t.theme || this.map.theme);
+    if (t.acts) this.scene.setActLights?.(t.acts.map((a) => a.light));
+    this._armFlume();
+    // The Gaussian-splat backdrop (scene.js / backdrop.js) follows the course: the centerline
+    // and the road's right vector every BACKDROP_STEP units, and the half-width to keep clear.
+    if (t.theme && t.theme.splat && this.scene.setBackdrop) {
+      const pts = [];
+      for (let s = 0; s <= t.length; s += BACKDROP_STEP) {
+        const c = t.centerAt(s, new THREE.Vector3());
+        const r = t.rightAt(s, new THREE.Vector3());
+        pts.push({ x: c.x, y: c.y, z: c.z, rx: r.x, rz: r.z, hw: t.halfWidthAt(s) });
+      }
+      this.scene.setBackdrop({ pts, theme: t.theme, seed: this.seed });
+    }
+  }
+
+  // The course card: which course this is and what is on it. At the gun, when the intro is gone.
+  _showCourseCard() {
+    const t = this.track;
+    if (t && t.courseName) this.minimap.showBanner?.(t.courseName.toUpperCase(), t.courseSub || '', t.acts?.[0]?.color || '#38bdf8', 3200);
   }
 
   // #3 — request a colour grade. Deduped because this is called from the frame loop: setGrade
@@ -402,6 +446,7 @@ export class Game {
       this._applyBrakes(sdt);
       this._applyKickers();
       this._markContacts();
+      this._applySetPieces(sdt);   // trampolines, belts, magnets, sand, the flume (course.js)
       this._applyDrive(sdt);
       this._unstick(sdt);
       this._surface = this._surfaceOf(this._lastFocus, dt);
@@ -429,7 +474,7 @@ export class Game {
         // #9 — spatialized, so a pack crossing ahead of you spreads across the stereo field
         // instead of stacking a hundred identical chimes dead centre.
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
-        if (m.index === this.chosen) { this._celebrateOwnFinish(m, m.finishOrder + 1); this._keepGhost(m.finishTime); }
+        if (m.index === this.chosen) { this._celebrateOwnFinish(m, m.finishOrder + 1); this._keepGhost(m.finishTime); this._rumble(0.5, 1, 380); }
       }
       this._tickGhost();
       // Rack the focus for the WINNER only. Firing it per finisher
@@ -443,6 +488,7 @@ export class Game {
           this.scene.finishSwoop?.();   // #26 swing round the winner (off on Lite / reduced motion)
         }
         window.PoImpact?.impact('win', 1);
+        this._irisOnWinner(justFinished.find((m) => m.finishOrder === 0));   // #2
         // Photo-finish post preset + the finish-gate chime.
         window.PoImpactFx?.win(1);
         window.PoMaterialAudio?.hit('glass', 0.7);
@@ -484,16 +530,18 @@ export class Game {
         const prog = Math.max(0, Math.min(1, focus.s / this.track.length));
         const spd = focus.body ? focus.body.velocity.length() : 0;
         braking = !!(this.track.brakeAt && this.track.brakeAt(focus.s) > 0);
-        this.audio.updateMusic?.(prog, spd, this._wasBoosting, dt);
-        const ACT_THRESH = [0.02, 0.22, 0.52, 0.695, 0.86];
+        const meM = this.chosen >= 0 ? this.marbleSet.marbles[this.chosen] : null;
+        this.audio.updateMusic?.(prog, spd, this._wasBoosting, dt, meM && !meM.eliminated ? meM.place : -1, this._actAnnounced);
+        // The course's acts (composer.js); the first is called once the field is under way.
+        const acts = this.track.acts || DEFAULT_ACTS;
         let curAct = 0;
-        for (let a = ACT_THRESH.length - 1; a >= 0; a--) {
-          if (prog >= ACT_THRESH[a]) { curAct = a; break; }
+        for (let a = acts.length - 1; a >= 0; a--) {
+          if (prog >= Math.max(0.02, acts[a].from)) { curAct = a; break; }
         }
         this.scene.setActLighting?.(curAct, dt);
         if (curAct > this._actAnnounced) {
           this._actAnnounced = curAct;
-          this.audio.announceAct?.(curAct);
+          this.audio.announceAct?.(curAct, acts[curAct].line);
           this.minimap.showAct?.(curAct);
         }
       }
@@ -518,9 +566,16 @@ export class Game {
       // pick phase: gentle overview of the start gate. The heading matters here too — without
       // it the camera sat straight back in world -Z while the track headed off at an angle,
       // which threw the road across one side of the frame before the race even started.
-      const ov = this.track.overviewTarget;
-      this.scene.followTarget(ov, dt, false, this.track.dirAt(0));
+      // The first seconds are the flyover (#3, showcase.js); then the overview holds.
+      if (!this._flyoverFrame(dt)) {
+        const ov = this.track.overviewTarget;
+        this.scene.followTarget(ov, dt, false, this.track.dirAt(0));
+      }
+      // Ambient score under the grid (the worklet keeps only the pad going before the gun).
+      if (!this.isGuest) this.audio.updateMusic?.(0, 0, false, dt, -1, -1, false);
     }
+
+    this._showcaseFrame(dt);   // lens state, leader cam, gantry lamps
 
     this._perfBeforeRender();
     const renderT0 = performance.now();
@@ -545,7 +600,7 @@ export class Game {
 
 // The Game class body is split by system; each mixin's methods land on Game.prototype, so
 // `this` is the Game everywhere and call sites are unchanged.
-for (const M of [GhostMixin, InputMixin, DirectorMixin, CourseMixin, ResultsMixin, OnlineMixin, RivalsMixin, PerfMixin]) {
+for (const M of [GhostMixin, InputMixin, DirectorMixin, CourseMixin, ResultsMixin, OnlineMixin, RivalsMixin, PerfMixin, FlumeMixin, ShowcaseMixin]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k !== 'constructor') Object.defineProperty(Game.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
   }

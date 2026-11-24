@@ -85,7 +85,7 @@ const IMPACT_FULL = 22;
 // impactSynth.js while this game's own bank is still rendering.
 const SYNTH_MATERIAL = {
   marble: 'glass', surface: 'stone', obstacle: 'wood', rumble: 'rubber',
-  bump: 'rubber', spinner: 'metal', ice: 'glass',
+  bump: 'rubber', spinner: 'metal', ice: 'glass', sand: 'dirt', water: 'water',
 };
 
 const IMPACT_MATERIALS = {
@@ -96,6 +96,9 @@ const IMPACT_MATERIALS = {
   bump: { f0: 260, modes: [1, 1.7], decay: 0.08, click: 0.55, hp: 900, level: 1.0 },
   spinner: { f0: 540, modes: [1, 1.98, 3.07, 4.2], decay: 0.26, click: 0.3, hp: 2600, level: 0.85 },
   ice: { f0: 1500, modes: [1, 2.2, 3.6], decay: 0.15, click: 0.25, hp: 4000, level: 0.75 },
+  // Sand swallows a hit: a short dull thud, mostly noise. Water is a low plop with a bubbly tail.
+  sand: { f0: 170, modes: [1, 1.4], decay: 0.04, click: 0.9, hp: 450, level: 0.8 },
+  water: { f0: 380, modes: [1, 1.52, 2.35], decay: 0.22, click: 1.0, hp: 300, level: 0.9 },
 };
 
 // Slip hiss: mismatch (u/s) at which it is fully on, and its ceiling level.
@@ -127,12 +130,14 @@ const SURFACES = {
   rumble: { type: 'lowpass', lo: 90, span: 300, q: 2.4, gain: 1.7, trem: 0.55, rate: 22 },
   bump: { type: 'bandpass', lo: 120, span: 380, q: 2.0, gain: 1.5, trem: 0.85, rate: 9 },
   ice: { type: 'highpass', lo: 2200, span: 2400, q: 0.7, gain: 0.8, trem: 0, rate: 0 },
+  sand: { type: 'lowpass', lo: 300, span: 900, q: 0.8, gain: 1.3, trem: 0.3, rate: 40 },
+  water: { type: 'bandpass', lo: 220, span: 520, q: 0.6, gain: 1.4, trem: 0.6, rate: 7 },
   boost: { type: 'bandpass', lo: 320, span: 1100, q: 0.9, gain: 1.35, trem: 0.2, rate: 34 },
   air: { type: 'bandpass', lo: 140, span: 620, q: 1.1, gain: 0, trem: 0, rate: 0 },
 };
 
 // Which friction colour the camera marble's contact voice wears on each SURFACES kind.
-const CONTACT_TAG = { surface: 'stone', obstacle: 'metal', rumble: 'stone', bump: 'wood', ice: 'ice', boost: 'metal', air: 'stone' };
+const CONTACT_TAG = { surface: 'stone', obstacle: 'metal', rumble: 'stone', bump: 'wood', ice: 'ice', boost: 'metal', air: 'stone', sand: 'dirt', water: 'water' };
 
 export function createAudio() {
   // Platform contact voices (contactLoop.js), one per tag, made on demand. Only the one matching the
@@ -698,6 +703,7 @@ export function createAudio() {
     rollGain.gain.setTargetAtTime(0, now, 0.1);
     crowdGain.gain.setTargetAtTime(0, now, 0.1);
     if (rivals) for (const r of rivals) r.gain.gain.setTargetAtTime(0, now, 0.1);
+    stopMusic();   // #19 the score lets go with the beds; the next grid brings the pad back
     // The drone is deliberately NOT silenced here — resolveDrone() lands its release first, and
     // cutting the gain at the same moment would swallow it.
   }
@@ -951,18 +957,22 @@ export function createAudio() {
   // ── Real-Time AudioWorklet Modal Glass Synth & Surface-Grain Engine ──
   // Loads marble-audio-worklet.js on the dedicated Web Audio render thread when supported;
   // transparently falls back to existing Web Audio nodes in headless/unsupported environments.
+  // Two processors from the one module: the synth (impacts, rolling grain, #18 Doppler passes) on
+  // the one-shot bus, stereo; and (#19) the score on the bed bus, so every duck() pulls it down too.
   let workletNode = null;
+  let musicNode = null;
   let workletLoading = false;
-  let musicOn = readPref('music') !== false;
 
   function ensureWorklet() {
     if (workletNode || workletLoading || !ctx || !ctx.audioWorklet || !sfxBus) return;
     workletLoading = true;
     ctx.audioWorklet.addModule('/js/pomarblerace/marble-audio-worklet.js')
       .then(() => {
-        if (!ctx || !sfxBus) return;
-        workletNode = new AudioWorkletNode(ctx, 'marble-synth-processor');
+        if (!ctx || !sfxBus || !bedBus) return;
+        workletNode = new AudioWorkletNode(ctx, 'marble-synth-processor', { outputChannelCount: [2] });
         workletNode.connect(sfxBus);
+        musicNode = new AudioWorkletNode(ctx, 'marble-music-processor', { outputChannelCount: [2] });
+        musicNode.connect(bedBus);
       })
       .catch(() => { /* fallback to standard Web Audio bank */ });
   }
@@ -978,95 +988,109 @@ export function createAudio() {
     workletNode.port.postMessage({ type: 'roll', speed, slip, surface: surfaceCode });
   }
 
-  // ── 4-Stem Adaptive Procedural Synth Score (routed through bedBus for auto-ducking & mute) ──
-  // Stems: (1) sub-bass pulse, (2) crisp filtered hi-hat pulse, (3) neon arpeggio, (4) Act 5 riser.
-  const MUSIC_SCALE = [146.83, 174.61, 196.00, 220.00, 261.63, 293.66, 349.23, 392.00]; // D minor pentatonic/dorian
-  let musicStep = 0;
-  let musicAccum = 0;
-  function updateMusic(progress, speed, boosting, dt) {
-    if (!ctx || !bedBus || muted || !musicOn || dt <= 0) return;
+  // ── #19 the score (marble-music-processor) ──
+  // Always on (the Sound switch and the app's mute still silence it): a pad under the grid, then
+  // bass, drums once you are in the top ten, a lead on the podium or in the final stretch. The
+  // processor quantises every change to its own bar line; this only reports the race to it, at
+  // most ten times a second.
+  let musicSent = 0;
+  let musicLast = '';
+  function updateMusic(progress, speed, boosting, dt, place = -1, act = -1, racing = true) {
+    if (!ctx || !bedBus || dt <= 0) return;
     ensureWorklet();
     const p = Math.max(0, Math.min(1, progress || 0));
-    const surfaceCode = boosting ? 3 : (p >= 0.77 && p <= 0.82) ? 2 : (p >= 0.695 && p <= 0.765) ? 1 : 0;
-    updateWorkletRoll(speed || 0, boosting ? 0.35 : 0, surfaceCode);
-
-    const tempo = 114 + p * 36 + (boosting ? 14 : 0); // 114 BPM -> 164 BPM in Act 5
-    const stepDur = 60 / tempo / 2;                   // 8th-note grid
-    musicAccum += dt;
-    if (musicAccum < stepDur) return;
-    musicAccum -= stepDur;
-
+    if (racing) {
+      const surfaceCode = boosting ? 3 : (p >= 0.77 && p <= 0.82) ? 2 : (p >= 0.695 && p <= 0.765) ? 1 : 0;
+      updateWorkletRoll(speed || 0, boosting ? 0.35 : 0, surfaceCode);
+    }
+    if (!musicNode) return;
     const now = ctx.currentTime;
-    const idx = musicStep++;
+    const msg = { type: 'music', mode: racing ? 'race' : 'grid', prog: Math.round(p * 100) / 100, place, boost: !!boosting, act };
+    const key = `${msg.mode}|${msg.prog}|${place}|${msg.boost}|${act}`;
+    if (key === musicLast || now - musicSent < 0.1) return;
+    musicLast = key;
+    musicSent = now;
+    musicNode.port.postMessage(msg);
+  }
 
-    // Stem 1: Sub-bass pulse on even 8ths
-    if (idx % 2 === 0) {
-      const bass = ctx.createOscillator();
-      const bf = ctx.createBiquadFilter();
-      const bg = ctx.createGain();
-      const root = MUSIC_SCALE[(Math.floor(idx / 8) % 4)] * 0.5;
-      bass.type = 'triangle';
-      bass.frequency.setValueAtTime(root, now);
-      bf.type = 'lowpass';
-      bf.frequency.setValueAtTime(220 + p * 280 + (boosting ? 180 : 0), now);
-      const peak = 0.048 + p * 0.025;
-      bg.gain.setValueAtTime(0.0001, now);
-      bg.gain.exponentialRampToValueAtTime(peak, now + 0.014);
-      bg.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 1.35);
-      bass.connect(bf).connect(bg).connect(bedBus);
-      bass.start(now);
-      bass.stop(now + stepDur * 1.45);
-    }
+  function stopMusic() {
+    musicLast = '';
+    if (musicNode) musicNode.port.postMessage({ type: 'music', mode: 'off' });
+  }
 
-    // Stem 2: Crisp percussive hi-hat tick on off-beats once pack hits speed
-    if (noiseBuf && (p > 0.12 || boosting) && idx % 2 === 1) {
-      const hat = ctx.createBufferSource();
-      hat.buffer = noiseBuf;
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.setValueAtTime(7500, now);
-      const hg = ctx.createGain();
-      hg.gain.setValueAtTime(0.0001, now);
-      hg.gain.exponentialRampToValueAtTime(0.014 + p * 0.016, now + 0.004);
-      hg.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
-      hat.connect(hp).connect(hg).connect(bedBus);
-      hat.start(now, Math.random() * 0.5);
-      hat.stop(now + 0.05);
+  // ── #18 a rival passing close by ──
+  // On the worklet: band-passed air swept from high to low (approach, then recede) with the
+  // rival's hum under it. `rel` the closing speed sets how far the pitch falls and how long it
+  // takes; `ahead` (the rival is now in front) is not needed for the shape, which is the same
+  // whichever of you passed. Fallback without a worklet: a filtered noise sweep from the graph.
+  function playPass(cue, rel, ahead) {
+    const c = ensure();
+    if (!c) return;
+    ensureWorklet();
+    const pan = cue ? cue.pan : 0;
+    const gain = cue ? cue.gain : 1;
+    if (workletNode) {
+      workletNode.port.postMessage({ type: 'pass', rel, pan, gain, ahead: !!ahead });
+      return;
     }
+    if (!noiseBuf) return;
+    const now = c.currentTime;
+    const dur = Math.max(0.32, Math.min(0.95, 1 - rel * 0.009));
+    const src = c.createBufferSource();
+    src.buffer = noiseBuf;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 3;
+    bp.frequency.setValueAtTime(650 * (1 + rel / 70), now);
+    bp.frequency.exponentialRampToValueAtTime(650 / (1 + rel / 70), now + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.3 * gain, now + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(bp).connect(g).connect(cueNode(cue));
+    src.start(now, Math.random() * NOISE_SECONDS * 0.5);
+    src.stop(now + dur + 0.05);
+  }
 
-    // Stem 3: Neon arpeggio past Act 2 (Plinko) or while boosting
-    if (p > 0.22 || boosting) {
-      const osc = ctx.createOscillator();
-      const lp = ctx.createBiquadFilter();
-      const g = ctx.createGain();
-      const note = MUSIC_SCALE[(idx * 3 + (p > 0.7 ? 2 : 0)) % MUSIC_SCALE.length] * (p > 0.85 ? 2 : 1);
-      osc.type = p > 0.75 ? 'sawtooth' : 'sine';
-      osc.frequency.setValueAtTime(note, now);
-      lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(620 + p * 1700 + (boosting ? 950 : 0), now);
-      const amp = (0.018 + p * 0.022) * (boosting ? 1.35 : 1);
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(amp, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 0.85);
-      osc.connect(lp).connect(g).connect(bedBus);
-      osc.start(now);
-      osc.stop(now + stepDur * 0.9);
+  // ── #16 a marble shatters ──
+  // A crack (a hard high-passed noise transient) and a spray of tiny glass pings, placed.
+  function playShatter(cue) {
+    const c = ensure();
+    if (!c || !noiseBuf) return;
+    const now = c.currentTime;
+    if (now - lastShatter < 0.12) return;
+    lastShatter = now;
+    const dest = cueNode(cue);
+    const src = c.createBufferSource();
+    src.buffer = noiseBuf;
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2400;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.32, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    src.connect(hp).connect(g).connect(dest);
+    src.start(now, Math.random());
+    src.stop(now + 0.18);
+    for (let i = 0; i < 6; i++) {
+      const f = 2600 + Math.random() * 3600;
+      tone(f, now + 0.01 + i * 0.022 + Math.random() * 0.02, 0.07 + Math.random() * 0.08, 0.03, 'sine', f * 0.94, dest);
     }
+  }
+  let lastShatter = 0;
 
-    // Stem 4: Final Gauntlet tension shimmer on bar downbeats (p > 0.84)
-    if (p > 0.84 && idx % 8 === 0) {
-      const pad = ctx.createOscillator();
-      const pg = ctx.createGain();
-      pad.type = 'sine';
-      pad.frequency.setValueAtTime(587.33, now);
-      pad.frequency.exponentialRampToValueAtTime(880, now + stepDur * 4);
-      pg.gain.setValueAtTime(0.0001, now);
-      pg.gain.exponentialRampToValueAtTime(0.022, now + 0.04);
-      pg.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 4.2);
-      pad.connect(pg).connect(bedBus);
-      pad.start(now);
-      pad.stop(now + stepDur * 4.4);
+  // ── #11 the end card counts up ──
+  // `n` soft ticks over `seconds`, easing out like the counter does, after `delay`.
+  function playCountTicks(n, seconds, delay = 0) {
+    const c = ensure();
+    if (!c || n <= 0) return;
+    const t0 = c.currentTime + delay;
+    for (let i = 0; i < n; i++) {
+      const u = (i + 1) / n;
+      const at = t0 + seconds * (1 - Math.pow(1 - u, 3)) * 0.98;
+      tone(1800 + u * 900, at, 0.035, 0.035, 'triangle');
     }
+    tone(2637, t0 + seconds + 0.02, 0.18, 0.05, 'sine');
   }
 
   // ── Act Transition Broadcaster Callouts ──
@@ -1077,8 +1101,9 @@ export function createAudio() {
     'Dropping into the Playground Tunnel!',
     'Final Gauntlet! Hold your line to the finish!',
   ];
-  function announceAct(actIndex) {
-    const line = ACT_LINES[actIndex];
+  // `text`: the course's own line for this act (composer.js); the fixed lines are the fallback.
+  function announceAct(actIndex, text) {
+    const line = text || ACT_LINES[actIndex];
     if (line) say(line);
   }
 
@@ -1118,9 +1143,11 @@ export function createAudio() {
     say,
     announceAct,
     updateMusic,
+    stopMusic,
+    playPass,
+    playShatter,
+    playCountTicks,
     triggerWorkletImpact,
-    setMusic(on) { musicOn = !!on; },
-    isMusicOn() { return musicOn; },
     setReverb,
     setAnnouncer(on) { announcerOn = !!on; if (!announcerOn) stopSpeech(); },
     isAnnouncerOn() { return announcerOn; },
@@ -1152,6 +1179,8 @@ export function createAudio() {
         if (probe) { probe = null; clearEarlyTaps(); }
         resetListener();
         // The shared context outlives this game: detach our graph from it instead of closing it.
+        try { workletNode && workletNode.disconnect(); musicNode && musicNode.disconnect(); } catch { }
+        workletNode = null; musicNode = null; workletLoading = false;
         try { master && master.disconnect(); } catch { }
         ctx = null; master = null; comp = null; bedBus = null; sfxBus = null;
         rollTrem = null; tremOsc = null; tremDepth = null;

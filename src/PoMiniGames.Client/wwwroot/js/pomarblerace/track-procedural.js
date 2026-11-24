@@ -403,6 +403,71 @@ function kerbTexture() {
   return t;
 }
 
+// A tiling canvas texture, built once per key. `paint(g, N)` draws into an N×N canvas.
+const _texCache = new Map();
+function canvasTexture(key, N, srgb, paint) {
+  if (_texCache.has(key)) return _texCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  paint(c.getContext('2d'), N);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = MAX_ANISO();
+  _texCache.set(key, t);
+  return t;
+}
+
+// Ice: pale blue-white with frost blooms and a web of hairline cracks.
+const iceTexture = () => canvasTexture('ice', 512, true, (g, N) => {
+  g.fillStyle = '#cfe9f7'; g.fillRect(0, 0, N, N);
+  const r = mulberry32(0x1ce);
+  for (let k = 0; k < 70; k++) {
+    const x = r() * N, y = r() * N, rad = 20 + r() * 70;
+    const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+    grd.addColorStop(0, 'rgba(255,255,255,0.45)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, rad, 0, 6.283); g.fill();
+  }
+  g.strokeStyle = 'rgba(70,120,160,0.45)'; g.lineWidth = 1.2;
+  for (let k = 0; k < 26; k++) {
+    let x = r() * N, y = r() * N;
+    g.beginPath(); g.moveTo(x, y);
+    for (let j = 0; j < 6; j++) { x += (r() - 0.5) * 90; y += (r() - 0.5) * 90; g.lineTo(x, y); }
+    g.stroke();
+  }
+});
+
+// Sand: warm grain speckle over wind ripples running ACROSS the road (constant v), so a marble
+// rolling over it crosses the ripples the way it would on a dune.
+const sandTexture = () => canvasTexture('sand', 512, true, (g, N) => {
+  g.fillStyle = '#d6b07a'; g.fillRect(0, 0, N, N);
+  for (let y = 0; y < N; y += 2) {
+    const k = 0.5 + 0.5 * Math.sin((y / N) * Math.PI * 2 * 12);
+    g.fillStyle = `rgba(120,80,40,${0.10 * k})`; g.fillRect(0, y, N, 2);
+  }
+  const r = mulberry32(0x5a7d);
+  for (let k = 0; k < 14000; k++) {
+    const v = r();
+    g.fillStyle = v < 0.5 ? 'rgba(255,236,200,0.35)' : v < 0.85 ? 'rgba(140,96,52,0.35)' : 'rgba(80,56,30,0.5)';
+    g.fillRect(r() * N, r() * N, 1 + r() * 1.5, 1 + r() * 1.5);
+  }
+});
+
+// Conveyor belts: dark rubber with bright chevrons pointing toward -u for dir +1 (the side a
+// belt with dir +1 carries marbles to, see beltDir below), mirrored for dir -1.
+const beltTexture = (dir) => canvasTexture('belt' + dir, 128, true, (g, N) => {
+  g.fillStyle = '#1f2530'; g.fillRect(0, 0, N, N);
+  g.fillStyle = 'rgba(255,255,255,0.05)';
+  for (let y = 0; y < N; y += 8) g.fillRect(0, y, N, 2);
+  g.strokeStyle = '#facc15'; g.lineWidth = 9; g.lineCap = 'round';
+  for (const yOff of [0, N / 2]) {
+    const tip = dir > 0 ? 18 : N - 18, tail = dir > 0 ? N - 30 : 30;
+    g.beginPath();
+    g.moveTo(tail, yOff + 10); g.lineTo(tip, yOff + N / 4); g.lineTo(tail, yOff + N / 2 - 10);
+    g.stroke();
+  }
+});
+
 /**
  * @param {object} [variant] overrides for a map built from this recipe:
  *   `{ track: {...TRACK}, zones: {...ZONES}, pinches: [{c,w,d}], curve: number }` — `curve`
@@ -508,6 +573,12 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     for (const [a, b, cap] of BRAKES) if (s >= a && s <= b) return cap;
     return 0;
   };
+  // Surfaces (#10): ICE and SAND bands are floor colliders of their own material (physics.js);
+  // the FLUME is the plain floor under a water surface, its drag in course.js. surfaceAt()
+  // answers for all three (null on plain road).
+  const ICE = ZONES.ICE || [], SAND = ZONES.SAND || [], FLUME = ZONES.FLUME || [];
+  const inBands = (list, s) => list.some(([a, b]) => s >= a && s <= b);
+  const surfaceAt = (s) => (inBands(FLUME, s) ? 'water' : inBands(ICE, s) ? 'ice' : inBands(SAND, s) ? 'sand' : null);
 
   // Frame (position, tangent, right, up, bank quaternion) at parameter s.
   const frameAt = (s) => {
@@ -597,7 +668,9 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // edge (see buildBermRibbon). A faint emissive keeps them reading in the dark scene.
   const kerb = kerbTexture();
   const bermMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, emissive: 0x1a0303, emissiveIntensity: 0.18,
+    // The theme's kerb tint (composer.js) multiplies the red/white stripes: icy on the glacier,
+    // sun-warmed in the desert. White leaves them as painted.
+    color: v.kerbTint ?? 0xffffff, emissive: 0x1a0303, emissiveIntensity: 0.18,
     roughness: 0.66, metalness: 0.0, map: kerb,
   });
 
@@ -619,9 +692,14 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     const { q, up, rb } = frameAt(sMid);
     const chW = widthAt(sMid);              // #4 local channel width
     const rumble = inRumble(sMid);          // #5 friction band?
+    const surf = surfaceAt(sMid);
+    const floorMaterial = rumble ? materials.rumble
+      : surf === 'ice' && materials.ice ? materials.ice
+        : surf === 'sand' && materials.sand ? materials.sand
+          : materials.surface;
 
     const floorPos = mid.clone().addScaledVector(up, -TRACK.FLOOR_THICK / 2);
-    const floorBody = new CANNON.Body({ mass: 0, material: rumble ? materials.rumble : materials.surface });
+    const floorBody = new CANNON.Body({ mass: 0, material: floorMaterial });
     floorBody.addShape(new CANNON.Box(new CANNON.Vec3(chW / 2, TRACK.FLOOR_THICK / 2, segLen / 2)));
     floorBody.position.set(floorPos.x, floorPos.y, floorPos.z);
     floorBody.quaternion.set(q.x, q.y, q.z, q.w);
@@ -781,6 +859,53 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     }
   }
 
+  // Materials made for this course alone (the rest are shared module singletons); dispose() frees them.
+  const ownMats = [];
+  const own = (m) => { ownMats.push(m); return m; };
+
+  // Ice sheets: glassy, pale and a little see-through over the tarmac, so the skid reads before
+  // the marble finds it.
+  if (ICE.length) {
+    const iceMat = own(new THREE.MeshStandardMaterial({
+      // Kept well below white: the frost texture is already pale, and under a bright theme a
+      // white sheet blew out and swallowed the marbles crossing it.
+      color: 0x8fb8d2, emissive: 0x0f3550, emissiveIntensity: 0.12, map: iceTexture(),
+      roughness: 0.06, metalness: 0.0, transparent: true, opacity: 0.88, side: THREE.DoubleSide,
+      ...OVERLAY_OFFSET,
+    }));
+    for (const [a, b] of ICE) {
+      const m = new THREE.Mesh(buildFloorRibbon(a, b, 0.05, 30), iceMat);
+      m.receiveShadow = true;
+      group.add(m);
+    }
+  }
+  // Sand traps: matte, rippled, warm.
+  if (SAND.length) {
+    const sandMat = own(new THREE.MeshStandardMaterial({
+      color: 0xffffff, emissive: 0x2a1a08, emissiveIntensity: 0.2, map: sandTexture(),
+      roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide, ...OVERLAY_OFFSET,
+    }));
+    for (const [a, b] of SAND) {
+      const m = new THREE.Mesh(buildFloorRibbon(a, b, 0.05, 20), sandMat);
+      m.receiveShadow = true;
+      group.add(m);
+    }
+  }
+  // Cross conveyors (#9): belts that drag whatever rolls on them sideways (course.js
+  // _applyConveyors). Push-only, no collider. `dir` is in the TRACK INTERFACE's lateral sign
+  // (maps.js negates this generator's right vector), so +1 carries a marble toward screen-right.
+  const conveyors = [];
+  for (const [a, b, dir] of ZONES.CONVEYORS || []) {
+    const mat = own(new THREE.MeshStandardMaterial({
+      color: 0xffffff, emissive: 0x3a2f05, emissiveIntensity: 0.6, map: beltTexture(dir),
+      roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide, ...OVERLAY_OFFSET,
+    }));
+    const m = new THREE.Mesh(buildFloorRibbon(a, b, 0.055, 10), mat);
+    m.receiveShadow = true;
+    group.add(m);
+    conveyors.push({ from: a * TRACK.LENGTH, to: b * TRACK.LENGTH, dir });
+  }
+
   // Optional Playground big slide overlay: glossy emerald-teal chute surface.
   if (ZONES.SLIDE) {
     const [a, b] = ZONES.SLIDE;
@@ -925,7 +1050,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   });
   kickerMat.side = THREE.DoubleSide;
   const kickers = [];
-  {
+  if (ZONES.KICKERS) {
     const [a, b] = ZONES.KICKERS;
     const km = new THREE.Mesh(buildFloorRibbon(a, b, 0.06, 12), kickerMat);
     km.receiveShadow = true;
@@ -979,7 +1104,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // scatters the pack. This is the main source of race-to-race variance; without
   // it the finishing order is mostly decided by the start grid. Pins are static
   // and vertical-ish (aligned to the local up), so a marble always deflects past.
-  {
+  if (ZONES.PLINKO && ZONES.PLINKO.from <= ZONES.PLINKO.to) {
     const pinR = TRACK.MARBLE_R * 0.55, pinH = 4.0;
     const { from, to, rows } = ZONES.PLINKO;
     for (let r = 0; r < rows; r++) {
@@ -1101,8 +1226,17 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     }
   }
 
-  // ZONE 4 — turnstiles: free-spinning hinged paddles shorter than the channel.
-  for (let s = ZONES.TURNSTILES.from; s <= ZONES.TURNSTILES.to + 1e-6; s += ZONES.TURNSTILES.step) {
+  // ZONE 4 — turnstiles: paddles shorter than the channel, turning slowly on their own.
+  //
+  // They used to spin freely on a hinge. A paddle pivoted at its middle is balanced, so when the
+  // pack leans on both halves evenly the torques cancel and it stands across the road as a dam:
+  // the full-field census (every marble to the line) parked marbles behind them for 20-60 s on
+  // most seeds. That only cost back-markers while turnstiles sat at the end of a fixed course;
+  // dealt anywhere (composer.js) they would trap the live race. So they are KINEMATIC now, like
+  // the Gauntlet's rotors: infinite mass, a steady slow turn, nothing in the pack can stop one, and
+  // every arm sweeps clear. Slower and shorter than the Gauntlet's, so they nudge rather than fling.
+  let turnIdx = 0;
+  for (let s = ZONES.TURNSTILES.from; s <= ZONES.TURNSTILES.to + 1e-6; s += ZONES.TURNSTILES.step, turnIdx++) {
     const f = frameAt(s);
     const armLen = widthAt(s) * 0.30; // 2*armLen < channel ⇒ side gaps always remain
     const padH = 3.0, padThick = 0.8;
@@ -1113,25 +1247,16 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     mesh.quaternion.copy(f.q);
     group.add(mesh);
 
-    const anchor = new CANNON.Body({ mass: 0 });
-    anchor.position.set(pivot.x, pivot.y, pivot.z);
-    anchor.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
-    world.addBody(anchor);
-    bodies.push(anchor);
-
-    const paddle = new CANNON.Body({ mass: 1.4, material: materials.obstacle });
+    const paddle = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: materials.obstacle });
     paddle.addShape(new CANNON.Box(new CANNON.Vec3(armLen, padH / 2, padThick / 2)));
     paddle.position.set(pivot.x, pivot.y, pivot.z);
     paddle.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
-    paddle.angularDamping = 0.2;
+    const speed = (turnIdx % 2 === 0 ? 1 : -1) * (1.0 + rnd() * 0.5);
+    const spin = new CANNON.Vec3(f.up.x * speed, f.up.y * speed, f.up.z * speed);
+    paddle.angularVelocity.copy(spin);
     world.addBody(paddle);
     bodies.push(paddle);
-
-    const axis = new CANNON.Vec3(0, 1, 0); // local up = hinge axis (banked with the frame)
-    world.addConstraint(new CANNON.HingeConstraint(anchor, paddle, {
-      pivotA: new CANNON.Vec3(0, 0, 0), axisA: axis,
-      pivotB: new CANNON.Vec3(0, 0, 0), axisB: axis,
-    }));
+    motors.push({ body: paddle, spin });
     turnstiles.push({ body: paddle, mesh });
   }
 
@@ -1174,6 +1299,185 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     bodies.push(rotor);
     motors.push({ body: rotor, spin });
     turnstiles.push({ body: rotor, mesh });
+  }
+
+  // ── #9 new set-pieces ──
+  // Lateral positions below are measured along THIS generator's right vector `rb`; the track
+  // interface (maps.js) uses the opposite sign, so every record handed to course.js stores
+  // `lateral: -lat`.
+
+  // TRAMPOLINES: sprung pads set into the floor. No collider — like the boost pads they are a
+  // predicate plus a picture; course.js launches a marble that rolls onto one (_applyTrampolines).
+  // Push-only, so a pad can throw a marble but never hold it.
+  const trampolines = [];
+  const TR = ZONES.TRAMPOLINES;
+  if (TR && TR.from <= TR.to) {
+    const TRAMP_R = 3.4;
+    const padTop = own(new THREE.MeshStandardMaterial({ color: 0x1e3a8a, emissive: 0x60a5fa, emissiveIntensity: 0.9, roughness: 0.35 }));
+    const rimMat = own(new THREE.MeshStandardMaterial({ color: 0x713f12, emissive: 0xfacc15, emissiveIntensity: 1.1, roughness: 0.4 }));
+    const discGeo = new THREE.CylinderGeometry(TRAMP_R, TRAMP_R, 0.36, 32);
+    const rimGeo = new THREE.TorusGeometry(TRAMP_R, 0.34, 8, 40);
+    const flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    const rows = TR.rows || 3;
+    for (let r = 0; r < rows; r++) {
+      const s = TR.from + (TR.to - TR.from) * (rows === 1 ? 0.5 : r / (rows - 1));
+      const f = frameAt(s);
+      const usable = widthAt(s) - 12;
+      const n = Math.max(2, Math.round(usable / 14)) + (r % 2);
+      for (let k = 0; k < n; k++) {
+        const lat = (n === 1 ? 0 : k / (n - 1) - 0.5) * usable;
+        const P = f.p.clone().addScaledVector(f.rb, lat).addScaledVector(f.up, 0.62);   // clear of the road's visual lumps (≤0.55)
+        const disc = new THREE.Mesh(discGeo, padTop);
+        disc.position.copy(P); disc.quaternion.copy(f.q);
+        disc.receiveShadow = true;
+        const rim = new THREE.Mesh(rimGeo, rimMat);
+        rim.position.copy(P); rim.quaternion.copy(f.q).multiply(flat);
+        group.add(disc, rim);
+        trampolines.push({ s: s * TRACK.LENGTH, lateral: -lat, r: TRAMP_R, disc, up: f.up.clone(), dir: f.dir.clone(), squash: 0 });
+      }
+    }
+  }
+
+  // SEE-SAWS: planks on a free hinge across the road (axis = the road's right vector), so they
+  // pitch fore and aft. One rests on its tail: a marble rolls up it, its weight passes the pivot,
+  // the plank tips and throws it off the nose. Planks are narrow, staggered row to row, with a
+  // gap of more than four marble diameters between them, so the pack can always go round, and the
+  // pivot clears a marble rolling underneath (PIVOT_H - thick/2 > one diameter). Free-swinging
+  // like the turnstiles, light enough that a single marble moves one.
+  const SW = ZONES.SEESAWS;
+  if (SW && SW.from <= SW.to) {
+    const PW = 6.5, PL = 15, PT = 0.6, PIVOT_H = 2.5;
+    const tilt = Math.asin((PIVOT_H - PT / 2 - 0.08) / (PL / 2));
+    const plankMat = own(new THREE.MeshStandardMaterial({ color: 0x5b3a1c, emissive: 0xf59e0b, emissiveIntensity: 0.35, roughness: 0.6 }));
+    const axleMat = own(new THREE.MeshStandardMaterial({ color: 0x334155, emissive: 0x94a3b8, emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.4 }));
+    const plankGeo = new THREE.BoxGeometry(PW, PT, PL);
+    const axleGeo = new THREE.CylinderGeometry(0.45, 0.45, PW + 1.2, 12);
+    const sideways = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+    const spacing = PW + 10;
+    let row = 0;
+    for (let s = SW.from; s <= SW.to + 1e-6; s += SW.step, row++) {
+      const f = frameAt(s);
+      const usable = widthAt(s) - 10;
+      const n = Math.max(1, Math.floor((usable + 10) / spacing) - (row % 2));
+      const span = (n - 1) * spacing;
+      for (let k = 0; k < n; k++) {
+        const lat = -span / 2 + k * spacing;
+        const pivot = f.p.clone().addScaledVector(f.rb, lat).addScaledVector(f.up, PIVOT_H);
+        // Start tipped onto its tail (or nose — alternating), resting on the floor.
+        const lean = ((row + k) % 2 ? 1 : -1) * tilt;
+        const q = f.q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), lean));
+
+        const mesh = new THREE.Mesh(plankGeo, plankMat);
+        mesh.position.copy(pivot); mesh.quaternion.copy(q);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        group.add(mesh);
+        const axle = new THREE.Mesh(axleGeo, axleMat);
+        axle.position.copy(pivot); axle.quaternion.copy(f.q).multiply(sideways);
+        group.add(axle);
+
+        const anchor = new CANNON.Body({ mass: 0 });
+        anchor.position.set(pivot.x, pivot.y, pivot.z);
+        anchor.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
+        world.addBody(anchor);
+        bodies.push(anchor);
+        const plank = new CANNON.Body({ mass: 0.7, material: materials.obstacle });
+        plank.addShape(new CANNON.Box(new CANNON.Vec3(PW / 2, PT / 2, PL / 2)));
+        plank.position.set(pivot.x, pivot.y, pivot.z);
+        plank.quaternion.set(q.x, q.y, q.z, q.w);
+        plank.angularDamping = 0.35;
+        world.addBody(plank);
+        bodies.push(plank);
+        // Axis = local X: the anchor carries the road frame, so local X is the road's right.
+        // The plank's local X is the same axis (it is only pitched about it).
+        const axis = new CANNON.Vec3(1, 0, 0);
+        world.addConstraint(new CANNON.HingeConstraint(anchor, plank, {
+          pivotA: new CANNON.Vec3(0, 0, 0), axisA: axis,
+          pivotB: new CANNON.Vec3(0, 0, 0), axisB: axis,
+        }));
+        turnstiles.push({ body: plank, mesh });
+      }
+    }
+  }
+
+  // MAGNETS: coils hanging over the road that pull marbles toward their line while they are live
+  // (course.js _applyMagnets pulses them). No collider — the coil hangs well above the pack — and
+  // a pull that only acts across the road, so a magnet bends a line but cannot hold a marble.
+  // A ring on the floor marks each one's reach.
+  const magnets = [];
+  const MG = ZONES.MAGNETS;
+  if (MG && MG.from <= MG.to) {
+    const REACH = 15, COIL_H = 10;
+    const coilGeo = new THREE.TorusGeometry(2.6, 0.7, 10, 28);
+    const coreGeo = new THREE.CylinderGeometry(0.9, 0.9, 5, 14);
+    const reachGeo = new THREE.TorusGeometry(REACH, 0.22, 6, 64);
+    const flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    let k = 0;
+    for (let s = MG.from; s <= MG.to + 1e-6; s += MG.step, k++) {
+      const f = frameAt(s);
+      const lat = (k % 2 ? 1 : -1) * Math.min(widthAt(s) * 0.3, 16);
+      const base = f.p.clone().addScaledVector(f.rb, lat);
+      const coilMat = own(new THREE.MeshStandardMaterial({ color: 0x3b0764, emissive: 0xc084fc, emissiveIntensity: 0.4, roughness: 0.35, metalness: 0.5 }));
+      const reachMat = own(new THREE.MeshBasicMaterial({ color: 0xc084fc, transparent: true, opacity: 0.25, depthWrite: false }));
+      const coil = new THREE.Mesh(coilGeo, coilMat);
+      coil.position.copy(base).addScaledVector(f.up, COIL_H);
+      coil.quaternion.copy(f.q).multiply(flat);
+      const core = new THREE.Mesh(coreGeo, coilMat);
+      core.position.copy(base).addScaledVector(f.up, COIL_H + 0.5);
+      core.quaternion.copy(f.q);
+      const ring = new THREE.Mesh(reachGeo, reachMat);
+      ring.position.copy(base).addScaledVector(f.up, 0.5);
+      ring.quaternion.copy(f.q).multiply(flat);
+      group.add(coil, core, ring);
+      magnets.push({
+        s: s * TRACK.LENGTH, lateral: -lat, reach: REACH, coilMat, reachMat,
+        pos: base.clone().addScaledVector(f.up, COIL_H), offset: k * 0.9, on: false,
+      });
+    }
+  }
+
+  // WATER FLUME (#14): a stream bed under a sheet of water. The water's drag and current are
+  // course.js _applyFlume, its wakes a fluid grid (flume.js) whose foam the surface draws. The
+  // surface UVs ARE the grid's coordinates: u runs across the road in the interface's lateral
+  // sign (0 at -maxHW), v along it (0 at the flume's start), so a cell maps straight to a texel.
+  let flume = null;
+  if (FLUME.length) {
+    const [a, b] = FLUME[0];
+    const WATER_H = 1.25, REACH = 3.5, LAT = 18;
+    const steps = Math.max(8, Math.round(RIBBON_N * (b - a)));
+    let maxHW = 0;
+    for (let i = 0; i <= steps; i++) maxHW = Math.max(maxHW, widthAt(a + (b - a) * (i / steps)) / 2 + REACH);
+    const bedMat = own(new THREE.MeshStandardMaterial({ color: 0x0b3a4f, emissive: 0x062030, emissiveIntensity: 0.4, roughness: 0.9, side: THREE.DoubleSide, ...OVERLAY_OFFSET }));
+    const bed = new THREE.Mesh(buildFloorRibbon(a, b, 0.05, 16), bedMat);
+    bed.receiveShadow = true;
+    group.add(bed);
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= steps; i++) {
+      const s = a + (b - a) * (i / steps);
+      const f = frameAt(s), hw = widthAt(s) / 2 + REACH;
+      for (let j = 0; j <= LAT; j++) {
+        const lat = ((j / LAT) * 2 - 1) * hw;
+        const P = f.p.clone().addScaledVector(f.rb, lat).addScaledVector(f.up, WATER_H);
+        pos.push(P.x, P.y, P.z);
+        uv.push(0.5 - lat / (2 * maxHW), i / steps);
+      }
+      if (i < steps) {
+        const r0 = i * (LAT + 1), r1 = (i + 1) * (LAT + 1);
+        for (let j = 0; j < LAT; j++) idx.push(r0 + j, r1 + j, r0 + j + 1, r0 + j + 1, r1 + j, r1 + j + 1);
+      }
+    }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    wg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    wg.setIndex(idx); wg.computeVertexNormals();
+    // A plain stand-in; flume.js swaps in the foam-reading water material where the scene has one.
+    const waterMat = own(new THREE.MeshStandardMaterial({
+      color: 0x2a8fbf, emissive: 0x0b4a66, emissiveIntensity: 0.3, roughness: 0.05,
+      transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    const water = new THREE.Mesh(wg, waterMat);
+    water.renderOrder = 1;
+    group.add(water);
+    flume = { from: a * TRACK.LENGTH, to: b * TRACK.LENGTH, maxHW, mesh: water, waterH: WATER_H };
   }
 
   // ── Start marker + checkered finish-line ground ──
@@ -1250,10 +1554,20 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     finishZ: finishF.p.z,
     overviewTarget: startF.p.clone(),
     boostBands: ZONES.BOOST,
-    // Checkpoint arches + sector splits (maps.js / game.js): the start of each hazard zone.
-    checkpoints: [ZONES.PLINKO, ZONES.BOBS, ZONES.TURNSTILES, ZONES.GAUNTLET]
-      .filter((z) => z.from <= z.to)
-      .map((z) => z.from * TRACK.LENGTH),
+    // Checkpoint arches + sector splits (maps.js / game.js): where the variant says (composer.js:
+    // the start of each act), else the start of each hazard zone.
+    checkpoints: v.checkpoints
+      ? v.checkpoints.map((f) => f * TRACK.LENGTH)
+      : [ZONES.PLINKO, ZONES.BOBS, ZONES.TURNSTILES, ZONES.GAUNTLET]
+        .filter((z) => z && z.from <= z.to)
+        .map((z) => z.from * TRACK.LENGTH),
+    // #9 / #10 / #14 set-pieces and surfaces, read by course.js and flume.js. Lateral values and
+    // belt directions are already in the track interface's sign (see the note above them).
+    trampolines,
+    conveyors,
+    magnets,
+    flume,
+    surfaceAt: (z) => surfaceAt(sAt(z)),
     // Is the marble at forward position z standing on a boost pad? game.js applies
     // the acceleration itself — the pads are visual + a predicate, not colliders.
     inBoost: (z) => inBoost(sAt(z)),
@@ -1281,6 +1595,12 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     // Also scrolls boost-pad chevrons down-track so boost zones visibly surge forward.
     driveMotors() {
       boostTex.offset.y = (boostTex.offset.y - 0.028) % 1;
+      // Belts run: a +1 belt's chevrons slide toward -u, which is screen-right (see beltTexture).
+      if (conveyors.length) {
+        const bp = beltTexture(1), bn = beltTexture(-1);
+        bp.offset.x = (bp.offset.x + 0.04) % 1;
+        bn.offset.x = (bn.offset.x - 0.04) % 1;
+      }
       // Billow the finish-line cloth banner smoothly in the wind.
       clothPhase += 0.08;
       const posAttr = clothGeo.attributes.position;
@@ -1314,8 +1634,8 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
         // those allocated.
         if (o.isInstancedMesh) o.dispose();
       });
-      // Every material in use is a module-level singleton shared across tracks, so there
-      // is nothing for this to free beyond the traversal above.
+      // The shared textures are module singletons; the materials made for this course alone are not.
+      for (const m of ownMats) m.dispose();
     },
   };
 }

@@ -43,6 +43,17 @@ public partial class PoMarbleRacePage
     // One record per race: set when a result is taken, cleared when the next race sets up.
     private bool _raceRecorded;
 
+    // The end card opens a beat after the line (the finish and the iris play first), as a view
+    // transition from the HUD (#1). Set by RevealSummaryAsync, cleared when the next race sets up.
+    private bool _summaryReady;
+    private int _summarySeq;
+    private bool _vtPending;
+    private const int SummaryDelayMs = 1200;
+
+    // #10 your place every half second this race, and where each act began (indices into it).
+    private int[] _placeHistory = [];
+    private int[] _placeActs = [];
+
     // ── Daily board (retained for legacy API compatibility; Grand Circuit is the one course) ──
     private PoMiniGames.Domain.Models.MarbleRaceMapRecord[] _dailyBoard = [];
     private bool IsDailyMap(int id) => MapAt(id)?.Daily == true;
@@ -207,6 +218,12 @@ public partial class PoMarbleRacePage
             _ref ??= DotNetObjectReference.Create(this);
             await TryJsAsync("PoMarbleRace.watchInput", _ref);
         }
+        // A view transition (#1) is waiting for the new state: it is in the DOM now.
+        if (_vtPending)
+        {
+            _vtPending = false;
+            await TryJsAsync("PoMarbleRace.viewTransitionDone");
+        }
         // "Reload engine": the boundary has re-rendered the canvas host, so the engine has a
         // container to mount into again.
         if (_rebootAfterRender)
@@ -222,6 +239,7 @@ public partial class PoMarbleRacePage
         _engineError = null;
         await StopEngineAsync();
         _phase = "pick";
+        _summaryReady = false;
         _podium.Clear();
         _pickCountdown = PickSeconds;
         _rebootAfterRender = true;
@@ -288,6 +306,7 @@ public partial class PoMarbleRacePage
 
     private async Task OnIntroStartAsync()
     {
+        await BeginViewTransitionAsync("intro");   // #1 the card zooms away through the track glyph
         _introDone = true;
         // Seed the countdown BEFORE awaiting JS so the pill never flashes "Go in 0".
         _phase = "pick";
@@ -530,6 +549,7 @@ public partial class PoMarbleRacePage
             _raceRecorded = true;
             _lastWon = result.GuestWon;
             _lastPlace = result.GuestPlace;
+            _ = RevealSummaryAsync();
             _lastGained = 0;
             _opponentPlace = result.HostPlace;
             _onlineResultKnown = true;
@@ -717,8 +737,15 @@ public partial class PoMarbleRacePage
         _score = score;
         _best = best;
         _streak = streak;
+        if (phase != "result")
+        {
+            _summaryReady = false;
+            _summarySeq++;
+        }
         if (phase == "pick")
         {
+            _placeHistory = [];
+            _placeActs = [];
             _raceRecorded = false;
             _loading = false;
             _myPlace = -1;
@@ -820,6 +847,7 @@ public partial class PoMarbleRacePage
         _streak = streak;
         _best = best;
         _phase = "result";
+        if (!_demo && (_online || !won)) _ = RevealSummaryAsync();
 
         if (!_demo)
         {
@@ -854,6 +882,39 @@ public partial class PoMarbleRacePage
         }
         await InvokeAsync(StateHasChanged);
         // In the kiosk, the result stays visible until this demo's 60-second dwell expires.
+    }
+
+    /// <summary>#10 your place through the race just run, and the samples where each act began.</summary>
+    [JSInvokable]
+    public Task OnPlaceHistory(int[] places, int[] acts)
+    {
+        _placeHistory = places.Where(p => p > 0).ToArray();
+        _placeActs = acts.Where(a => a > 0 && a < _placeHistory.Length).ToArray();
+        return InvokeAsync(StateHasChanged);
+    }
+
+    // The end card: wait for the line's moment, then open it as a view transition (#1).
+    private async Task RevealSummaryAsync()
+    {
+        var seq = ++_summarySeq;
+        await Task.Delay(SummaryDelayMs);
+        if (_disposed || seq != _summarySeq || _phase != "result" || _summaryReady) return;
+        await BeginViewTransitionAsync("result");
+        _summaryReady = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Resolves once the browser holds a picture of the current page; the next render is the new
+    // state, and OnAfterRenderAsync tells the transition it may animate.
+    private async Task BeginViewTransitionAsync(string kind)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.viewTransition", kind);
+            _vtPending = true;
+        }
+        catch (JSException) { /* engine script not loaded yet: no transition */ }
+        catch (JSDisconnectedException) { }
     }
 
     private void UpdateStats()

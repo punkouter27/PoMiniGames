@@ -62,6 +62,7 @@ export function createWorld() {
   const bump = new CANNON.Material('bump');          // washboard ridges — low bounce so they don't launch marbles
   const spinner = new CANNON.Material('spinner');    // motorised paddles — the one surface that hits back
   const ice = new CANNON.Material('ice');            // near-frictionless plates — marbles skid instead of rolling
+  const sand = new CANNON.Material('sand');          // sand traps — grabby, dead bounce (course.js adds the drag)
 
   // Floor + walls. This coefficient is bracketed from both sides by the authored course's
   // slopes, so it is not a free knob:
@@ -103,7 +104,13 @@ export function createWorld() {
   world.addContactMaterial(new CANNON.ContactMaterial(marble, ice,
     { friction: 0.02, restitution: 0.22 }));
 
-  return { world, materials: { marble, surface, obstacle, rumble, bump, spinner, ice } };
+  // Sand: rumble's friction with almost no bounce, so a marble landing in it dies there instead of
+  // skipping across. Kept below tan(slope) like rumble, so it can slow a marble but never hold
+  // one; the speed it bleeds comes from course.js _applySurfaces, which stops at SAND_MIN_SPEED.
+  world.addContactMaterial(new CANNON.ContactMaterial(marble, sand,
+    { friction: 0.3, restitution: 0.04 }));
+
+  return { world, materials: { marble, surface, obstacle, rumble, bump, spinner, ice, sand } };
 }
 
 /**

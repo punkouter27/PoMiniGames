@@ -48,6 +48,31 @@ export function startPad(getGame) {
   raf = requestAnimationFrame(loop);
 }
 
+// ── Rumble (#20) ──
+// The hits you feel: on a pad, the dual-rumble motors (strong = the low, heavy motor; weak = the
+// fast, light one); on a phone being steered by touch, a short vibration for the bigger ones (the
+// Vibration API has no strength, only length). Throttled so a clatter of contacts is one buzz.
+let lastRumble = 0;
+export function rumble(strong, weak, ms) {
+  const now = performance.now();
+  if (now - lastRumble < 70) return;
+  try {
+    if (lastKind === 'pad') {
+      const act = connectedPads()[0]?.vibrationActuator;
+      if (act && typeof act.playEffect === 'function') {
+        lastRumble = now;
+        act.playEffect('dual-rumble', {
+          duration: Math.round(ms), startDelay: 0,
+          strongMagnitude: Math.max(0, Math.min(1, strong)), weakMagnitude: Math.max(0, Math.min(1, weak)),
+        }).catch(() => { });
+      }
+    } else if (lastKind === 'touch' && Math.max(strong, weak) >= 0.45 && typeof navigator.vibrate === 'function') {
+      lastRumble = now;
+      navigator.vibrate(Math.round(Math.min(ms, 200)));
+    }
+  } catch { /* rumble is decoration */ }
+}
+
 export function stopPad() {
   if (raf) cancelAnimationFrame(raf);
   raf = 0;

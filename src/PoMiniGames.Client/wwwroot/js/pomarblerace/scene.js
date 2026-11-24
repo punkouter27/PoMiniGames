@@ -17,7 +17,11 @@ import { createPostStack, currentTier } from '../platform/3d/postStack.js';
 import { applySunShadows } from '../platform/3d/shadows.js';
 import { createRenderer, attachRenderer } from '../platform/3d/renderer.js';
 import { createRaceFx } from './fx-race.js';
+import * as TSL from 'three-eco/tsl';
+import { createCaustics } from './caustics.js';
+import { buildBackdrop } from './backdrop.js';
 import { readPref } from './store.js';
+import { createLens } from './lens.js';
 
 const BG = 0x0f172a;            // cyberpunk dark slate
 // Broadcast-style chase cam: higher and further back for a cleaner, more
@@ -258,6 +262,7 @@ export function createScene(container, renderer, stage) {
   let pipeline = null;
   let stack = null;
   let bloomNode = null;
+  let lens = null;   // lens.js: drops, shockwaves, fringe, motion blur, shafts, leader cam
   try {
     pipeline = new THREE.RenderPipeline(renderer);
     pipeline.outputColorTransform = false;
@@ -267,9 +272,21 @@ export function createScene(container, renderer, stage) {
     const sceneTex = stack.node;
     bloomNode = bloom(sceneTex, 0.28, 0.35, 0.92);
     const combined = sceneTex.add(bloomNode);
+    // The lens sits between the scene and the grade, so the grade and the tone map treat the
+    // leader cam, the drops and the shafts exactly as they treat the rest of the frame.
+    let lensed = combined;
+    try {
+      // `?mrLens=off` leaves the lens out, for A/B frame-time comparisons.
+      if (new URLSearchParams(location.search).get('mrLens') === 'off') throw new Error('off by ?mrLens=off');
+      lens = createLens({ stack, tier, heavy });
+      lensed = lens.build(combined);
+    } catch (err) {
+      console.warn('[PoMarbleRace] lens unavailable:', err?.message || err);
+      lens = null;
+    }
 
     const graded = Fn(() => {
-      const col = combined.rgb.toVar();
+      const col = lensed.rgb.toVar();
       const luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col.assign(mix(vec3(luma), col, uSaturation));
       col.assign(col.sub(0.5).mul(uContrast).add(0.5));
@@ -311,12 +328,34 @@ export function createScene(container, renderer, stage) {
     scene.fog.color.setHex(t.bg);
     scene.fog.near = t.fogNear;
     scene.fog.far = t.fogFar;
+    fogBase.near = t.fogNear; fogBase.far = t.fogFar;
+    applyClearAir();
     ambient.color.setHex(t.ambient[0]); ambient.intensity = t.ambient[1];
     hemi.color.setHex(t.hemi[0]); hemi.groundColor.setHex(t.hemi[1]); hemi.intensity = t.hemi[2];
     key.color.setHex(t.key[0]); key.intensity = t.key[1];
     renderer.toneMappingExposure = t.exposure;
     raceFx.setTheme(t);   // a theme with `reflect` asks for SSR (fx-race.js)
     stack?.setReflections(!!t.reflect);   // and for the shared stack's SSR, which is off otherwise (it is the dearest pass)
+  }
+
+  // ── Clear air (#3): the pre-race flyover looks at the whole course from high up, where the
+  // race's fog would grey everything out. `clearAir` 0..1 pushes the fog and the far plane out.
+  const fogBase = { near: scene.fog.near, far: scene.fog.far };
+  let clearAir = 0;
+  function applyClearAir() {
+    const k = 1 + clearAir * 14;
+    scene.fog.near = fogBase.near * k;
+    scene.fog.far = fogBase.far * k;
+    const far = 1000 + clearAir * 5000;
+    if (Math.abs(camera.far - far) > 1) { camera.far = far; camera.updateProjectionMatrix(); }
+  }
+  function setClearAir(k) {
+    const v = Math.max(0, Math.min(1, k));
+    if (v === clearAir) return;
+    clearAir = v;
+    applyClearAir();
+    // From the high shot the canyon-wall splats read as grey smoke over the course: they sit it out.
+    if (backdrop) backdrop.object.visible = clearAir < 0.3;
   }
 
   // ── Impact light pulses (GFX #5) ──────────────────────────────────────
@@ -553,6 +592,96 @@ export function createScene(container, renderer, stage) {
     updatePost(dt);                 // #3 TSL colour grade + streak uniforms
   }
 
+  // Place the camera outright (the pre-race flyover, #3). The follow cam picks up from wherever
+  // this leaves it, so handing back to followTarget eases rather than cuts.
+  function setCameraPose(pos, look, lightAt) {
+    camera.position.copy(pos);
+    camTarget.copy(look);
+    haveTarget = true;
+    camera.lookAt(camTarget);
+    camera.fov += (FOV_BASE - camera.fov) * 0.2;
+    camera.updateProjectionMatrix();
+    const at = lightAt || look;
+    const qx = Math.round(at.x / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const qy = Math.round(at.y / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const qz = Math.round(at.z / SHADOW_TEXEL) * SHADOW_TEXEL;
+    key.position.set(qx + 28, qy + 70, qz - 18);
+    key.target.position.set(qx, qy, qz + 6);
+    key.target.updateMatrixWorld();
+  }
+
+  // ── Lens state (lens.js) ──
+  // The sun the shafts stream from is a low virtual one ahead and to the side of the camera: the
+  // real key light sits almost overhead, out of any chase shot, and would throw no rays at all.
+  const _sunV = new THREE.Vector3(), _fwd = new THREE.Vector3(), _side = new THREE.Vector3();
+  const _proj = new THREE.Vector3();
+  let pipSubject = null;   // { pos: Vector3, dir: Vector3 } of the leader, or null
+  let pipFrame = 0;
+  const pipRect = [0.72, 0.06, 0.97, 0.3];
+  /** Where a world point lands on screen, as uv (0..1, top-left), or null behind the camera. */
+  function screenOf(pos) {
+    _proj.set(pos.x, pos.y, pos.z).project(camera);
+    if (_proj.z > 1) return null;
+    return { x: (_proj.x + 1) / 2, y: (1 - _proj.y) / 2 };
+  }
+  function lensFrame(dt, st) {
+    if (!lens) return;
+    const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+    // The inset: a quarter of the width (200-340 px), 16:9, tucked under the top-right corner.
+    const pw = Math.max(200, Math.min(340, w * 0.26));
+    const ph = pw * 9 / 16;
+    const top = 16 + (w < 640 ? 44 : 0);
+    pipRect[0] = (w - 16 - pw) / w; pipRect[1] = top / h; pipRect[2] = (w - 16) / w; pipRect[3] = (top + ph) / h;
+    pipSubject = st.leader || null;
+    camera.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1);
+    _fwd.normalize();
+    _side.set(-_fwd.z, 0, _fwd.x);
+    _sunV.copy(_fwd).multiplyScalar(0.86).addScaledVector(_side, 0.32);
+    _sunV.y += 0.3;
+    _sunV.normalize().multiplyScalar(600).add(camera.position);
+    const sp = screenOf(_sunV);
+    lens.update(dt, {
+      w, h,
+      boost: effects === 'lite' ? 0 : Math.min(1, raceFx.streak * 1.2),
+      final: st.final || 0,
+      blur: effects !== 'lite' && !!st.racing,
+      pip: effects !== 'lite' && !!pipSubject,
+      racing: !!st.racing,
+      pipRect,
+      sun: sp ? { x: sp.x, y: sp.y, on: !!st.racing } : { x: 0.5, y: -1, on: false },
+    });
+  }
+  // The leader cam: a chase shot of the leader rendered into the lens's small target, every third
+  // frame. The shadow map is reused (not re-rendered for this camera) and the splat backdrop sits
+  // this pass out: its depth sort belongs to the main camera, and sorting for two cameras a frame
+  // would thrash the worker.
+  function renderPip() {
+    if (!lens || !pipSubject || lens.pipAlpha <= 0.002) return;
+    if ((pipFrame++ % 3) !== 0) return;
+    const { pos, dir } = pipSubject;
+    const cam = lens.pipCam;
+    cam.position.set(pos.x - dir.x * 13, pos.y - dir.y * 13 + 6.5, pos.z - dir.z * 13);
+    cam.lookAt(pos.x + dir.x * 9, pos.y + dir.y * 9 + 1, pos.z + dir.z * 9);
+    const auto = key.shadow.autoUpdate;
+    const bd = backdrop ? backdrop.object.visible : false;
+    key.shadow.autoUpdate = false;
+    if (backdrop) backdrop.object.visible = false;
+    const prev = renderer.getRenderTarget();
+    try {
+      renderer.setRenderTarget(lens.pipTarget);
+      renderer.render(scene, cam);
+    } catch (err) {
+      console.warn('[PoMarbleRace] leader cam failed:', err?.message || err);
+      pipSubject = null;
+    } finally {
+      renderer.setRenderTarget(prev);
+      key.shadow.autoUpdate = auto;
+      if (backdrop) backdrop.object.visible = bd;
+    }
+  }
+
   // ── Act-reactive dynamic lighting cross-fade across Grand Circuit's 5 Acts ──
   const ACT_LIGHTS = [
     { bg: new THREE.Color(0x16110e), key: new THREE.Color(0xffd2a0), hemi: new THREE.Color(0xffdca8) }, // Act 1: Spiral Works (warm sodium)
@@ -561,6 +690,57 @@ export function createScene(container, renderer, stage) {
     { bg: new THREE.Color(0x071a26), key: new THREE.Color(0x8be9fd), hemi: new THREE.Color(0x38bdf8) }, // Act 4: Playground Tunnel (cool cyan)
     { bg: new THREE.Color(0x180a16), key: new THREE.Color(0xffb4c8), hemi: new THREE.Color(0xf472b6) }, // Act 5: Double Gauntlet (electric finale)
   ];
+  // A dealt course (composer.js) brings its own act colours: [{ bg, key, hemi }] as hex.
+  function setActLights(list) {
+    if (!list || !list.length) return;
+    ACT_LIGHTS.length = 0;
+    for (const l of list) ACT_LIGHTS.push({ bg: new THREE.Color(l.bg), key: new THREE.Color(l.key), hemi: new THREE.Color(l.hemi) });
+  }
+
+  // ── The flume's water (#14) ──
+  // Foam is the fluid grid's density (flume.js), read through the surface's UVs, which ARE the
+  // grid's cells. Clear water is a deep teal with ripples running down the flume; foam turns it
+  // white, opaque and rough. setFoam swaps the texture when the GPU grid takes over.
+  function waterMaterial(foamTex) {
+    const { texture, uv, time, vec3, float, mix, sin, smoothstep } = TSL;
+    const foamNode = texture(foamTex, uv());
+    const u = uv();
+    const ripple = sin(u.y.mul(70).sub(time.mul(7)).add(sin(u.x.mul(29).add(time)).mul(1.4))).mul(0.5).add(0.5);
+    const foam = smoothstep(0.04, 0.55, foamNode.r);
+    const white = vec3(0.92, 0.97, 1.0);
+    const base = mix(vec3(0.02, 0.2, 0.3), vec3(0.1, 0.42, 0.55), ripple.mul(0.4));
+    const m = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, metalness: 0 });
+    m.colorNode = mix(base, white, foam);
+    m.opacityNode = float(0.56).add(foam.mul(0.4));
+    m.roughnessNode = mix(float(0.05), float(0.6), foam);
+    m.emissiveNode = white.mul(foam).mul(0.22);   // foam still reads in the shade of the berm
+    m.userData.setFoam = (t) => { foamNode.value = t; };
+    return m;
+  }
+
+  // ── Caustics (#13) and the splat backdrop (#19) ──
+  let caustics = null;
+  function setCaustics(list) {
+    if (!caustics) {
+      try { caustics = createCaustics(scene); } catch (err) { console.warn('[PoMarbleRace] caustics unavailable:', err?.message || err); caustics = false; }
+    }
+    if (caustics) caustics.update(list);
+  }
+  let backdrop = null;
+  // Splats per tier: the walls are most of the frame's edges, but every splat is overdraw.
+  const BACKDROP_BUDGET = { high: 170000, medium: 100000, low: 50000 };
+  function setBackdrop(spec) {
+    if (backdrop) { backdrop.dispose(); backdrop = null; }
+    if (!spec) return;
+    try {
+      backdrop = buildBackdrop(spec, BACKDROP_BUDGET[tier] ?? BACKDROP_BUDGET.medium);
+      scene.add(backdrop.object);
+    } catch (err) {
+      console.warn('[PoMarbleRace] splat backdrop unavailable:', err?.message || err);
+      backdrop = null;
+    }
+  }
+
   function setActLighting(actIndex, dt) {
     const target = ACT_LIGHTS[actIndex];
     if (!target) return;
@@ -587,9 +767,30 @@ export function createScene(container, renderer, stage) {
     pulseLight,       // GFX #5
     setTheme,
     setActLighting,
+    setActLights,
+    waterMaterial,
+    setCaustics,
+    setBackdrop,
     audioCue,         // #9
     setGrade,         // #3
     punchFov,
+    setCameraPose,    // #3 the pre-race flyover
+    setClearAir,      // #3 fog pushed out for the flyover's high shot
+    screenOf,
+    /** #12 a shockwave in the lens where `pos` lands on screen. */
+    shockwave(pos, k = 1) {
+      if (!lens || effects === 'lite') return;
+      const sp = screenOf(pos);
+      if (sp) lens.shockwave(sp.x, sp.y, k);
+    },
+    /** #15 water on the lens. */
+    splash(n) { if (lens && effects !== 'lite') lens.splash(n); },
+    /** Per-frame lens state: { racing, final 0..1, leader: { pos, dir } | null }. */
+    lensFrame,
+    /** The leader-cam inset as uv [x0, y0, x1, y1], for the HUD's label. */
+    get pipRect() { return pipRect; },
+    get pipAlpha() { return lens ? lens.pipAlpha : 0; },
+    get lens() { return lens; },
     photoFinish() {
       // Handled via finishSwoop + TSL bloom/grade transition on WebGPU.
     },
@@ -617,11 +818,14 @@ export function createScene(container, renderer, stage) {
     post: () => stack,
     sun,
     render() {
-      if (pipeline && effects !== 'lite') { stack?.update(); pipeline.render(); }
+      if (pipeline && effects !== 'lite') { renderPip(); stack?.update(); pipeline.render(); }
       else renderer.render(scene, camera);
     },
     resize,
     dispose() {
+      if (caustics) caustics.dispose();
+      lens?.dispose();
+      setBackdrop(null);
       raceFx.dispose();
       marbleEnv.dispose();
       try { bloomNode?.dispose?.(); } catch { }

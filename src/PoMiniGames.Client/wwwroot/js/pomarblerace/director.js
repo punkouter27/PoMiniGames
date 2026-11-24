@@ -10,6 +10,12 @@ import {
 // _camRoad has to be its own object or the lerp would read the vector it is writing into.
 const _camAnchor = new THREE.Vector3();
 const _camRoad = new THREE.Vector3();
+const _cUp = new THREE.Vector3();
+const _cGround = new THREE.Vector3();
+// The key light's direction of travel (scene.js parks it at +28, +70, -18 from what it lights).
+const KEY_DIR = new THREE.Vector3(-28, -70, 24).normalize();
+const CAUSTIC_MAX = 4;     // yours + LEADERS
+const CAUSTIC_FADE = 7;    // units of air under a marble at which its caustic has faded out
 
 export class DirectorMixin {
   // ── Camera director ──
@@ -101,6 +107,59 @@ export class DirectorMixin {
       this._lastFocus = focus;
     }
     this._leaders = this._topRivals(order);
+    // The water on the lens (#15): coming up out of the flume, the camera wears it for a few seconds.
+    if (this._prevSurface === 'water' && surface !== 'water') this.scene.splash?.(16);
+    this._prevSurface = surface;
+    this._showcaseRace(order, dt);   // showcase.js: tower, arrows, place history, Doppler passes
     this._checkSectors();
+    this._stepFlume(dt);          // flume.js: wakes and foam
+    this._animateSetPieces(dt);   // course.js: pads spring back, magnets glow
+    this._updateCaustics();
+  }
+
+  // ── Glass caustics (#13) ──
+  // A glass marble is a ball lens: the key light passing through it is focused into a bright
+  // spot with a chromatic ring, landing on the floor down-light of the marble (not under it).
+  // Drawn for the marbles the eye is on — yours and the top rivals — as additive decals by
+  // scene.js (caustics.js). Here: where each lands, how big, how bright, what tint.
+  _updateCaustics() {
+    if (!this.scene.setCaustics) return;
+    const list = this._causticList || (this._causticList = []);
+    list.length = 0;
+    const ms = this.marbleSet.marbles;
+    const want = [this.chosen, ...this._leaders.map((m) => m.index)];
+    for (const i of want) {
+      const m = ms[i];
+      if (!m || m.finished || m.eliminated || !m.proj || list.length >= CAUSTIC_MAX) continue;
+      if (list.some((c) => c.m === m)) continue;
+      const up = this.track.upAt(m.s, _cUp);
+      const gap = m.proj.height - m.radius;                 // daylight under the marble
+      if (gap > CAUSTIC_FADE) continue;
+      // Where the light through the marble lands: straight down the light ray to the floor, then
+      // on past the contact point along the light's ground direction — a glass ball (n ≈ 1.5)
+      // focuses about 1.5 radii from its centre, so the hot spot sits just beyond its shadow's
+      // core rather than hidden under the marble. Sized so the fringe ring clears the silhouette.
+      const lu = KEY_DIR.x * up.x + KEY_DIR.y * up.y + KEY_DIR.z * up.z;
+      const cosL = -lu;
+      const t = cosL > 0.2 ? m.proj.height / cosL : 0;
+      _cGround.copy(KEY_DIR).addScaledVector(up, -lu);
+      if (_cGround.lengthSq() > 1e-6) _cGround.normalize();
+      const pool = this._causticPool || (this._causticPool = []);
+      const e = pool[list.length] || (pool[list.length] = { pos: new THREE.Vector3(), up: new THREE.Vector3() });
+      e.m = m;
+      e.pos.copy(m.mesh.position).addScaledVector(KEY_DIR, t)
+        // Lifted over the road's visual lumps (track-procedural.js bumpAt, up to 0.55 above the
+        // collider plane); at 0.09 the decal was buried under them and never showed.
+        .addScaledVector(_cGround, m.radius * 1.3).addScaledVector(up, 0.6);
+      e.up.copy(up);
+      e.size = m.radius * (4.2 + Math.max(0, gap) * 0.35);
+      e.strength = (m.index === this.chosen ? 1 : 0.7) * (1 - Math.max(0, gap) / CAUSTIC_FADE);
+      e.color = m.spec.color;
+      // The pattern turns with the marble's roll, so a fast marble's caustic swirls.
+      m._causticSpin = (m._causticSpin || 0) + (m.speed || 0) * 0.002;
+      e.spin = m._causticSpin;
+      list.push(e);
+    }
+    this.scene.setCaustics(list);
   }
 }

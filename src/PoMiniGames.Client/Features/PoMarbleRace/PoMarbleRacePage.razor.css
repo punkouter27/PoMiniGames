@@ -844,36 +844,6 @@
     }
 }
 
-/* F1-style 3-pip countdown light-tree (replaces dead download progress bar on procedural track). */
-.mr-lights {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin: 10px 0 8px;
-}
-
-.mr-light {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: rgba(148, 163, 184, 0.25);
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-
-.mr-light.is-lit {
-    background: #ef4444;
-    border-color: #fca5a5;
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.85);
-    transform: scale(1.15);
-}
-
-.mr-light.is-lit.is-go {
-    background: #4ade80;
-    border-color: #bbf7d0;
-    box-shadow: 0 0 14px rgba(74, 222, 128, 0.9);
-}
-
 /* Live rank-change delta pill beside P/101. */
 .mr-delta {
     display: inline-flex;
@@ -906,6 +876,7 @@
 }
 
 .mr-podium-card {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -915,6 +886,10 @@
     background: color-mix(in srgb, var(--color-surface, #161b2e) 82%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-border, #334155) 75%, transparent);
     transition: transform 180ms ease, border-color 180ms ease;
+    transform: perspective(520px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transform-style: preserve-3d;
+    /* cards deal in one after another as the end card opens */
+    animation: mr-card-in 520ms cubic-bezier(.34, 1.4, .64, 1) backwards;
 }
 
 .mr-podium-card--1 {
@@ -966,4 +941,149 @@
     background: rgba(34, 211, 238, 0.12);
     border: 1px solid rgba(34, 211, 238, 0.4);
     font-size: 0.9rem;
+}
+
+/* ── #6 the podium cards: tilt toward the pointer (ui-fx.js sets the angles), a highlight that
+   follows it, and a slow shimmer on the gold. ── */
+.mr-podium-card--2 { animation-delay: 90ms; }
+.mr-podium-card--3 { animation-delay: 180ms; }
+.mr-podium-card.is-tilt { transition: transform 60ms linear, border-color 180ms ease; }
+
+.mr-podium-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.22), transparent 55%);
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+.mr-podium-card.is-tilt::after { opacity: 1; }
+
+.mr-podium-card--1::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(115deg, transparent 30%, rgba(250, 204, 21, 0.22) 46%, rgba(255, 255, 255, 0.28) 50%, rgba(250, 204, 21, 0.22) 54%, transparent 70%) no-repeat;
+    background-size: 250% 100%;
+    animation: mr-shimmer 3.2s ease-in-out 0.8s infinite;
+}
+
+@keyframes mr-shimmer {
+    from { background-position: 130% 0; }
+    60%, to { background-position: -30% 0; }
+}
+
+@keyframes mr-card-in {
+    from { opacity: 0; transform: perspective(520px) translateY(14px) rotateX(-24deg) scale(0.94); }
+}
+
+/* ── #1 view-transition names: the HUD standings chip becomes the end card's podium, and the
+   intro's track glyph is what the card zooms through. ── */
+.mr-place { view-transition-name: mr-standings; }
+.mr-podium-cards { view-transition-name: mr-standings; }
+.mr-track-glyph { view-transition-name: mr-hero; }
+
+/* ── #11 numbers count up as the end card opens ── */
+@property --mr-n {
+    syntax: "<integer>";
+    inherits: false;
+    initial-value: 0;
+}
+
+.mr-count {
+    --mr-n: var(--to);
+    counter-reset: mr-n var(--mr-n);
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    color: var(--color-text-primary);
+    animation: mr-count 1.1s cubic-bezier(.2, .8, .2, 1) 0.45s both;
+}
+
+.mr-count::after { content: counter(mr-n); }
+
+@keyframes mr-count {
+    from { --mr-n: 0; }
+    to { --mr-n: var(--to); }
+}
+
+/* ── #10 the place chart ── */
+.mr-chart {
+    margin: 4px 0 0;
+    display: grid;
+    gap: 2px;
+}
+
+.mr-chart-svg {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.mr-chart-band { fill: rgba(74, 222, 128, 0.1); }
+
+.mr-chart-label {
+    fill: rgba(74, 222, 128, 0.75);
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.mr-chart-act {
+    stroke: rgba(148, 163, 184, 0.35);
+    stroke-width: 0.8;
+    stroke-dasharray: 2 3;
+}
+
+.mr-chart-line {
+    fill: none;
+    stroke: var(--color-accent, rgba(56, 189, 248, 1));
+    stroke-width: 2.2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.55));
+    animation: mr-draw 1.3s cubic-bezier(.4, 0, .2, 1) 0.35s forwards;
+}
+
+.mr-chart-end {
+    fill: rgba(239, 68, 68, 1);
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 1.4;
+    opacity: 0;
+    animation: mr-fade-in 0.3s ease-out 1.55s forwards;
+}
+
+@keyframes mr-draw { to { stroke-dashoffset: 0; } }
+
+/* ── #5 touch pads and the effects switch press like real buttons ── */
+.mr-nudge-pad {
+    position: relative;
+    overflow: hidden;
+    transition: transform 160ms cubic-bezier(.34, 1.56, .64, 1), background 120ms ease, box-shadow 160ms ease;
+}
+
+.mr-nudge-pad:active {
+    box-shadow: 0 0 0 6px rgba(251, 146, 60, 0.18), inset 0 0 18px rgba(251, 146, 60, 0.35);
+}
+
+.mr-seg-btn {
+    position: relative;
+    overflow: hidden;
+    transition: background 160ms ease, color 160ms ease, transform 120ms cubic-bezier(.34, 1.56, .64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mr-podium-card,
+    .mr-podium-card--1::before,
+    .mr-count,
+    .mr-chart-end { animation: none; }
+    .mr-chart-end { opacity: 1; }
+    .mr-chart-line { animation: none; stroke-dashoffset: 0; }
+    .mr-podium-card { transform: none; }
 }

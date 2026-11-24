@@ -111,6 +111,9 @@ export class ResultsMixin {
     if (!this.demo) this.audio.say(place === 1 ? 'You win it!' : won ? `P${place}. Top ten finish!` : finished ? 'Outside the top ten.' : 'Off the track!');
     this._leaderIdx = -1;   // the next race's first leader is not a "change"
     this._sendTick(); // final standings
+    this._sendHistory(place);   // #10 the result chart (showcase.js), ahead of the result itself
+    // #11 the end card counts its numbers up; a soft tick per step rides along.
+    if (!this.demo && !won && this.best > 0) this.audio.playCountTicks?.(Math.min(16, this.best), 1.1, 0.45);
     // The run's races ride along (appended — positional contract) for the board submission.
     // Your own finish time rides along too (0 when you did not finish), offered as the map's
     // world record by the page.

@@ -1,16 +1,14 @@
-// maps.js — the single combined marble-race track ("Grand Circuit") and the track interface
-// the game speaks to.
+// maps.js — the single marble-race map ("Grand Circuit") and the track interface the game
+// speaks to.
 //
-// Grand Circuit (slot 7) fuses the signature best sections of all four previous courses into one
-// continuous, strictly-descending, non-trapping mega-track:
-//   · Spiral Works   — banked opening helix, brake strip before the split, physical split-lane island
-//   · Neon Canyon    — wet reflective neon night, boost pads, 9-row plinko, kickers, pendulums, double Gauntlet
-//   · Grand Spiral   — washboard ridges, wide vortex funnel bowl + neck pinch, steep free-fall plunge
-//   · Playground Run — enclosed drop tunnel (with boxed-in reverb zone) into the glossy big slide & wide finish tray
+// Grand Circuit is ONE map whose course is dealt fresh every race from the race seed: composer.js
+// picks a theme and a shuffled run of set-pieces, track-procedural.js builds it. A seed always
+// deals the same course, so an online host and guest (who share the seed) race the same one.
 //
 // Slots 1-6 remain recognized on the server (MarbleRaceRunVerifier.cs) for legacy records only.
 import * as THREE from 'three-eco/webgpu';
 import { generateTrack } from './track-procedural.js';
+import { composeCourse } from './composer.js';
 
 /**
  * A fresh, zeroed projection record for a caller to own and reuse. `lane`/`ring`/`hw`/`reach`
@@ -101,6 +99,13 @@ function adaptProceduralTrack(t) {
     inBoost: (s) => t.inBoost(s),
     brakeAt: t.brakeAt ? (s) => t.brakeAt(s) : undefined,
     checkpoints: t.checkpoints,
+    // Set-pieces and surfaces (composer.js deals them). Their lateral values are already in
+    // this interface's sign; see track-procedural.js.
+    trampolines: t.trampolines,
+    conveyors: t.conveyors,
+    magnets: t.magnets,
+    flume: t.flume,
+    surfaceAt: t.surfaceAt,
     driveMotors: () => t.driveMotors(),
     dispose: () => t.dispose(),
   };
@@ -136,45 +141,12 @@ function addCheckpointArches(track) {
   return track;
 }
 
-// ── Grand Circuit: the one unified mega-track ───────────────────────────────────────────────
-// Combines the signature set-pieces of every previous track into one non-trapping 2,800-unit run:
-//   0.00–0.21  Spiral Works   — banked opener, brake strip, physical split-lane island + boost
-//   0.22–0.52  Neon Canyon    — 9-row plinko, telegraphed kickers, rumble, boost, pendulum bobs
-//   0.52–0.69  Grand Spiral   — washboard ridges, wide vortex funnel bowl + pinch, free-fall plunge
-//   0.70–0.86  Playground Run — enclosed drop tunnel (reverb zone) into the glossy slide & turnstiles
-//   0.86–1.00  Grand Finale   — final boost launch into the double kinematic Gauntlet & wide finish tray
-const GRAND_CIRCUIT = {
-  track: { LENGTH: 2800, DROP: 1120, START_Y: 240, CHANNEL_WIDTH: 58, SEGMENTS: 780 },
-  zones: {
-    BRAKE: [[0.085, 0.115, 50]],
-    SPLITS: [{ from: 0.125, to: 0.205, widthFrac: 0.20 }],
-    BOOST: [[0.145, 0.175], [0.41, 0.435], [0.775, 0.80], [0.865, 0.885]],
-    PLINKO: { from: 0.22, to: 0.33, rows: 9 },
-    KICKERS: [0.345, 0.365],
-    RUMBLE: [[0.375, 0.40], [0.585, 0.605]],
-    BOBS: { from: 0.445, to: 0.515, step: 0.035 },
-    RIDGES: { from: 0.525, to: 0.575, step: 0.025 },
-    TUNNELS: [{ from: 0.695, to: 0.765 }],
-    SLIDE: [0.77, 0.82],
-    TURNSTILES: { from: 0.815, to: 0.855, step: 0.02 },
-    GAUNTLET: { from: 0.89, to: 0.94, step: 0.016 },
-    FINISH: [0.945, 1.0],
-  },
-  // Vortex funnel bowl (0.61) + wide finish tray (0.975)
-  flares: [
-    { c: 0.61, w: 0.03, d: 0.42 },
-    { c: 0.975, w: 0.035, d: 0.35 },
-  ],
-  // Funnel neck pinch (0.65) + pre-gauntlet squeeze (0.86)
-  pinches: [
-    { c: 0.39, w: 0.03, d: 0.35 },
-    { c: 0.65, w: 0.028, d: 0.52 },
-    { c: 0.86, w: 0.025, d: 0.36 },
-  ],
-  // Grand Spiral free-fall waterfall drop out of the funnel neck into Playground's drop tunnel
-  plunges: [{ c: 0.675, w: 0.015, drop: 90 }],
-  curve: 1.12,
-};
+// ── Grand Circuit: one map, a new course every race ─────────────────────────────────────────
+// The single map deals its course from the race seed (composer.js): a theme and a shuffled run of
+// set-pieces — split lanes, plinko, kickers, pendulums, washboard, vortex funnel, drop tunnel,
+// turnstiles, trampolines, see-saws, conveyors, magnets, ice, sand and a water flume — between a
+// fixed start and the fixed Gauntlet finale. The length never changes (the server's run check
+// knows it), so only what is on the course does.
 
 /** Today's UTC day as yyyy-MM-dd (retained for store.js compatibility). */
 export const dailyKey = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
@@ -189,22 +161,33 @@ const MAPS = [
   {
     id: 7,
     name: 'Grand Circuit',
-    blurb: 'All-in-one mega-track: split-lane helix, neon plinko & pendulums, vortex funnel plunge, drop tunnel slide, and double Gauntlet.',
-    // Neon twilight with wet reflective tarmac and warm highlight bounce.
+    blurb: 'A new course every race: a random theme and a shuffled run of set-pieces — plinko, pendulums, trampolines, see-saws, magnets, ice, sand, a water flume and more — down to the Gauntlet.',
+    // The fallback look; every built course carries its own theme (track.theme, composer.js).
     theme: {
       bg: 0x0b1024, fogNear: 90, fogFar: 360,
       ambient: [0xb4b0d8, 2.7], hemi: [0xc4a8ff, 0x2a1824, 1.8], key: [0xffe8cc, 3.0], exposure: 1.1,
       reflect: true,
     },
-    // Open canyon slapback echo that tightens into Playground Run's enclosed tunnel acoustics.
+    // Open-air slapback; a drop tunnel, when one is dealt, adds its own boxed-in zone
+    // (track.reverbZones).
     reverb: {
       decay: 1.8, wet: 0.25, tone: 4400,
       echo: { time: 0.30, feedback: 0.28, level: 0.36 },
-      zones: [{ from: 0.695, to: 0.765, wet: 0.45, tone: 2200 }],
+      zones: [],
     },
     load: () => Promise.resolve(null),
-    build: (world, materials, marbleCount, _asset, seed) =>
-      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, GRAND_CIRCUIT))),
+    build: (world, materials, marbleCount, _asset, seed) => {
+      const course = composeCourse(seed >>> 0);
+      const track = adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, course.variant));
+      track.theme = course.theme;
+      track.acts = course.acts;
+      track.reverbZones = course.reverbZones;
+      track.courseName = course.name;
+      track.courseSub = course.sub;
+      track.pieces = course.pieces;
+      track.spans = course.spans;
+      return addCheckpointArches(track);
+    },
   },
 ];
 

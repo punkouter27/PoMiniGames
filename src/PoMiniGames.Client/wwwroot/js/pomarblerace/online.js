@@ -56,7 +56,7 @@ export class OnlineMixin {
         m.netTarget.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
       }
       const f = flags[i];
-      if (f === 2) { this.marbleSet.eliminate(m); continue; }
+      if (f === 2) { this._shatter(m); this.marbleSet.eliminate(m); continue; }
       if (f === 1 && !m.finished) {
         m.finished = true;
         m.finishOrder = this._netFinish++;
@@ -65,6 +65,7 @@ export class OnlineMixin {
         this.scene.burstConfetti(m.mesh.position);
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
         if (m.finishOrder === 0 && m === this._lastFocus) { this.scene.photoFinish(); this.scene.finishSwoop?.(); }
+        if (m.finishOrder === 0) this._irisOnWinner(m);   // #2
         // Same photo-finish sting as the host: 2nd within a hair of the winner (frame clock).
         if (m.finishOrder === 1) {
           const first = ms.find((o) => o.finishOrder === 0);
@@ -130,6 +131,8 @@ export class OnlineMixin {
     this._leaderIdx = -1;
     this._guestPrevPlace = -1;
     this.resultTimer = RESULT_MS / 1000;
+    const g = this.marbleSet.marbles[this.guestIndex];
+    this._sendHistory(g && g.finished && !g.eliminated ? g.place : -1);   // #10
     this._setPhase('result');
     this._setGrade(won ? 'win' : 'loss');
     this.audio.playSting(!!won);

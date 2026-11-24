@@ -6,6 +6,8 @@ import * as THREE from 'three-eco/webgpu';
 import * as CANNON from '../platform/physics/cannonCompat.js';
 import {
   LOST_AIR, REACQUIRE_AFTER, RESPAWN_HOLD, RESPAWN_SPEED, RESPAWN_LIFT, AIR_HOLD, BRAKE_RATE, STALL_AFTER, STALL_REPEAT, STALL_GAIN, STALL_NUDGE, STALL_STEP, STALL_MAX, STALL_LOOKAHEAD, STALL_SIDESTEP, STALL_SIDE_SHARE, BOOST_ACCEL, BOOST_MAX_SPEED, KICK_DV, KICK_UP, KICK_CHARGE,
+  TRAMP_V, TRAMP_FWD, TRAMP_COOLDOWN, CONVEYOR_SPEED, CONVEYOR_GRIP, MAGNET_ACCEL, MAGNET_PERIOD, MAGNET_DUTY,
+  SAND_DRAG, SAND_MIN_SPEED, FLUME_CURRENT, FLUME_DRAG, FLUME_FLOOR,
 } from './tuning.js';
 
 // Scratch: centerAt()/dirAt() hand back a shared vector unless given an output.
@@ -46,6 +48,8 @@ export class CourseMixin {
     // Edge-trigger the whoosh so it fires once per pad, not every frame you're on one.
     if (playerBoosting && !this._wasBoosting) {
       this.audio.playWhoosh(this.scene.audioCue(me.mesh.position));   // #9 placed at the pad
+      this.scene.shockwave?.(me.mesh.position, 0.45);                  // #12 the pad's punch
+      this._rumble(0.15, 0.6, 200);                                     // #20
     }
     this._wasBoosting = playerBoosting;
     this.scene.setBoosting?.(playerBoosting);   // #28 the speed streak swells on a pad
@@ -195,6 +199,7 @@ export class CourseMixin {
       m.body.velocity.z += rb.z * dv;
       this.scene.burstSparks(m.mesh.position, 0xe879f9, 14, 1.5);
       this.scene.burstFx?.('pop', m.mesh.position);   // #24
+      if (m.index === this.chosen) this._rumble(0.85, 0.5, 150);   // #20 the kick lands on you
       hits++;
     }
     k.mat.emissiveIntensity = 3.6;          // bright flash on fire (visible even when it hits nothing)
@@ -205,6 +210,161 @@ export class CourseMixin {
       // rather than the pack spontaneously scattering.
       this.scene.pulseLight(lastHitPos, 0xe879f9, 1.5);
       this.scene.burstFx?.('kicker', lastHitPos);     // #24 the discharge's shock ring
+      this.scene.shockwave?.(lastHitPos, 1);            // #12 and the lens bends with it
+    }
+  }
+
+  // ── #9 / #10 / #14: the dealt set-pieces and surfaces (composer.js) ──
+  // All push-only or free-moving (the non-trapping rule): each nudges velocity, none holds a marble.
+  // Host-only physics, run after _markContacts (several only act on a marble touching the course).
+  // The visual half that a guest also needs lives in _animateSetPieces.
+  _applySetPieces(sdt) {
+    this._applyTrampolines();
+    this._applyConveyors(sdt);
+    this._applyMagnets(sdt);
+    this._applySurfaces(sdt);
+    this._applyFlume(sdt);
+  }
+
+  // Trampolines: a marble rolling onto a pad is thrown up off it (and a little on), once per
+  // TRAMP_COOLDOWN. Pads are circles in (s, lateral).
+  _applyTrampolines() {
+    const pads = this.track.trampolines;
+    if (!pads || !pads.length) return;
+    const lo = pads[0].s - pads[0].r - 1, hi = pads[pads.length - 1].s + pads[pads.length - 1].r + 1;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || !m.proj || m.s < lo || m.s > hi) continue;
+      if (!this._touch.has(m.body) || this.raceClock - (m._trampAt ?? -9) < TRAMP_COOLDOWN) continue;
+      for (const p of pads) {
+        const ds = m.s - p.s, dl = m.proj.lateral - p.lateral;
+        if (ds * ds + dl * dl > p.r * p.r) continue;
+        const v = m.body.velocity, u = p.up, d = p.dir;
+        const add = TRAMP_V - (v.x * u.x + v.y * u.y + v.z * u.z);
+        if (add > 0) { v.x += u.x * add; v.y += u.y * add; v.z += u.z * add; }
+        v.x += d.x * TRAMP_FWD; v.y += d.y * TRAMP_FWD; v.z += d.z * TRAMP_FWD;
+        m._trampAt = this.raceClock;
+        p.squash = 1;
+        this.scene.burstSparks(m.mesh.position, 0xfacc15, 10, 1.1);
+        if (m.index === this.chosen || Math.random() < 0.12) this.audio.playImpact(16, 'bump', this.scene.audioCue(m.mesh.position));
+        break;
+      }
+    }
+  }
+
+  // Cross conveyors: a marble on a belt is dragged toward the belt's sideways speed. Only the
+  // across-the-road component is touched, so a belt bends a line without slowing the race.
+  _applyConveyors(sdt) {
+    const belts = this.track.conveyors;
+    if (!belts || !belts.length) return;
+    const k = Math.min(1, CONVEYOR_GRIP * sdt);
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || !this._touch.has(m.body)) continue;
+      for (const b of belts) {
+        if (m.s < b.from || m.s > b.to) continue;
+        const r = this.track.rightAt(m.s, _side), v = m.body.velocity;
+        const dv = (b.dir * CONVEYOR_SPEED - (v.x * r.x + v.y * r.y + v.z * r.z)) * k;
+        v.x += r.x * dv; v.y += r.y * dv; v.z += r.z * dv;
+        break;
+      }
+    }
+  }
+
+  // Magnets: while a coil is live it pulls marbles within its reach toward its line across the
+  // road (÷ mass, so a Heavy shrugs more of it off). Never along the road, so it cannot hold one.
+  _applyMagnets(sdt) {
+    const mags = this.track.magnets;
+    if (!mags || !mags.length) return;
+    for (const g of mags) g.on = ((this.raceClock + g.offset) % MAGNET_PERIOD) / MAGNET_PERIOD < MAGNET_DUTY;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || !m.proj) continue;
+      for (const g of mags) {
+        if (!g.on) continue;
+        const ds = m.s - g.s;
+        if (ds > g.reach || ds < -g.reach) continue;
+        const dl = g.lateral - m.proj.lateral;
+        const dist = Math.hypot(ds, dl);
+        if (dist >= g.reach) continue;
+        // Eased off over the last 3 units so a marble on the coil's line is not flicked across it.
+        const a = MAGNET_ACCEL * (1 - dist / g.reach) * Math.min(1, Math.abs(dl) / 3) * Math.sign(dl) / m.body.mass;
+        const r = this.track.rightAt(m.s, _side), v = m.body.velocity;
+        v.x += r.x * a * sdt; v.y += r.y * a * sdt; v.z += r.z * a * sdt;
+        if (Math.random() < 0.02) this.scene.burstSparks(m.mesh.position, 0xc084fc, 4, 0.6);
+      }
+    }
+  }
+
+  // Sand bleeds speed from a marble rolling in it, down to SAND_MIN_SPEED and never below, so a
+  // trap costs places but cannot stop anyone. Ice needs nothing here: its contact material
+  // (physics.js) is the whole effect.
+  _applySurfaces(sdt) {
+    if (!this.track.surfaceAt) return;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || this.track.surfaceAt(m.s) !== 'sand' || !this._touch.has(m.body)) continue;
+      const v = m.body.velocity, sp = v.length();
+      if (sp > SAND_MIN_SPEED) v.scale(Math.max(SAND_MIN_SPEED / sp, 1 - SAND_DRAG * sdt), v);
+      if (Math.random() < (m.index === this.chosen ? 0.5 : 0.03)) this.scene.burstFx?.('dust', m.mesh.position, null, 14);
+    }
+  }
+
+  // The water flume: in the water, a marble is dragged toward the water's own velocity — the
+  // current down the flume plus whatever the wakes are doing across it (flume.js's fluid grid,
+  // when it is running). The current never reads below FLUME_FLOOR of itself, so the water always
+  // carries a marble on. A marble bouncing clear over the surface is left alone.
+  _applyFlume(sdt) {
+    const fl = this.track.flume;
+    if (!fl) return;
+    const grid = this._flume ? this._flume.grid : null;
+    const k = Math.min(1, FLUME_DRAG * sdt);
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || !m.proj) continue;
+      if (m.s < fl.from || m.s > fl.to) { m._wet = false; continue; }
+      if (m.proj.height > fl.waterH + m.radius + 1.5) continue;
+      const d = this.track.dirAt(m.s, _camRoad), r = this.track.rightAt(m.s, _side);
+      let wx = 0, wz = FLUME_CURRENT;
+      if (grid) {
+        const f = grid.flow(m.proj.lateral, m.s);
+        wx = f.x;
+        wz = Math.max(FLUME_CURRENT * FLUME_FLOOR, f.z);
+      }
+      const v = m.body.velocity;
+      const da = (wz - (v.x * d.x + v.y * d.y + v.z * d.z)) * k;
+      const dl = (wx - (v.x * r.x + v.y * r.y + v.z * r.z)) * k;
+      v.x += d.x * da + r.x * dl; v.y += d.y * da + r.y * dl; v.z += d.z * da + r.z * dl;
+      if (!m._wet) {
+        // Splashdown.
+        m._wet = true;
+        m._wetAt = this.raceClock;
+        this.scene.burstSparks(m.mesh.position, 0xbfe9ff, 16, 1.4);
+        if (m.index === this.chosen || Math.random() < 0.15) {
+          this.audio.playImpact(Math.min(40, 10 + m.speed * 0.3), 'water', this.scene.audioCue(m.mesh.position));
+        }
+      }
+    }
+  }
+
+  // The visual half of the set-pieces, on every browser (the online guest included): trampoline
+  // pads spring back, magnet coils glow while live and flicker just before they switch on.
+  _animateSetPieces(dt) {
+    const pads = this.track.trampolines;
+    if (pads) {
+      for (const p of pads) {
+        if (p.squash <= 0) continue;
+        p.squash = Math.max(0, p.squash - dt * 5);
+        p.disc.scale.y = 1 - 0.45 * p.squash;
+      }
+    }
+    const mags = this.track.magnets;
+    if (mags && mags.length) {
+      const t = this.raceClock;
+      for (const g of mags) {
+        const ph = ((t + g.offset) % MAGNET_PERIOD) / MAGNET_PERIOD;
+        const on = ph < MAGNET_DUTY;
+        const tell = ph > 0.88 ? (ph - 0.88) / 0.12 : 0;   // the wind-up before it bites
+        g.coilMat.emissiveIntensity = on ? 1.8 + 0.5 * Math.sin(t * 31) : 0.35 + tell * tell * 1.6;
+        g.reachMat.opacity = on ? 0.42 : 0.12 + tell * 0.2;
+        if (on && !g._shown) this.scene.pulseLight(g.pos, 0xc084fc, 0.7);
+        g._shown = on;
+      }
     }
   }
 
@@ -216,14 +376,21 @@ export class CourseMixin {
     if (!m || m.finished || m.eliminated) return 'surface';
     if (this.track.inBoost && this.track.inBoost(m.s)) return 'boost';
     if (this.track.brakeAt && this.track.brakeAt(m.s)) return 'rumble';
-    if (this.isGuest) return 'surface';   // no physics on the guest, so no contacts to read
+    // In the flume the water is what you hear, whatever is under it.
+    const fl = this.track.flume;
+    if (fl && m.s >= fl.from && m.s <= fl.to && m.proj && m.proj.height <= fl.waterH + m.radius + 1.5) return 'water';
+    if (this.isGuest) {
+      // No physics on the guest, so no contacts to read; the course still says what is underfoot.
+      const k = this.track.surfaceAt && this.track.surfaceAt(m.s);
+      return k === 'ice' || k === 'sand' ? k : 'surface';
+    }
     let kind = null;
     for (const c of this.world.contacts) {
       const other = c.bi === m.body ? c.bj : c.bj === m.body ? c.bi : null;
       if (!other) continue;
       const name = other.material ? other.material.name : '';
       if (name === 'marble') { kind = kind || 'surface'; continue; }
-      kind = name === 'rumble' || name === 'bump' || name === 'ice' ? name
+      kind = name === 'rumble' || name === 'bump' || name === 'ice' || name === 'sand' ? name
         : name === 'obstacle' || name === 'spinner' ? 'obstacle' : 'surface';
       if (kind !== 'surface') break;
     }
@@ -257,7 +424,7 @@ export class CourseMixin {
         if (m.lostT > REACQUIRE_AFTER) { m.pathIndex = -1; m.lostT = 0; }
       } else if (m.airT > LOST_AIR) {
         if (this._isHuman(m)) this._respawn(m);
-        else this.marbleSet.eliminate(m);
+        else { this._shatter(m); this.marbleSet.eliminate(m); }   // #16
       }
     }
   }
@@ -290,6 +457,7 @@ export class CourseMixin {
     this.scene.burstSparks(_spawn, m.spec.color, 14, 1.2);
     this.scene.pulseLight(_spawn, 0x7dd3fc, 1.2);
     if (m.index === this.chosen) {
+      this._rumble(0.6, 0.4, 240);   // #20
       this.audio.playWhoosh(this.scene.audioCue(_spawn));
       this.audio.say('Back on track');
       this._invoke('OnRespawn', m.respawns);

@@ -212,6 +212,14 @@ export function createRaceFx({ scene, level = 'full' }) {
       gpu.emit(v3(p.x, p.y + 0.1, p.z), v3(0, 5, 0), Math.round(30 * k), 'debris', { spread: 7, radius: 0.3, colour: 0x8a8f99 });
       return false;       // the ring's own pop still plays: this adds the bits that land
     }
+    if (kind === 'shatter') {
+      // #16 a marble leaving the race bursts into glass: shards in its own colour that tumble and
+      // land, and a white flash of fine glitter. `dir` carries the colour here.
+      const col = typeof dir === 'number' ? dir : 0xffffff;
+      gpu.emit(v3(p.x, p.y, p.z), v3(0, 6, 0), Math.round(90 * k), 'debris', { spread: 10, radius: 0.5, colour: col });
+      gpu.emit(v3(p.x, p.y, p.z), v3(0, 4, 0), Math.round(160 * k), 'sparks', { spread: 13, radius: 0.4, colour: 0xf8fafc });
+      return true;
+    }
     if (kind === 'debris') { gpu.emit(v3(p.x, p.y, p.z), dir ?? v3(0, 5, 0), Math.round((big ?? 40) * k), 'debris', { spread: 6 }); return true; }
     if (kind === 'dust') { gpu.emit(v3(p.x, p.y, p.z), dir ?? v3(0, 1.5, 0), Math.round((big ?? 30) * k), 'dust', { spread: 3, radius: 0.6 }); return true; }
     if (kind === 'snow') { gpu.emit(v3(p.x, p.y, p.z), dir ?? v3(0, -1, 0), Math.round((big ?? 200) * k), 'snow', { spread: 1.5, radius: 14 }); return true; }
@@ -227,7 +235,7 @@ export function createRaceFx({ scene, level = 'full' }) {
       if (!enabled || reducedMotion()) return;
       if (gpuBurst(kind, pos, dir, big)) return;
       if (kind === 'debris' || kind === 'dust' || kind === 'snow') return;   // GPU-only kinds
-      bursts.spawn(kind, pos, dir, big);
+      bursts.spawn(kind === 'shatter' ? 'pop' : kind, pos, dir, big);   // no compute: a pop stands in
     },
     setBoosting(b) { boosting = !!b; },
     flashDirt() { /* handled via TSL bloom + streak in scene.js */ },

@@ -1,6 +1,7 @@
 // minimap.js — High-DPI 2D live track minimap, elevation bar, radial speed/boost arc, and
 // Act-transition glass banner for PoMarbleRace (zero Blazor DOM thrash).
-const ACTS = [
+// The fallback acts; a dealt course brings its own (track.acts, composer.js).
+const DEFAULT_ACTS = [
   { from: 0.00, to: 0.21, color: '#f59e0b', tag: 'ACT 1 · SPIRAL WORKS', sub: 'Brake Strip & Split-Lane Island' },
   { from: 0.21, to: 0.52, color: '#e879f9', tag: 'ACT 2 · NEON CANYON', sub: 'Plinko Scramble, Kickers & Pendulums' },
   { from: 0.52, to: 0.69, color: '#fbbf24', tag: 'ACT 3 · GRAND SPIRAL', sub: 'Washboard, Vortex Funnel & Plunge' },
@@ -12,7 +13,7 @@ const LEADER_COLORS = ['#facc15', '#e2e8f0', '#fb923c']; // 1st gold, 2nd silver
 
 export function createMinimap(container) {
   if (!container || typeof document === 'undefined') {
-    return { setTrack() { }, update() { }, showAct() { }, dispose() { } };
+    return { setTrack() { }, update() { }, showAct() { }, showBanner() { }, dispose() { } };
   }
 
   const W = 104, H = 228;
@@ -100,8 +101,10 @@ export function createMinimap(container) {
     return [padL + nx * (W - padL - padR), padY + nz * (H - padY * 2)];
   }
 
+  let acts = DEFAULT_ACTS;
   function setTrack(track) {
     pts = [];
+    acts = track && track.acts && track.acts.length ? track.acts : DEFAULT_ACTS;
     if (!track || !track.centerAt || !track.length) return;
     trackLen = track.length;
     minX = Infinity; maxX = -Infinity;
@@ -124,17 +127,31 @@ export function createMinimap(container) {
   }
 
   function showAct(actIdx) {
-    const act = ACTS[actIdx];
+    const act = acts[actIdx];
     if (!act) return;
-    banner.innerHTML = `<span style="color:${act.color};font-weight:700">${act.tag}</span> <span style="opacity:.78;margin-left:6px;font-weight:500">${act.sub}</span>`;
-    banner.style.borderColor = act.color;
+    showBanner(act.tag, act.sub, act.color);
+  }
+
+  // The glass banner: a tag in the accent colour and a quieter subtitle. Text only (textContent),
+  // never markup.
+  function showBanner(tag, sub, color, ms = 2800) {
+    banner.textContent = '';
+    const a = document.createElement('span');
+    a.style.cssText = `color:${color};font-weight:700`;
+    a.textContent = tag;
+    const b = document.createElement('span');
+    b.style.cssText = 'opacity:.78;margin-left:6px;font-weight:500';
+    b.textContent = sub;
+    banner.appendChild(a);
+    banner.appendChild(b);
+    banner.style.borderColor = color;
     banner.style.opacity = '1';
     banner.style.transform = 'translate(-50%, 0)';
     clearTimeout(bannerTimer);
     bannerTimer = setTimeout(() => {
       banner.style.opacity = '0';
       banner.style.transform = 'translate(-50%, -14px)';
-    }, 2800);
+    }, ms);
   }
 
   function drawSpeedArc(speed, boosting, braking) {
@@ -191,7 +208,7 @@ export function createMinimap(container) {
     // Draw color-coded Act segments along the randomized spline.
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const act of ACTS) {
+    for (const act of acts) {
       ctx.beginPath();
       let started = false;
       for (const p of pts) {
@@ -272,5 +289,5 @@ export function createMinimap(container) {
     banner.remove();
   }
 
-  return { setTrack, update, showAct, dispose };
+  return { setTrack, update, showAct, showBanner, dispose };
 }

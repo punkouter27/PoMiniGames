@@ -7,6 +7,7 @@ import { SKINS, WEIGHTS, paletteHex } from './marbles.js';
 import { GUEST_COLOR, GHOST_KEY } from './tuning.js';
 import { readBest, readTrackStats, readMarbleChoice, load as loadSave, update as updateSave, readPref, setPref, readGrandPrix, rollDaily } from './store.js';
 import { startPad, stopPad, watchInput, unwatchInput } from './gamepad.js';
+import { mountUiFx, unmountUiFx, viewTransition, viewTransitionDone } from './ui-fx.js';
 
 let game = null;
 // Monotonic token for the in-flight start(). The course model is fetched over the network, so
@@ -108,14 +109,17 @@ window.PoMarbleRace = {
   // Settings drawer: the spoken race announcer (audio.js say), off by default and remembered.
   setAnnouncer(on) { setPref('announcer', !!on); if (game) game.audio.setAnnouncer(!!on); },
   // Settings drawer: adaptive procedural synth race music (audio.js updateMusic).
-  setMusic(on) { setPref('music', !!on); if (game) game.audio.setMusic?.(!!on); },
   // Settings drawer: remember a switch the engine reads at start (tutorialSeen, ...).
   setPref(key, value) { setPref(key, value); },
   // Report the input device in use ('keys' | 'touch' | 'pad') to the page's OnInputKind.
   watchInput(dotnetRef) {
     watchInput((kind) => { dotnetRef.invokeMethodAsync('OnInputKind', kind).catch(() => { }); });
+    mountUiFx();   // ripples, sheen, podium tilt (ui-fx.js) for the life of the page
   },
-  unwatchInput() { unwatchInput(); },
+  unwatchInput() { unwatchInput(); unmountUiFx(); },
+  /** #1 the page is about to change a lot: resolves once the old state is captured. */
+  viewTransition(kind) { return viewTransition(kind); },
+  viewTransitionDone() { viewTransitionDone(); },
   // First-race tutorial: where the player's marble is on screen, as fractions of the canvas
   // (x right, y down) as "x,y", or '' when it is not in front of the camera. A plain string so
   // the trimmed WASM page needs no JSON contract for it.
