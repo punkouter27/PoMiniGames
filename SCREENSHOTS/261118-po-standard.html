@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>261118 Po web standard</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:1240px;margin:0 auto;padding:16px;background:#f8fafc;color:#0f172a}
+figure{display:inline-block;vertical-align:top;margin:8px;max-width:100%}img{max-width:100%;border:1px solid #cbd5e1;border-radius:8px}
+figure.phone img{width:300px}figure.wide img{width:560px}
+figcaption{font-size:13px;color:#475569;max-width:560px}h2{margin-top:2rem}ul{margin:.25rem 0 1rem}</style></head><body>
+<h1>2026-11-18: the Po web standard (shared header, gear, stamp, /diag cards, Tab developer window)</h1>
+<ul>
+<li><b>Header:</b> the app name stays visible at phone width (it was hidden below 480px); the player menu and a settings gear sit upper-right. The gear opens the settings sheet in place; <code>/settings</code> is the same sheet as a page.</li>
+<li><b>Phone nav:</b> Games / Boards / Stats. The "More" slot is gone: settings is the gear, Status is in the player menu.</li>
+<li><b>Look:</b> indigo accent, Inter text and Space Grotesk titles, light/dark from the device only (the Auto/Light/Dark theme row is gone).</li>
+<li><b>Stamp:</b> one <code>.po-version</code> (vYYMMDD, UTC date of HEAD), the same value on client and server.</li>
+<li><b>/diag:</b> <code>po-diag__card</code> cards with ok/warn/bad badges in API, Data and Services groups.</li>
+<li><b>Initials prompt:</b> starts below the header and waits on /diag, /health and /settings.</li>
+<li><b>Tab:</b> with nothing focused, opens <code>/po-dev.html</code> in its own window.</li>
+</ul>
+
+<h2>Home, phone (412x915)</h2>
+<figure class="phone"><img src="261118/home-412-before.png" alt="home before"><figcaption>Before: icon-only brand, no settings in the header ("More" in the bottom nav), system font.</figcaption></figure>
+<figure class="phone"><img src="261118/home-412-after.png" alt="home after"><figcaption>After: "PoMiniGames" upper-left, P1 menu and gear upper-right, three-item bottom nav, v261118 above it.</figcaption></figure>
+
+<h2>First visit, phone</h2>
+<figure class="phone"><img src="261118/firstvisit-412-before.png" alt="first visit before"><figcaption>Before: the initials prompt dimmed the whole screen, header included, on every route (/diag too).</figcaption></figure>
+<figure class="phone"><img src="261118/firstvisit-412-after.png" alt="first visit after"><figcaption>After: the header stays usable above the prompt; on /diag, /health and /settings the prompt waits until you go back to playing.</figcaption></figure>
+
+<h2>/diag, desktop (1920x1080)</h2>
+<figure class="wide"><img src="261118/diag-1920-before.png" alt="diag before"><figcaption>Before: Radzen cards and badges, "Database / storage" group.</figcaption></figure>
+<figure class="wide"><img src="261118/diag-1920-after.png" alt="diag after"><figcaption>After: estate cards and badges, groups API / Data / Services, Not configured reads amber.</figcaption></figure>
+<figure class="phone"><img src="261118/diag-412-after.png" alt="diag phone after"><figcaption>After, 412px.</figcaption></figure>
+
+<h2>Dark device, settings sheet, Tab window</h2>
+<figure class="wide"><img src="261118/home-1920-dark-after.png" alt="home dark after"><figcaption>After, device in dark mode: the same palette as every Po app.</figcaption></figure>
+<figure class="wide"><img src="261118/settings-1920-after.png" alt="settings sheet after"><figcaption>After: the gear opens the sheet in place; "Colours: light or dark follows your device setting" replaces the theme switch.</figcaption></figure>
+<figure class="phone"><img src="261118/podev-after.png" alt="developer window"><figcaption>After: Tab on a fresh page opens the developer window: server UP, commit, build, each dependency from /api/diag/status.</figcaption></figure>
+</body></html>
