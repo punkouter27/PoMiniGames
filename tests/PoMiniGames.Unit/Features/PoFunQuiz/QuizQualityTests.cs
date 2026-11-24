@@ -32,7 +32,8 @@ public sealed class QuizQualityTests
 
     [Theory]
     [InlineData("funquiz", 150)]
-    [InlineData("couplequiz", 1000)]
+    // 882f67a6 (owner): the couple bank is 240 questions about the couple, not trivia (40 per topic).
+    [InlineData("couplequiz", 240)]
     [InlineData("deal", 7)]
     public void QuestionBanks_ShipEnoughValidQuestions(string bank, int minimum)
     {
