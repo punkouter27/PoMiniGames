@@ -73,7 +73,7 @@
 .poeco-diplomacy-web { margin-top: 0; }
 .poeco-minimap-svg-container { background: var(--poeco-map-sea); }
 .poeco-territory-camp { cursor: pointer; }
-.poeco-territory-label { fill: #fff; font-size: 7.5px; font-weight: 700; paint-order: stroke; stroke: rgb(0 0 0 / 0.75); stroke-width: 2px; }
+.poeco-territory-label { fill: var(--po-white); font-size: 7.5px; font-weight: 700; paint-order: stroke; stroke: rgb(0 0 0 / 0.75); stroke-width: 2px; }
 .poeco-key-dot--hut { background: #ecf0f1; }
 .poeco-key-dot--granary { background: #f1c40f; }
 .poeco-key-dot--tower { background: #e74c3c; }

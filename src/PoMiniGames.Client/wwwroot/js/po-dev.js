@@ -1,18 +1,28 @@
-// po-dev.js — drives po-dev.html, this app's developer window (this repo owns it).
-// Polls the server every 2 s and reads the opener page's live stats (window.__poStats).
-// A separate file so the page needs no inline script.
+// po-dev.js — drives po-dev.html, this app's consolidated developer window.
+// Polls the server every 2 s, reads the opener page's live stats (window.__poStats),
+// and listens on BroadcastChannel('po-debug') for per-game frame samples.
+// Uses safe DOM APIs (no innerHTML).
 (function () {
   var DIAG_CANDIDATES = ['/api/diag', '/health'];
   var diagUrl = null;
   var $ = function (id) { return document.getElementById(id); };
 
-  function badge(status) {
+  function makeBadge(status) {
     var s = String(status || '').toLowerCase();
     var cls = /healthy|ok|up|reachable|pass|working|ready/.test(s) ? 'ok'
             : /degraded|warn|slow|not.?configured|unknown|skipped/.test(s) ? 'warn' : 'bad';
-    return '<span class="po-badge po-badge--' + cls + '">' + escapeHtml(status || '?') + '</span>';
+    var span = document.createElement('span');
+    span.className = 'po-badge po-badge--' + cls;
+    span.textContent = status || '?';
+    return span;
   }
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function makeEmpty(tag, text) {
+    var el = document.createElement(tag);
+    el.className = 'empty';
+    el.textContent = text;
+    return el;
+  }
 
   // Collect {name, status, ms} entries from whatever shape the app's diag JSON has.
   function collect(node, out, nameHint) {
@@ -30,8 +40,6 @@
     });
   }
 
-  // The first candidate that answers OK with JSON holding at least one named check. An app may
-  // answer an unknown /api/* path with a JSON 404 body, so content type alone is not enough.
   async function findDiag() {
     for (var i = 0; i < DIAG_CANDIDATES.length; i++) {
       try {
@@ -56,19 +64,33 @@
     } catch (e) {
       $('live').textContent = 'DOWN'; $('latency').textContent = '–';
     }
+    var depsEl = $('deps');
     if (diagUrl === null) diagUrl = (await findDiag()) || '';
-    if (!diagUrl) { $('deps').innerHTML = '<p class="empty">This app exposes no JSON diagnostics endpoint.</p>'; return; }
+    if (!diagUrl) { depsEl.replaceChildren(makeEmpty('p', 'This app exposes no JSON diagnostics endpoint.')); return; }
     $('source').textContent = diagUrl;
     try {
       var d = await fetch(diagUrl, { headers: { Accept: 'application/json' }, cache: 'no-store' });
       var json = await d.json();
       var items = []; collect(json, items);
       var seen = {}; items = items.filter(function (i) { var k = i.name + '|' + i.status; if (seen[k]) return false; seen[k] = 1; return true; });
-      $('deps').innerHTML = items.length
-        ? items.map(function (i) { return '<div class="row"><span>' + escapeHtml(i.name) + '</span><code>' + (i.ms !== '' ? escapeHtml(i.ms) + ' ms' : '') + '</code>' + badge(i.status) + '</div>'; }).join('')
-        : '<p class="empty">' + escapeHtml(diagUrl) + ' answered ' + d.status + ' with no named checks.</p>';
+      if (!items.length) {
+        depsEl.replaceChildren(makeEmpty('p', diagUrl + ' answered ' + d.status + ' with no named checks.'));
+        return;
+      }
+      var frag = document.createDocumentFragment();
+      items.forEach(function (i) {
+        var row = document.createElement('div');
+        row.className = 'row';
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = i.name;
+        var code = document.createElement('code');
+        code.textContent = i.ms !== '' ? i.ms + ' ms' : '';
+        row.append(nameSpan, code, makeBadge(i.status));
+        frag.appendChild(row);
+      });
+      depsEl.replaceChildren(frag);
     } catch (e) {
-      $('deps').innerHTML = '<p class="empty">Could not read ' + escapeHtml(diagUrl) + ': ' + escapeHtml(e.message) + '</p>';
+      depsEl.replaceChildren(makeEmpty('p', 'Could not read ' + diagUrl + ': ' + e.message));
     }
   }
 
@@ -91,9 +113,91 @@
     $('longtasks').textContent = s.longTasks;
     var secs = Math.round((Date.now() - s.startedAt) / 1000);
     $('uptime').textContent = secs < 120 ? secs + 's' : Math.round(secs / 60) + 'm';
-    $('errors').innerHTML = s.errors.length
-      ? s.errors.slice(-15).reverse().map(function (e) { return '<li>' + escapeHtml(e.at.slice(11, 19) + ' ' + e.msg) + '</li>'; }).join('')
-      : '<li class="empty" style="list-style:none;margin-left:-18px">No errors since the page opened.</li>';
+    var errEl = $('errors');
+    if (s.errors.length) {
+      var frag = document.createDocumentFragment();
+      s.errors.slice(-15).reverse().forEach(function (e) {
+        var li = document.createElement('li');
+        li.textContent = e.at.slice(11, 19) + ' ' + e.msg;
+        frag.appendChild(li);
+      });
+      errEl.replaceChildren(frag);
+    } else {
+      var empty = makeEmpty('li', 'No errors since the page opened.');
+      empty.style.listStyle = 'none';
+      empty.style.marginLeft = '-18px';
+      errEl.replaceChildren(empty);
+    }
+  }
+
+  // Live per-game telemetry over BroadcastChannel('po-debug') (formerly debug-window.js).
+  if (typeof BroadcastChannel !== 'undefined') {
+    var channel = new BroadcastChannel('po-debug');
+    var HISTORY = 120;
+    var fpsHistory = [];
+
+    function drawGraph() {
+      var canvas = $('dw-graph');
+      if (!canvas) return;
+      canvas.hidden = false;
+      var ctx = canvas.getContext('2d');
+      var w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      var style = getComputedStyle(document.body);
+      ctx.strokeStyle = style.getPropertyValue('--po-border') || '#888';
+      ctx.beginPath();
+      ctx.moveTo(0, h - (60 / 70) * h);
+      ctx.lineTo(w, h - (60 / 70) * h);
+      ctx.stroke();
+      if (fpsHistory.length < 2) return;
+      ctx.strokeStyle = style.getPropertyValue('--po-accent') || '#6366f1';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      fpsHistory.forEach(function (fps, i) {
+        var x = (i / (HISTORY - 1)) * w;
+        var y = h - Math.min(1, fps / 70) * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    channel.onmessage = function (e) {
+      var m = e.data;
+      if (!m || m.type !== 'sample') return;
+      if (m.fps != null) {
+        $('fps').textContent = m.fps.toFixed(0);
+        fpsHistory.push(m.fps);
+        if (fpsHistory.length > HISTORY) fpsHistory.shift();
+        drawGraph();
+      }
+      var env = m.env || {};
+      var rows = [];
+      if (m.gameKey) rows.push(['Game', m.gameKey]);
+      if (m.frameMs != null) rows.push(['Frame', m.frameMs.toFixed(1) + ' ms']);
+      if (env.width && env.height) rows.push(['Viewport', env.width + '×' + env.height + (env.dpr && env.dpr !== 1 ? ' · ' + env.dpr + '×' : '')]);
+      if (env.cores) rows.push(['Cores', String(env.cores)]);
+      (m.items || []).forEach(function (item) { rows.push([item.label, item.value]); });
+      (env.details || []).forEach(function (item) { rows.push([item.label, item.value]); });
+      var section = $('dw-game-section');
+      var dl = $('dw-game');
+      if (section && dl) {
+        section.hidden = rows.length === 0;
+        var frag = document.createDocumentFragment();
+        rows.forEach(function (r) {
+          var dt = document.createElement('dt');
+          dt.textContent = r[0];
+          var dd = document.createElement('dd');
+          dd.textContent = r[1];
+          frag.append(dt, dd);
+        });
+        dl.replaceChildren(frag);
+      }
+    };
+
+    var hello = function () { channel.postMessage({ type: 'hello' }); };
+    hello();
+    setInterval(hello, 1000);
+    window.addEventListener('pagehide', function () { channel.postMessage({ type: 'bye' }); });
   }
 
   function loop() {

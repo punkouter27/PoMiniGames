@@ -189,7 +189,7 @@ export async function ensureWebGpuDevice() {
 
     state.initPromise = (async () => {
         try {
-            const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+            const adapter = await navigator.gpu.requestAdapter();
             if (!adapter) {
                 state.failed = true;
                 return null;

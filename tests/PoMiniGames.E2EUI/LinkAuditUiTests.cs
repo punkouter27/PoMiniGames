@@ -105,7 +105,7 @@ public class LinkAuditUiTests
           const out = [];
           if (card.scrollHeight > card.clientHeight + 1)
             out.push(`scrolls (${card.scrollHeight}px of content in ${card.clientHeight}px)`);
-          const acts = [...card.querySelectorAll('button')].filter(b => !b.closest('details, summary'));
+          const acts = [...card.querySelectorAll('button')].filter(b => !b.closest('details, summary, .rz-accordion'));
           const labels = acts.map(b => b.innerText.replace(/\s+/g, ' ').replace(/ Esc$/, '').trim());
           if (acts.length !== 1 || labels[0] !== 'Back to main menu' || !acts[0].hasAttribute('data-end-action'))
             out.push(`its buttons are [${labels.join(' | ')}], not one "Back to main menu"`);

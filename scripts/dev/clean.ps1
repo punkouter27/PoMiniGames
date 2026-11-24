@@ -22,17 +22,23 @@
     pwsh scripts/dev/clean.ps1
 #>
 [CmdletBinding()]
-param()
+param(
+    [switch]$IncludeArtifacts
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$targets = @(
+$targets = [System.Collections.Generic.List[string]]@(
     (Join-Path $repoRoot 'src/PoMiniGames.Api/keys'),
     (Join-Path $repoRoot 'src/PoMiniGames.Api/logs'),
-    (Join-Path $repoRoot 'App_Data')
+    (Join-Path $repoRoot 'App_Data'),
+    (Join-Path $repoRoot 'scripts/pofighter/__pycache__')
 )
+if ($IncludeArtifacts) {
+    $targets.Add((Join-Path $repoRoot 'artifacts'))
+}
 
 $freed = 0
 foreach ($path in $targets) {

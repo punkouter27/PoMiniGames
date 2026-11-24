@@ -166,9 +166,9 @@
     setInfo(gameKey, items) {
       info = { gameKey: gameKey || null, items: Array.isArray(items) ? items : [] };
     },
-    // The separate developer window. Returns false when the browser blocked the pop-up.
+    // The separate developer window (consolidated into po-dev.html). Returns false when blocked.
     popout() {
-      const w = window.open('debug-window.html', 'po-debug-window', 'popup,width=420,height=560');
+      const w = window.open('po-dev.html', 'po-dev-window', 'popup,width=460,height=680');
       if (!w) return false;
       watcherSeenAt = Date.now();
       ensureLoop();

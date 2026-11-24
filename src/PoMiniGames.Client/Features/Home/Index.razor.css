@@ -59,8 +59,8 @@
     mix-blend-mode: screen;
     /* The canvas ends where this container ends, which on a wide screen is 80px
        short of the window: a lit rectangle with a visible edge. Fade it out. */
-    -webkit-mask-image: radial-gradient(ellipse at center, #000 45%, transparent 78%);
-    mask-image: radial-gradient(ellipse at center, #000 45%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse at center, var(--po-black) 45%, transparent 78%);
+    mask-image: radial-gradient(ellipse at center, var(--po-black) 45%, transparent 78%);
 }
 
 .home-mesh {

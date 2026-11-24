@@ -358,8 +358,7 @@
     public sealed record PickItem(string Key, string Label, string Group, string Title, int? Rank);
 
     private List<PickItem> _pickItems = [];
-    private bool _radzenReady;
-    private IJSObjectReference? _theme;
+    private bool _radzenReady = true;
 
     // The player search runs over the selected board's top RankSearchDepth rows (one read per
     // board and period), because the ten on screen are rarely where a looked-up name sits.
@@ -641,21 +640,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            try
-            {
-                _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/radzenTheme.js");
-                await _theme.InvokeVoidAsync("ensure");
-            }
-            catch (JSException ex)
-            {
-                Console.Error.WriteLine($"[leaderboards] Radzen theme failed: {ex.Message}");
-            }
-            _radzenReady = true;
-            StateHasChanged();
-        }
-
         // After render, because the burst targets the player's own row and that row
         // has to exist in the DOM first. The flag is lowered before awaiting so a
         // re-render during the staggered playback cannot start it a second time.
@@ -666,17 +650,7 @@
         }
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (_theme is null) return;
-        try
-        {
-            await _theme.InvokeVoidAsync("remove");
-            await _theme.DisposeAsync();
-        }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
-    }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private async Task Load()
     {

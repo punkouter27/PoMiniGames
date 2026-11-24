@@ -28,9 +28,9 @@ dialog.gps-modal::before {
         rgba(255, 255, 255, 0.10) 32%,
         transparent 58%,
         color-mix(in srgb, var(--fx-accent, #60a5fa) 45%, transparent));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask: linear-gradient(var(--po-black) 0 0) content-box, linear-gradient(var(--po-black) 0 0);
     -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    mask: linear-gradient(var(--po-black) 0 0) content-box exclude, linear-gradient(var(--po-black) 0 0);
 }
 
 :root[data-gfx="low"] dialog.gps-modal {

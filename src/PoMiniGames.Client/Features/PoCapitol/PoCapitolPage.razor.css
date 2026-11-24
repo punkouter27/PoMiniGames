@@ -29,14 +29,14 @@
 .pc-scene { position: absolute; inset: 0; touch-action: none; }
 .pc-scene ::deep canvas { display: block; width: 100%; height: 100%; outline: none; }
 .pc-scene[data-damaged="true"]::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 90px #b53c25; pointer-events: none; }
-.pc-scene[data-interface-error]::before { content: attr(data-interface-error); position: absolute; z-index: 5; top: 45%; left: 10%; right: 10%; padding: 24px; color: #fff; background: #752f28; border-radius: 8px; }
+.pc-scene[data-interface-error]::before { content: attr(data-interface-error); position: absolute; z-index: 5; top: 45%; left: 10%; right: 10%; padding: 24px; color: var(--po-white); background: #752f28; border-radius: 8px; }
 .pc-film { position: absolute; inset: 0; background: linear-gradient(90deg, #0c192bb8, transparent 70%); pointer-events: none; }
 .pc-edition { position: absolute; top: 24px; left: 32px; font-size: 15px; letter-spacing: 0.22em; font-weight: 800; }
 .pc-edition span { display: block; margin-top: 6px; color: #d3b77b; font-size: 9px; letter-spacing: 0.16em; }
 .pc-crowd { display: grid; gap: 4px; font-size: 10px; letter-spacing: 0.06em; color: #e4d7ba; }
 .pc-crowd b { color: #f0c978; font-size: 11px; }
 .pc-context a { display: block; margin-top: 8px; color: #dfc285; text-decoration: underline; }
-.pc-context a:hover { color: #fff; }
+.pc-context a:hover { color: var(--po-white); }
 .pc-panel { position: absolute; z-index: 3; padding: 28px; background: linear-gradient(155deg, #1d3047c9, #101d2cb8); border: 1px solid #d5b77c50; border-radius: 10px; box-shadow: inset 0 1px 0 #ffffff2e, inset 0 0 0 1px #ffffff0d, inset 0 -22px 44px #00000033, 0 22px 80px #06111b70; max-height: calc(100% - 110px); overflow-y: auto; }
 .pc-panel { -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4); }
 @media (prefers-reduced-transparency: reduce) {
@@ -71,7 +71,7 @@
 .pc-progress { display: flex; gap: 5px; }
 .pc-progress span { height: 4px; width: 22px; border-radius: 2px; background: #ffffff26; transition: background-color 300ms ease, box-shadow 300ms ease; }
 .pc-progress .pc-done { background: var(--pc-gold); box-shadow: 0 0 8px #e4c482aa; }
-.pc-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff6d8; font-size: 25px; text-shadow: 0 1px 5px #000; pointer-events: none; }
+.pc-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff6d8; font-size: 25px; text-shadow: 0 1px 5px var(--po-black); pointer-events: none; }
 .pc-touch { display: none; }
 .pc-scene[data-flash="true"]::after { content: ""; position: absolute; inset: 0; background: #fffdf2; opacity: 0.75; pointer-events: none; }
 .pc-scene[data-hazard="gas"]:not([data-interface-error])::before { content: ""; position: absolute; z-index: 1; inset: 0; background: #d7dacb59; backdrop-filter: blur(3px); pointer-events: none; }
@@ -80,7 +80,7 @@
 @keyframes pc-rec { to { opacity: 0.15; } }
 .pc-options { display: flex; flex-wrap: wrap; gap: 4px 28px; }
 ::deep .pc-debug-close { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; background: none; border: none; border-radius: 50%; color: #a4b3bf; cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
-::deep .pc-debug-close:hover { color: #fff; background: #ffffff14; }
+::deep .pc-debug-close:hover { color: var(--po-white); background: #ffffff14; }
 @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── Rings: one gauge for every 0–100 reading (stamina, a line, a unit's health) ── */
@@ -102,7 +102,7 @@
     transition: --v 480ms cubic-bezier(0.2, 0.8, 0.2, 1), --g 1100ms ease-in 350ms, box-shadow 300ms ease;
     line-height: 1;
 }
-.pc-ring .pc-hud-num { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: #fff; }
+.pc-ring .pc-hud-num { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--po-white); }
 .pc-ring small { margin-top: 3px; font-size: 7.5px; letter-spacing: 0.14em; color: #c9d4de; font-weight: 700; }
 .pc-ring--good { --c: var(--pc-good); }
 .pc-ring--warn { --c: var(--pc-warn); }
@@ -146,7 +146,7 @@
 .pc-ammo-chip {
     display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px 4px 7px;
     background: var(--pc-glass); border: 1px solid #ffffff1f; border-radius: 999px;
-    color: #fff; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
+    color: var(--po-white); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
     -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 .pc-ammo-chip .material-symbols-outlined { font-size: 17px; color: var(--pc-gold); }
@@ -218,7 +218,7 @@
 
 .pc-leader { position: absolute; inset: 0; z-index: 6; width: 100%; height: 100%; pointer-events: none; display: none; overflow: visible; }
 .pc-root[data-anchored] .pc-leader { display: block; }
-.pc-leader line { stroke: #e4c482; stroke-width: 1.5; stroke-dasharray: 4 3; filter: drop-shadow(0 0 3px #000); animation: pc-march 900ms linear infinite; }
+.pc-leader line { stroke: #e4c482; stroke-width: 1.5; stroke-dasharray: 4 3; filter: drop-shadow(0 0 3px var(--po-black)); animation: pc-march 900ms linear infinite; }
 .pc-leader circle { fill: none; stroke: #ffe3a6; stroke-width: 2; filter: drop-shadow(0 0 4px #e4c482); animation: pc-ping 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes pc-march { to { stroke-dashoffset: -14; } }
 @keyframes pc-ping { 0% { scale: 0.6; opacity: 1; } 100% { scale: 1.8; opacity: 0; } }
@@ -245,8 +245,8 @@
 .pc-inspector-title { display: flex; align-items: center; gap: 8px; }
 .pc-inspector-title strong { font-size: 13px; color: #f6eedb; letter-spacing: 0.04em; }
 .pc-badge { padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; }
-.pc-badge--police { background: #0984e3; color: #fff; }
-.pc-badge--raider { background: #d63031; color: #fff; }
+.pc-badge--police { background: #0984e3; color: var(--po-white); }
+.pc-badge--raider { background: #d63031; color: var(--po-white); }
 .pc-inspector-role { margin-bottom: 8px; font-size: 11px; color: #dfc285; font-weight: 600; }
 .pc-inspector-role b { color: #8ff0cf; font-weight: 600; }
 .pc-inspector-metrics { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -359,7 +359,7 @@
     /* Fire or push on the right, with the two grenades beside it showing what is left. */
     .pc-touch-actions { display: flex; align-items: end; gap: 8px; pointer-events: none; }
     .pc-touch ::deep .pc-throw { display: grid; place-content: center; width: 56px; height: 56px; border-radius: 50%; font-size: 9px; letter-spacing: 0.06em; line-height: 1.15; }
-    .pc-throw small { display: block; color: #fff; font-size: 14px; font-weight: 800; }
+    .pc-throw small { display: block; color: var(--po-white); font-size: 14px; font-weight: 800; }
     .pc-touch ::deep button:disabled { opacity: 0.4; }
     .pc-touch ::deep button:active:not(:disabled) { background: #22405cd0; transform: scale(0.94); }
     /* The d-pad owns the bottom-left corner on a touchscreen: the vitals move up under the clock. */
@@ -411,9 +411,9 @@
 
 /* High contrast raises the HUD text and glass without recolouring the world. */
 .pc-contrast { --pc-glass: #02080ff5; }
-.pc-contrast .pc-hud-title, .pc-contrast .pc-crowd, .pc-contrast .pc-time { color: #fff; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
+.pc-contrast .pc-hud-title, .pc-contrast .pc-crowd, .pc-contrast .pc-time { color: var(--po-white); text-shadow: 0 0 4px var(--po-black), 0 1px 2px var(--po-black); }
 .pc-contrast .pc-hud-top, .pc-contrast .pc-command, .pc-contrast .pc-ammo-chip { border-color: #ffffff88; }
-.pc-contrast .pc-ring small { color: #fff; }
+.pc-contrast .pc-ring small { color: var(--po-white); }
 
 /* ── The end card's report: tabs, stat cards, one Export button ── */
 

@@ -45,6 +45,13 @@
   --po-danger-soft: #fde4e4;
   --po-info-soft: #e1ecfb;
 
+  /* shared literal palette tokens (used across game HUDs and overlays) */
+  --po-white: #ffffff;
+  --po-black: #000000;
+  --po-slate-muted: #94a3b8;
+  --po-slate-light: #e2e8f0;
+  --po-cyan: #22d3ee;
+
   /* type */
   --po-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --po-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;

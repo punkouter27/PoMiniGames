@@ -18,7 +18,6 @@ import { loadCampusData } from './campusData.js';
 import { loadSigns } from './signs.js';
 import { startDissolve } from './dissolve.js';
 import { createLeader } from './leader.js';
-import { ensure, remove } from '../platform/radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../platform/gamepadBus.js';
 
 const GRAPHICS_KEY = 'pominigames:pocapitol-graphics';
@@ -44,7 +43,6 @@ function storedWeather() {
 async function init(hostId, reference) {
     dispose();
     const bootAt = nowMs();
-    await ensure();
     const host = document.getElementById(hostId);
     if (!host) throw new Error('PoCapitol scene container was not found.');
     delete host.dataset.interfaceError;
@@ -1082,7 +1080,7 @@ function dispose() {
     g.ui?.dispose?.(); g.dissolve?.dispose?.();
     g.radar?.destroy?.();
     g.inspector?.clear?.();
-    g.view.dispose(); remove();   // the view's stage stops the loop
+    g.view.dispose();   // the view's stage stops the loop
     game = null;
 }
 

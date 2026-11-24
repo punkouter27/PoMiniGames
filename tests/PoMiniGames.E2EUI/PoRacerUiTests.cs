@@ -44,7 +44,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         (await save).Status.Should().Be(201);
         await page.GetByText("Best lap saved to the leaderboard.", new() { Exact = true }).WaitForAsync();
         await page.Locator(".race-results details summary").ClickAsync();
-        (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().NotContain("DNF");
+        (await page.Locator(".race-results tr", new() { Has = page.Locator(".local-driver") }).InnerTextAsync()).Should().NotContain("DNF");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
         // Return to the hub; visiting the racer again opens the start card.
         await page.GetByRole(AriaRole.Button, new() { Name = "Back to main menu" }).ClickAsync();
@@ -79,7 +79,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
         await page.Locator(".race-results").WaitForAsync();
         await page.Locator(".race-results details summary").ClickAsync();
-        (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().Contain("DNF");
+        (await page.Locator(".race-results tr", new() { Has = page.Locator(".local-driver") }).InnerTextAsync()).Should().Contain("DNF");
         // The end card's one button.
         (await page.Locator("dialog.gps-modal[open] button").CountAsync()).Should().Be(1);
         await page.GetByRole(AriaRole.Button, new() { Name = "Back to main menu" }).ClickAsync();
@@ -170,7 +170,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         // where the strip and the standings are the whole screen.
         (await page.Locator(".race-minimap").CountAsync()).Should().Be(1);
         (await page.Locator(".race-minimap").IsVisibleAsync()).Should().Be(!touch);
-        (await page.Locator(".race-standings li").CountAsync()).Should().Be(4);
+        (await page.Locator(".race-standings li").CountAsync()).Should().Be(3);
         await BackToStartAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();

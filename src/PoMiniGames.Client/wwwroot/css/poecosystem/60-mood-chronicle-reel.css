@@ -38,7 +38,7 @@
     padding: 1.5px;
     border-radius: inherit;
     background: conic-gradient(from var(--poeco-spin), transparent 0 58%, var(--poeco-mood) 74%, transparent 88%);
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(var(--po-black) 0 0) content-box, linear-gradient(var(--po-black) 0 0);
     mask-composite: exclude;
     -webkit-mask-composite: xor;
     pointer-events: none;
@@ -112,7 +112,7 @@
     right: 0;
     height: 9vh;
     max-height: 90px;
-    background: #000;
+    background: var(--po-black);
     transform: scaleY(0);
     transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -261,7 +261,7 @@
     aspect-ratio: 16 / 9;
     object-fit: cover;
     border-radius: var(--radius-sm);
-    background: #000;
+    background: var(--po-black);
 }
 
 .poeco-reel-caption { margin: var(--space-1) 0; font-size: var(--text-sm); }

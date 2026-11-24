@@ -454,7 +454,7 @@
                         <div class="pc-aftermath">
                             <canvas id="pocapitol-aftermath" aria-label="Map of where the crowd stood during the attempt"></canvas>
                         </div>
-                        <div class="pc-report-chart">@((MarkupString)report.svg)</div>
+                        <div class="pc-report-chart">@SanitizeSvg(report.svg)</div>
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Street map">
                         <div class="pc-streetmap" data-state="@_mapState">
@@ -782,4 +782,19 @@
         <a href="https://americanhistory.si.edu/press/releases/smithsonian-continues-collecting-artifacts-jan-6-capitol-attack-2" target="_blank" rel="noopener noreferrer">Smithsonian: flags and police equipment</a>
         <a href="https://nsarchive.gwu.edu/briefing-book/foia/2021-05-04/capitol-riot-documents-you-should-read-part-3" target="_blank" rel="noopener noreferrer">National Security Archive: shield testimony</a>
     </div>;
+
+    private static MarkupString SanitizeSvg(string? svg)
+    {
+        if (string.IsNullOrWhiteSpace(svg)) return default;
+        var trimmed = svg.Trim();
+        if (!trimmed.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<script", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<foreignObject", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("javascript:", StringComparison.OrdinalIgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"\bon[a-z]+\s*=", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            return default;
+        }
+        return new MarkupString(trimmed);
+    }
 }

@@ -313,7 +313,7 @@
 /* Keyboard / gamepad focus on a cell. The cell's own border and win glow would
    otherwise hide the shell's shared focus shadow, so the ring is an outline. */
 .ttt-cell:focus-visible {
-    outline: 2px solid var(--accent-cyan, #22d3ee);
+    outline: 2px solid var(--accent-cyan, var(--po-cyan));
     outline-offset: 1px;
 }
 

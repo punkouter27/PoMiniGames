@@ -52,7 +52,7 @@ public partial class PoMulePage : IAsyncDisposable
     private string? _mode;
     private bool _demo;
     private bool _classic;
-    private bool _radzenReady;
+    private bool _radzenReady = true;
     private bool _finished;
     private bool _plotsDirty;
     private bool _disposed;
@@ -107,7 +107,6 @@ public partial class PoMulePage : IAsyncDisposable
             await PlayerNameService.Initialized;
             _playerName = PlayerNameService.GetPlayerName();
             if (!await JS.InvokeAsync<bool>("loadEngine", "pomule")) throw new InvalidOperationException("engine");
-            _radzenReady = await JS.InvokeAsync<bool>("PoMule.ensureRadzen");
             _saved = _demo ? null : await Saves.LoadAsync(_playerName);
             _stage = Stage.Intro;
         }
@@ -530,9 +529,6 @@ public partial class PoMulePage : IAsyncDisposable
         PlayerNameService.StateChanged -= OnPlayerIdentityChanged;
         // A match abandoned mid-month resumes from the last month start; nothing to save here.
         await StopEngineAsync();
-        try { await JS.InvokeVoidAsync("PoMule.removeRadzen"); }
-        catch (JSException) { }
-        catch (JSDisconnectedException) { }
         _ref?.Dispose();
         GC.SuppressFinalize(this);
     }

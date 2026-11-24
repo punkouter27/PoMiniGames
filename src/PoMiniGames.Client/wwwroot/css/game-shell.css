@@ -409,7 +409,7 @@ dialog.gps-modal > footer.gps-play-again-actions {
 .gps-kbd--primary {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.4);
-  color: #ffffff;
+  color: var(--po-white);
 }
 
 @keyframes gps-modal-fade {

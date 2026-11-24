@@ -780,8 +780,8 @@
 .pvs-canvas-host ::deep .pvs-ring-heat {
     inset: -14px;
     background: conic-gradient(var(--accent-warning) var(--deg), rgba(255, 255, 255, 0.14) var(--deg));
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), var(--po-black) calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), var(--po-black) calc(100% - 2px));
 }
 
 .pvs-canvas-host ::deep .pvs-ring-heat.pvs-ring-locked {
@@ -793,8 +793,8 @@
     inset: -21px;
     opacity: 0.85;
     background: conic-gradient(var(--accent-cyan) var(--deg), rgba(255, 255, 255, 0.1) var(--deg));
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--po-black) calc(100% - 1px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--po-black) calc(100% - 1px));
 }
 
 .pvs-canvas-host ::deep .pvs-ring-alt.pvs-ring-ready {
@@ -817,8 +817,8 @@
     opacity: 0;
     transform: rotate(var(--bearing, 0deg));
     background: conic-gradient(from -24deg, rgba(255, 70, 70, 0.95) 0 48deg, transparent 48deg);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), var(--po-black) calc(100% - 8px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 9px), var(--po-black) calc(100% - 8px));
 }
 
 .pvs-canvas-host ::deep .pvs-hit-arc.pvs-hit-arc-on {

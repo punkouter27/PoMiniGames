@@ -151,7 +151,7 @@
     border-radius: 6px;
     border: 2px solid #ff8a7a;
     background: #b3262c;
-    color: #fff;
+    color: var(--po-white);
     font-family: var(--pb-display);
     font-size: 0.85rem;
     letter-spacing: 0.04em;

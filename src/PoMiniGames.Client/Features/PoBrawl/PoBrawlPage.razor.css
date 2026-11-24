@@ -7,7 +7,7 @@
 .pb-lobby {
     --pb-display: 'Bungee', 'Russo One', 'Impact', sans-serif;
     --pb-arena: #0d0f1a;
-    --pb-white: #fff;
+    --pb-white: var(--po-white);
     --pb-ink: #f4f6ff;
     --pb-ink-soft: #dfe6ff;
     --pb-ink-muted: #c7cbe8;
@@ -26,8 +26,8 @@
     --pb-touch-ink: #e8ecff;
     --pb-pill-ink: #cbd5e1;
     --pb-pill-warn-ink: #fff7ed;
-    --pb-card-ink: #e2e8f0;
-    --pb-card-muted: #94a3b8;
+    --pb-card-ink: var(--po-slate-light);
+    --pb-card-muted: var(--po-slate-muted);
     --pb-btn: #6366f1;
     --pb-btn-ring: #c7d2fe;
     --pb-dmg: #ffe9b0;

@@ -121,8 +121,6 @@
        the ProjectReference below makes the copy deterministic in dev. -->
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
-    <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
-    <ProjectReference Include="..\PoMiniGames.Infrastructure\PoMiniGames.Infrastructure.csproj" />
     <ProjectReference Include="..\PoMiniGames.Client\PoMiniGames.Client.csproj" />
   </ItemGroup>
 

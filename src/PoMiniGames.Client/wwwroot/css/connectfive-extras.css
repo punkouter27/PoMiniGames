@@ -55,8 +55,8 @@
   position: absolute;
   inset: 4%;
   border-radius: 50%;
-  border: 2px solid var(--cf-x-last, #fff);
-  box-shadow: 0 0 10px var(--cf-x-last, #fff);
+  border: 2px solid var(--cf-x-last, var(--po-white));
+  box-shadow: 0 0 10px var(--cf-x-last, var(--po-white));
   opacity: 0.85;
   pointer-events: none;
   animation: cf-x-last 1.6s ease-in-out infinite;
@@ -86,7 +86,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--po-text, #111);
-  background: var(--cf-x-tag, #fff);
+  background: var(--cf-x-tag, var(--po-white));
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   animation: cf-x-tag 1.2s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
 }

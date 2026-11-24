@@ -506,19 +506,15 @@ JSON-formatting 1,400 floating-point values on the browser's WASM main thread.
 Streaming snapshots retain the existing SignalR wire format but are decoded in native
 JavaScript; only the four visible standings rows return to Blazor. All cars still feed
 interpolation, rendering, and audio, and the HUD's field size comes from the complete roster.
-Run `node --test tests\poracer-snapshot.test.mjs` for focused native snapshot coverage.
 PoRacer's weather is one draw per track and UTC day (`PoRacerWeather` in `PoMiniGames.Shared`,
 the same hash `js/platform/weather.js` uses for its overlay): 58% clear, 25% rain, 11% snow, 6% fog. The
 server races in it (grip 0.90 in rain, 0.80 in snow: less traction, longer braking, understeer
 that grows with speed, earlier slides; fog changes nothing but the view) and sends it in
 `PoRacerStaticWorld.Weather`, so the overlay draws what the sim ran. Laps set in the wet go on
 the same boards as dry ones and are slower; the medal times are dry-track times.
-Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
-
-Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course; see `scripts/pomarblerace/README.md`).
 `.github/workflows/deploy.yml` is the only workflow: on a push to `master` (or a manual run) it
-checks formatting, lints the Python scripts (ruff), builds, runs the Unit and Integration tiers,
-publishes the API, stages the documentation suite (`scripts/ci-package.ps1`), prepares the live
+checks formatting, builds, runs the Unit and Integration tiers,
+publishes the API, prepares the live
 site (`scripts/pre-deploy.ps1`), deploys to `vars.AZURE_WEBAPP_NAME` (`app-5ln5hfdrvof5u-f1win2`), and waits until `/health/live`
 answers with this commit's `X-Commit`. E2E tiers, Bicep, CSS and JS lint run locally
 (`scripts/ci-checks.ps1`). Provision or update Azure resources locally with

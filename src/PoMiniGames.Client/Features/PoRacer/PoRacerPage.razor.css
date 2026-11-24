@@ -1,7 +1,7 @@
 .racer-root { position: relative; width: 100%; height: var(--gps-area-h); overflow: hidden; background: var(--racer-bg); color: var(--racer-text);
     /* The Racer palette, once. It is a per-game canvas palette (scheme-invariant, like the canvas
        itself), and every PoRacer stylesheet reads it from here rather than retyping raw hex. */
-    --racer-bg: #09131e; --racer-text: #edf7ff; --racer-ink: #fff; --racer-muted: #cadbe9; --racer-faint: #a8bacd;
+    --racer-bg: #09131e; --racer-text: #edf7ff; --racer-ink: var(--po-white); --racer-muted: #cadbe9; --racer-faint: #a8bacd;
     --racer-panel: #102033f2; --racer-well: #07142099; --racer-line: #60839d66; --racer-control: #16304cdd;
     --racer-accent: #79e0fc; --racer-accent-line: #91e4ff; --racer-accent-fill: #19405a; --racer-on-accent: #071723;
     --racer-warn: #ffb38a; --racer-gold: #ffe9a6; --racer-alert: #592d12;
@@ -125,7 +125,7 @@
 /* Finish: a chequered band sweeps across while the camera pulls back, then the results come in. */
 .race-flag { position: absolute; inset: 0; pointer-events: none;
     background: repeating-conic-gradient(#f4f7fa 0 25%, #10151c 0 50%) 0 0 / 56px 56px;
-    mask-image: linear-gradient(105deg, #0000 0 38%, #000 46% 54%, #0000 62% 100%); mask-size: 320% 100%; mask-repeat: no-repeat;
+    mask-image: linear-gradient(105deg, #0000 0 38%, var(--po-black) 46% 54%, #0000 62% 100%); mask-size: 320% 100%; mask-repeat: no-repeat;
     animation: race-flag-sweep 1.5s cubic-bezier(.4, 0, .2, 1) both; opacity: .92; }
 @keyframes race-flag-sweep { from { mask-position: 110% 0; } to { mask-position: -10% 0; } }
 /* Letterbox bars close in with the flag: the race stops being a window and becomes a replay. */
@@ -137,7 +137,7 @@
 @keyframes race-bar-down { from { transform: translateY(100%); } to { transform: none; } }
 .race-flag::after { animation-name: race-bar-down; }
 /* Lights out: one white flash on GO, over the whole track, before the field is away. */
-.race-countdown.is-go::after { content: ''; position: fixed; inset: 0; background: #fff; opacity: 0;
+.race-countdown.is-go::after { content: ''; position: fixed; inset: 0; background: var(--po-white); opacity: 0;
     pointer-events: none; animation: race-lights-out .42s ease-out both; }
 @keyframes race-lights-out { 0% { opacity: 0; } 12% { opacity: .5; } 100% { opacity: 0; } }
 

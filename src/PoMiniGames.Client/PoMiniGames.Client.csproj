@@ -36,9 +36,7 @@
        ever be reachable at https://<site>/appsettings.Development.json. -->
   <ItemGroup>
     <Content Update="wwwroot\appsettings.Development.json" CopyToPublishDirectory="Never" />
-    <Content Update="wwwroot\appsettings.Test.json" CopyToPublishDirectory="Never" />
     <None Update="wwwroot\appsettings.Development.json" CopyToPublishDirectory="Never" />
-    <None Update="wwwroot\appsettings.Test.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <ItemGroup>
@@ -62,10 +60,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
-    <!-- Domain models only: the board rows the leaderboard endpoints return are
-         deserialized straight into PoMiniGames.Domain.Models types rather than mirrored
-         here. -->
-    <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
   </ItemGroup>
 
   <!-- BuildVersion (UTC yyMMdd of HEAD) from the PoBuildStamp target in Directory.Build.props, the same value

@@ -72,7 +72,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #94a3b8;
+    background: var(--po-slate-muted);
 }
 
 .pbd-party-dot--dem { background: #3b82f6; }

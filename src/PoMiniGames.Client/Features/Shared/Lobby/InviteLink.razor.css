@@ -10,7 +10,7 @@
     padding: var(--space-4);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    background: #fff;
+    background: var(--po-white);
     color: #111;
     text-align: center;
 }

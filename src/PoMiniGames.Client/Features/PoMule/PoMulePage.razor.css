@@ -6,7 +6,7 @@
 
 .pm-root {
     --pm-ground: #dcdce0;
-    --pm-ink: #000;
+    --pm-ink: var(--po-black);
     --pm-text: #585858;
     --pm-orange: #c86000;
     --pm-card: #b07810;
