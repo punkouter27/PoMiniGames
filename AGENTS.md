@@ -111,6 +111,10 @@ reds at 100% CPU from parallel agents (a jsDelivr three.tsl.js connection reset,
 keep-alive 30 s = the clients' 30 s server timeout (a sending-only Marble host dropped mid-race; now 15 s), a required score write
 short-circuited by an open storage breaker (Racer 503), the Ecosystem test never pressed the card's OK, LinkAudit waited for
 network idle and drove every game through one tab, and Escape could not cancel a start card whose only button is OK.
+2026-11-24 (v4 pass 3, idle machine, 4 full runs: run 1 on `ba880109` before the fixes, runs 2-4 on the `e92c1f76` code): Unit 456, Integration 15, E2E API 16 green every run; E2E UI on the trimmed
+publish 29/30, 30/30, 29/30, 30/30. Reds: run 1 PoCabinetTwoBrowserRaceTests (a one-shot read during a roster re-render; also the host
+PC's audio device failing under headless Chromium: both fixed, every browser now uses `--disable-audio-output`) and run 3
+`MarbleRaceMapCertificationTests(mapId: 7)` (marble #86 left the course at s=1441, lat -54: physics, open item; green in runs 1, 2, 4).
 
 | What | Command | Needs / skips |
 |---|---|---|
