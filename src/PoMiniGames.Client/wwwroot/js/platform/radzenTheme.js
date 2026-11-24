@@ -1,8 +1,8 @@
-// Radzen's theme stylesheet and script, on demand, for a page that uses Radzen components
-// (Brawl HQ). Radzen's theme is global CSS, so it is only in the document while such a page
-// is; the rest of the app keeps its plain CSS. Same element id and files as PoMule's own
-// loader (js/pomule/index.js ensureRadzen), so the two never add it twice, and the service
-// worker's Radzen allowlist (service-worker.published.js) already covers both files.
+// Radzen's script, on demand, for a page that uses Radzen components (Brawl HQ, Leaderboards,
+// Profile, Mule, Capitol). The theme stylesheets are linked once, first, in index.html (Po
+// standard: Radzen CSS before the app's CSS); ensure() only adds them if that link is missing
+// (same ids), and remove() leaves them in place so the theme is never loaded twice or reordered.
+// The service worker's Radzen allowlist (service-worker.published.js) covers these files.
 const CSS_ID = 'pomule-radzen-css';
 // The theme follows the device like the rest of the app: Radzen's light base theme under a light
 // scheme, its dark one under a dark scheme (a dark grid on a light page failed contrast).
@@ -32,5 +32,5 @@ export function ensure() {
 }
 
 export function remove() {
-  for (const t of THEMES) document.getElementById(t.id)?.remove();
+  // The theme is part of the page shell now (index.html); nothing to take away.
 }

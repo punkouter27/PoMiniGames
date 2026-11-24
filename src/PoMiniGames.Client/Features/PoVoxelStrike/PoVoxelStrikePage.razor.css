@@ -6,11 +6,12 @@
     margin-inline: auto;
 }
 
-/* The canvas takes the full height: there is no status line under it. */
+/* The canvas takes the full height: there is no status line under it. It never grows past the game well
+   (--gps-area-h, game-shell.css) less the shell's own padding, so on a 375x667 phone the page does not scroll. */
 .pvs-canvas-host {
     position: relative;
     width: 100%;
-    height: min(74dvh, 700px);
+    height: min(74dvh, 700px, calc(var(--gps-area-h, 74dvh) - 3rem));
     border-radius: 12px;
     overflow: hidden;
     background: var(--color-bg);

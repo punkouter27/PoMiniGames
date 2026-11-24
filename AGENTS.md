@@ -150,10 +150,11 @@ games and the **Shared game UI** rules.
 
 | Deviation | Why | Commit sha / date | How to undo |
 |---|---|---|---|
-| Header shows nothing where the email would be | no OAuth by owner rule; the initials live in the settings sheet | — | — |
+| Header shows the player's initials pill where the email would be (opens the initials prompt) | no OAuth by owner rule; the settings sheet is gone and the initials are the one setting left | `080be6b6` 2026-11-22 | — |
+| The main menu (home hub, 14 game cards) scrolls at 1366×768 and 375×667; every start card, game screen and end card fits without scrolling | 14 games with 1P / Online / Demo chips at a 44 px touch floor do not fit one phone screen; owner's card layout from `080be6b6` kept | `080be6b6` 2026-11-22 | a compact tile grid with a per-game mode sheet |
 | `src/` also has `PoMiniGames.Domain`, `PoMiniGames.Infrastructure` | score rules, Elo and storage are used by many slices | — | a separate merge refactor |
 | Azure names: plan `asp-pominigames-f1`, storage `st5ln5hfdrvof5u2`, App Service `app-5ln5hfdrvof5u-f1win2` (infra/ plans `app-pominigames`, never created) | renaming means recreating and moving data | — | owner-approved recreate |
-| Radzen (Profile A), partly done: shell action buttons are `PoButton` (a `RadzenButton` without Radzen's theme classes, since the theme loads on demand per `radzenTheme.js`); Radzen grids/tabs/select bars/charts on Leaderboards, Profile, Mule, Capitol, Brawl HQ. ~350 native controls in game pages, start/end cards, settings toggles/sliders, intro map `<select>` are an **open item**. Allowed natives kept: `<video>` (Brawl HQ clip player, PoFighter camera) and read-only data `<table>`s. In-canvas game UI drawn by JS is outside the rule | owner note on loading the Radzen theme on demand | `9e374ccf` 2026-11-22 | — |
+| Radzen (Profile A), partly done: Radzen's theme (light + dark `material*-base.css`) is linked once, FIRST, in `index.html` (2026-11-24 v4 audit; this replaces the on-demand load of `9e374ccf`, `radzenTheme.js` now only loads Radzen's script and never removes the theme; `HomePageUiTests.Shell_LoadsRadzenThemeOnceAndFirst…` pins it); shell action buttons are `PoButton` (a `RadzenButton` without Radzen's theme classes); Radzen grids/tabs/select bars/charts on Leaderboards, Profile, Mule, Capitol, Brawl HQ. ~350 native controls in game pages, start/end cards, settings toggles/sliders, intro map `<select>` are an **open item**. Allowed natives kept: `<video>` (Brawl HQ clip player, PoFighter camera) and read-only data `<table>`s. In-canvas game UI drawn by JS is outside the rule | owner note on loading the Radzen theme on demand | `9e374ccf` 2026-11-22 | — |
 | /diag: a service switched off on purpose shows a grey **Off** pill, not counted | opt-in services left off are not faults | `9e374ccf` 2026-11-22 | `DiagLiveProbes.cs` |
 | Phones: the version stamp sits in a footer after the content, above the BottomNav; desktop keeps it fixed | a fixed stamp covered home cards and /diag rows (overrides the older fixed rule) | `9e374ccf` 2026-11-22 | `git revert 9e374ccf` (stamp part) |
 | Ecosystem keeps Tab for its own observation dashboard, not the shared panel | owner design (README "Shared game UI") | — | — |
@@ -215,7 +216,10 @@ uvx ruff check .                                               # Python lint (sc
     request, measured; the multiplayer hubs, proven by a live SignalR negotiate on this server), Data (the storage
     health checks, tables, blob containers), Services (`Features/Health/DiagLiveProbes.cs`: a Key Vault secret
     listing, the App Insights ingestion profile, the push-invite keys in storage, Wikipedia and the three Couple Quiz
-    APIs, each a real call cached 60 s, 10 min for the free third-party APIs). A service switched off on purpose
+    APIs, each a real call cached 60 s, 10 min for the free third-party APIs). The whole run (health checks with a
+    5 s timeout each, storage listings, live probes) is one `HealthSnapshotCache` entry kept 60 s: `/health`,
+    `/api/health` and `/api/diag` all read it, so two loads within a minute show the same `checkedAt`
+    (`HealthSnapshotCacheTests`). A service switched off on purpose
     (test hosts, no connection string, a feature flag set to false) reads **Off**: a grey pill, no problem text, never
     counted in the banner (`DiagProjectionTests`, `HealthEndpointTests`). A table or container missing from the listing is normal: each is created
     on first use. `/health` (JSON readiness, never HTML) and `/health/live` (`X-Commit`) are the probes.
@@ -223,16 +227,16 @@ uvx ruff check .                                               # Python lint (sc
     BottomNav on phones (`--po-stamp-lift`); `.gl-content` reserves the strip under every page so it never covers
     content, except desktop game routes (`game-shell.css`), where the game fills the well and its start cards are
     sized to it.
-  - Forms that submit (initials, ecosystem rename and alerts) validate with FluentValidation rules
-    in `PoMiniGames.Shared/Validation` through `Layout/FluentValidationValidator.cs`: inline errors,
-    submit disabled while submitting.
+  - Forms that submit (initials, ecosystem rename and alerts, couple quiz answers) validate with FluentValidation
+    rules in `PoMiniGames.Shared/Validation` through `Layout/FluentValidationValidator.cs`: inline errors, submit
+    disabled while submitting. Each validator is registered by type (`AddScoped<IValidator<X>, XValidator>()` in the
+    client's `Program.cs`, the API's in `GameServicesExtensions`) and injected; no `new()`, no assembly scanning.
   - **Page shell (Po web standard).** `wwwroot/css/po-tokens.css` (this repo's copy; change it freely) is the first
     stylesheet; `css/app-tokens.css` aliases the app's own variables (and PoFighter's `--pf-*` colours) to `--po-*`
     tokens. Light/dark follows the device only; Inter for text, Space Grotesk for titles (self-hosted in
-    `wwwroot/fonts/`; Bungee stays for PoBrawl's HUD). `MainLayout`'s header is `.po-header`: app name upper-left,
-    the settings gear (`.po-header__settings`, opens the settings sheet; `/settings` is the same sheet as a page)
-    upper-right, and nothing in place of an email: there is no sign-in, so no identity chip. The player's initials,
-    "Change initials", My stats, Leaderboards and System status live in the settings sheet's **Player** group. The
+    `wwwroot/fonts/`; Bungee stays for PoBrawl's HUD). `MainLayout`'s header is `.po-header`: app name upper-left
+    and, upper-right, the player's initials pill (`.po-header__initials`, opens the initials prompt; `080be6b6`
+    removed the settings gear, sheet and `/settings`). There is no sign-in, so no email and no Sign in button. The
     phone BottomNav is Games / Boards / Stats. Pressing Tab with nothing focused opens `/po-dev.html`
     (`js/po-devwindow.js` + `js/po-dev.js`), which reads `/health/live` (`X-Commit`) and `/api/diag`; in a game the
     Tab stats panel then opens from its pill. The first-visit initials prompt waits on `/diag` and `/settings` and

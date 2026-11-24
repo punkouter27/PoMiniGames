@@ -49,22 +49,10 @@ public static class DiagEndpoints
     {
         var isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
 
-        async Task<IResult> diagHandler(
-            HttpContext http, HealthCheckService health, IWebHostEnvironment environment, DiagLiveProbes live,
-            TableServiceClient tables, BlobServiceClient blobs, EndpointDataSource endpoints, CancellationToken ct)
+        async Task<IResult> diagHandler(HttpContext http, HealthSnapshotCache cache, CancellationToken ct)
         {
-            var started = Stopwatch.GetTimestamp();
-            var self = Uri.TryCreate($"{http.Request.Scheme}://{http.Request.Host}{http.Request.PathBase}/", UriKind.Absolute, out var u) ? u : null;
-            var storageTask = ProbeStorageAsync(tables, blobs, ct);
-            var hubsTask = live.HubsAsync(self, ListHubs(endpoints), ct);
-            var vaultTask = live.KeyVaultAsync(ct);
-            var insightsTask = live.AppInsightsAsync(ct);
-            var wikiTask = live.WikipediaAsync(ct);
-            var pushTask = live.PushKeysAsync(ct);
-            var probe = await storageTask;
-            DiagCheckDto[] rows = [await hubsTask, await vaultTask, await insightsTask, await pushTask, await wikiTask];
-            var report = await BuildReportAsync(health, environment, ct, probe, rows, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-            return Results.Json(report, DiagJsonContext.Default.DiagReportDto);
+            var snapshot = await cache.GetAsync(_ => BuildSnapshotAsync(http.RequestServices, SelfUri(http.Request)), ct);
+            return Results.Json(snapshot.Diag, DiagJsonContext.Default.DiagReportDto);
         }
 
         app.MapGet("/api/diag", diagHandler)
@@ -164,6 +152,35 @@ public static class DiagEndpoints
         return app;
     }
 
+    /// <summary>This server's own base address (the hubs row negotiates against it).</summary>
+    internal static Uri? SelfUri(HttpRequest request) =>
+        Uri.TryCreate($"{request.Scheme}://{request.Host}{request.PathBase}/", UriKind.Absolute, out var u) ? u : null;
+
+    /// <summary>
+    /// One full health run: the registered checks, the storage listings and the live service probes, in parallel,
+    /// each under its own timeout. <see cref="HealthSnapshotCache"/> holds the result for 60 s, and /health,
+    /// /api/health and /api/diag all read that one snapshot.
+    /// </summary>
+    internal static async Task<HealthSnapshot> BuildSnapshotAsync(IServiceProvider services, Uri? self)
+    {
+        var ct = CancellationToken.None;
+        var started = Stopwatch.GetTimestamp();
+        var health = services.GetRequiredService<HealthCheckService>();
+        var live = services.GetRequiredService<DiagLiveProbes>();
+        var healthTask = health.CheckHealthAsync(ct);
+        var storageTask = ProbeStorageAsync(services.GetRequiredService<TableServiceClient>(), services.GetRequiredService<BlobServiceClient>(), ct);
+        var hubsTask = live.HubsAsync(self, ListHubs(services.GetRequiredService<EndpointDataSource>()), ct);
+        var vaultTask = live.KeyVaultAsync(ct);
+        var insightsTask = live.AppInsightsAsync(ct);
+        var wikiTask = live.WikipediaAsync(ct);
+        var pushTask = live.PushKeysAsync(ct);
+        var report = await healthTask;
+        var probe = await storageTask;
+        DiagCheckDto[] rows = [await hubsTask, await vaultTask, await insightsTask, await pushTask, await wikiTask];
+        var diag = BuildReport(report, services.GetRequiredService<IWebHostEnvironment>(), probe, rows, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        return new HealthSnapshot(report, diag);
+    }
+
     /// <summary>Names of the tables and containers the storage account listed (null when it could not be listed), and how long each list took.</summary>
     internal sealed record StorageProbe(IReadOnlySet<string>? Tables, IReadOnlySet<string>? Containers, double TablesMs = 0, double ContainersMs = 0);
 
@@ -231,6 +248,15 @@ public static class DiagEndpoints
     {
         var started = Stopwatch.GetTimestamp();
         var report = await health.CheckHealthAsync(ct);
+        return BuildReport(report, environment, storage, live, apiMs + Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    }
+
+    /// <summary>The /api/diag report from a finished health run (see <see cref="BuildReportAsync"/>).</summary>
+    internal static DiagReportDto BuildReport(
+        HealthReport report, IWebHostEnvironment environment,
+        StorageProbe? storage = null, IReadOnlyList<DiagCheckDto>? live = null, double apiMs = 0)
+    {
+        var started = Stopwatch.GetTimestamp();
         live ??= [];
 
         var checks = new List<DiagCheckDto>

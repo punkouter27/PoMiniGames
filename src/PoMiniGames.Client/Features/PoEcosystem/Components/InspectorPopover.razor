@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using PoMiniGames.Shared.Validation
+@inject FluentValidation.IValidator<CreatureRenameInput> RenameValidator
 @* The creature under the crosshair. Anchored beside the crosshair, never over it.
 
    The family lives here: a section of this panel, with cards for the six relatives, that
@@ -131,7 +132,6 @@
     /// <summary>A relative was clicked: inspect it and walk the tree there.</summary>
     [Parameter] public EventCallback<int> OnSelectKin { get; set; }
 
-    private static readonly CreatureRenameInputValidator RenameValidator = new();
     private bool _renaming;
     private bool _renameSubmitting;
     private CreatureRenameInput _rename = new();

@@ -1,3 +1,4 @@
+using FluentValidation;
 using PoMiniGames.Shared.Games;
 using PoMiniGames.Shared.Validation;
 
@@ -9,15 +10,13 @@ namespace PoMiniGames.Features.PoCapitol;
 /// </summary>
 internal static class PoCapitolReportCardEndpoints
 {
-    private static readonly PoCapitolReportCardRequestValidator Validator = new();
-
     public static IEndpointRouteBuilder MapPoCapitolReportCardEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/pocapitol/report-card", (PoCapitolReportCardRequest? request) =>
+        app.MapPost("/pocapitol/report-card", (PoCapitolReportCardRequest? request, IValidator<PoCapitolReportCardRequest> validator) =>
             {
                 if (request is null)
                     return Results.ValidationProblem(new Dictionary<string, string[]> { ["body"] = ["A report is required."] });
-                var result = Validator.Validate(request);
+                var result = validator.Validate(request);
                 if (!result.IsValid) return Results.ValidationProblem(result.ToDictionary());
                 return Results.File(PoCapitolReportCardRenderer.Render(request), "image/png");
             })

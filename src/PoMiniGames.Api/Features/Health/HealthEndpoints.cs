@@ -23,10 +23,13 @@ public static class HealthEndpoints
 {
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
     {
-        async Task<IResult> healthHandler(HealthCheckService healthCheckService)
+        // The same cached run as /api/diag (HealthSnapshotCache, 60 s), so a probe polling every few
+        // seconds does not re-run the storage checks each time.
+        async Task<IResult> healthHandler(HttpContext http, HealthSnapshotCache cache, CancellationToken ct)
         {
-            var report = await healthCheckService.CheckHealthAsync();
-            var response = CreateHealthResponse(report);
+            var snapshot = await cache.GetAsync(_ => DiagEndpoints.BuildSnapshotAsync(http.RequestServices, DiagEndpoints.SelfUri(http.Request)), ct);
+            var report = snapshot.Health;
+            var response = CreateHealthResponse(report, snapshot.Diag.CheckedAt);
             var statusCode = report.Status == HealthStatus.Unhealthy
                 ? StatusCodes.Status503ServiceUnavailable
                 : StatusCodes.Status200OK;
@@ -58,7 +61,7 @@ public static class HealthEndpoints
         return app;
     }
 
-    private static HealthCheckResponse CreateHealthResponse(HealthReport report)
+    private static HealthCheckResponse CreateHealthResponse(HealthReport report, DateTimeOffset checkedAt)
     {
         return new HealthCheckResponse(
             report.Status.ToString(),
@@ -68,7 +71,7 @@ public static class HealthEndpoints
                 e.Value.Description,
                 e.Value.Duration.TotalMilliseconds)).ToArray(),
             report.TotalDuration.TotalMilliseconds,
-            DateTimeOffset.UtcNow);
+            checkedAt);
     }
 }
 

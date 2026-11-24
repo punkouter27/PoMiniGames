@@ -12,7 +12,7 @@ namespace PoMiniGamesClient.Features.PoEcosystem.Models;
 /// </summary>
 public static class EcoSpeciesInfo
 {
-    public const int Count = 4;
+    public const int Count = PoMiniGames.Shared.Validation.EcoAlertInput.SpeciesCount;
 
     public static readonly string[] Plural = ["Rabbits", "Deer", "Wolves", "Humans"];
 

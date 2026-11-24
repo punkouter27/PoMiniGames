@@ -294,7 +294,9 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
 
 @media (max-width: 640px) {
     .home-card-modes { grid-template-columns: repeat(3, minmax(0, 1fr)); justify-content: stretch; }
-    .home-mode-group { min-width: 0; }
+    /* A group never grows past its column, and a long chip ("Demo · Tournament") wraps inside it instead of
+       running out of the card; a group that wraps to two rows keeps a rounded box, not a pill-shaped blob. */
+    .home-mode-group { min-width: 0; max-width: 100%; }
 }
 
 .home-mode-group {
@@ -380,9 +382,11 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
             animation-range: entry 0% entry 100%;
         }
 
+        /* Slide only, no fade: a card half inside the fold stays fully opaque, so its muted description
+           keeps 4.5:1 contrast (axe flagged the faded one). */
         @keyframes home-card-reveal {
-            from { opacity: 0; transform: translateY(1rem); }
-            to   { opacity: 1; transform: translateY(0); }
+            from { transform: translateY(1rem); }
+            to   { transform: translateY(0); }
         }
     }
 }
@@ -517,6 +521,8 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
         gap: 0.35rem;
     }
     .home-mode-chip { min-height: 2.25rem; min-width: 2.5rem; padding: 0.25rem 0.65rem; font-size: 0.78rem; }
+    .home-mode-chip { max-width: 100%; white-space: normal; text-align: center; overflow-wrap: anywhere; }
+    .home-mode-group:not(:empty) { border-radius: var(--radius-md); }
 
     /* Keep the feed to two rows on phones so the page still ends inside the
        first viewport; the full list remains on desktop. */

@@ -3,6 +3,7 @@
 @using PoMiniGamesClient.Features.Shared
 @using Microsoft.AspNetCore.Components.Forms
 @using PoMiniGames.Shared.Validation
+@inject FluentValidation.IValidator<CoupleAnswerInput> Validator
 @inject CoupleQuizHubService Hub
 @inject PlayerNameService PlayerNameService
 @inject MatchHistoryService MatchHistory
@@ -135,7 +136,6 @@
     </div>;
 
     private string _playerName = string.Empty;
-    private static readonly CoupleAnswerInputValidator Validator = new();
     private readonly CoupleAnswerInput _model = new();
     private EditContext _editContext = default!;
     private string _myAnswer { get => _model.Answer; set => _model.Answer = value; }

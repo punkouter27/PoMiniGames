@@ -118,6 +118,13 @@
         })();
     </script>
 
+    <!-- Radzen's theme loads once, FIRST, before any app stylesheet (Po standard, Profile A): the app's CSS
+         below then wins every tie, so pages keep their own look. Light and dark follow the device; the ids are the
+         ones js/platform/radzenTheme.js checks, so a Radzen page never adds them a second time. The theme only
+         adds .rz-* classes plus three element rules (body margin, input colour and size). -->
+    <link id="pomule-radzen-css" rel="stylesheet" href="_content/Radzen.Blazor/css/material-dark-base.css?v=12.2.0" media="(prefers-color-scheme: dark)" />
+    <link id="pomule-radzen-css-light" rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css?v=12.2.0" media="not all and (prefers-color-scheme: dark)" />
+
     <!-- Typography and the estate look: po-tokens.css comes FIRST among the app's
          stylesheets. It self-hosts Inter and Space Grotesk (fonts/, same-origin, so no CSP
          change) and carries the shared shell: .po-header, .po-version, /diag cards.

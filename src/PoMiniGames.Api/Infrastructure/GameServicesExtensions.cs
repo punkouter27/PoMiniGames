@@ -28,6 +28,8 @@ internal static class GameServicesExtensions
         // TryAdd: TimeProvider.System is the default the framework registers in most hosts, but
         // not all of them, and PlaySessionService's elapsed measurement is the whole mechanism.
         services.TryAddSingleton(TimeProvider.System);
+        // Request validators, registered by type (no assembly scanning) and injected into the endpoints.
+        services.AddScoped<FluentValidation.IValidator<PoMiniGames.Shared.Games.PoCapitolReportCardRequest>, PoMiniGames.Shared.Validation.PoCapitolReportCardRequestValidator>();
         services.AddSingleton<PoMiniGames.Features.Integrity.PlaySessionService>();
         services.AddSingleton<PoMiniGames.Features.Integrity.ScoreIntegrityGuard>();
         // Scoped: one cross-table scan per request, and it holds no state between them.
@@ -72,6 +74,8 @@ internal static class GameServicesExtensions
 
         // /api/diag's live rows (Features/Health/DiagLiveProbes): one singleton so its 60 s cache is shared.
         services.AddSingleton<PoMiniGames.Features.Health.DiagLiveProbes>();
+        // The one health run /health, /api/health and /api/diag read, cached 60 s.
+        services.AddSingleton<PoMiniGames.Features.Health.HealthSnapshotCache>();
         services.AddHttpClient(PoMiniGames.Features.Health.DiagLiveProbes.HttpClientName, client =>
         {
             client.Timeout = TimeSpan.FromSeconds(8);

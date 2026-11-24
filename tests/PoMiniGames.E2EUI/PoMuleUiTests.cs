@@ -160,7 +160,7 @@ public class PoMuleUiTests
     }
 
     [UiFact]
-    public async Task Demo_PlaysAWholeMatchByItself_PostsNoScore_AndLeavesNoRadzenStylesBehind()
+    public async Task Demo_PlaysAWholeMatchByItself_PostsNoScore_AndKeepsRadzenStylesOnceAndFirst()
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
@@ -199,11 +199,14 @@ public class PoMuleUiTests
         scorePosts.Should().Be(0, "a demo never posts a score");
         errors.Should().BeEmpty();
 
-        // Leaving PoMule takes Radzen's global stylesheet with it, so the hub looks as before.
+        // Radzen's theme is linked once, first, by index.html (Po standard); PoMule neither adds a second
+        // copy nor takes it away when the player leaves.
         (await page.Locator("#pomule-radzen-css").CountAsync()).Should().Be(1);
-        // (An in-app navigation: a full page load would lose the stylesheet whatever the page did.)
+        // (An in-app navigation: a full page load would reset the head whatever the page did.)
         await page.EvaluateAsync("() => Blazor.navigateTo('/')");
-        await page.WaitForFunctionAsync("() => !document.getElementById('pomule-radzen-css')", null, new() { Timeout = 30_000 });
+        await page.WaitForFunctionAsync("() => !window.__pomule()", null, new() { Timeout = 30_000 });
+        (await page.EvaluateAsync<int>("() => document.querySelectorAll('link[href*=\"Radzen.Blazor/css\"]').length")).Should().Be(2, "one light and one dark theme, never added twice");
+        (await page.EvaluateAsync<bool>("() => document.querySelector('link[rel=stylesheet]').href.includes('Radzen.Blazor/css')")).Should().BeTrue("Radzen's theme is the first stylesheet");
         (await page.EvaluateAsync<bool>("() => !window.__pomule()")).Should().BeTrue("the engine stops when the page goes");
     }
 }

@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using PoMiniGames.Shared.Validation
+@inject FluentValidation.IValidator<EcoAlertInput> Validator
 @* Watch alerts: the viewer's own rules — "tell me when wolves fall below 5".
    A rule reads the counts the page already receives; it watches and never acts. Kept in
    this browser across islands; fires once when it starts to hold and re-arms when it stops. *@
@@ -45,7 +46,6 @@
     [Parameter, EditorRequired] public EcoAlertBook Book { get; set; } = default!;
     [Parameter] public EcoStats? Stats { get; set; }
 
-    private static readonly EcoAlertInputValidator Validator = new(EcoSpeciesInfo.Count);
     private readonly EcoAlertInput _input = new();
     private EditContext _context = default!;
     private bool _submitting;

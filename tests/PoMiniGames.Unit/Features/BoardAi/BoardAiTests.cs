@@ -12,6 +12,11 @@ namespace PoMiniGames.Unit.Features.BoardAi;
 /// iterative deepening under a budget, opening book, softmax mistakes and a small seeded
 /// strength check. Budgets are tiny so the scenarios stay fast.
 /// </summary>
+/// <remarks>
+/// Two tests assert wall-clock budgets, so the class runs in <see cref="TimeBudgetGroup"/>: on its own,
+/// after the parallel classes, never sharing the CPU with them (it flaked when a busy machine starved it).
+/// </remarks>
+[Collection(TimeBudgetGroup.Name)]
 public sealed class BoardAiTests
 {
     private static readonly AiRung Top = new(25, 14, 0, 100_000, 1, 6, 0, 1.0);
@@ -219,4 +224,11 @@ public sealed class BoardAiTests
         await think.Invoking(t => t).Should().ThrowAsync<OperationCanceledException>();
         watch.ElapsedMilliseconds.Should().BeLessThan(2_000, "the cancel lands at the next slice, not at the 5 s budget");
     }
+}
+
+/// <summary>Test classes that assert wall-clock time: xUnit runs this collection alone, not in parallel with others.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class TimeBudgetGroup
+{
+    public const string Name = "Time budget (runs alone)";
 }

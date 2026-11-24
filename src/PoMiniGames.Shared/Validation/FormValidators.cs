@@ -48,6 +48,9 @@ public sealed class EcoAlertInput
 {
     public const int MaxValue = 400;
 
+    /// <summary>How many species the island has (rabbits, deer, wolves, humans).</summary>
+    public const int SpeciesCount = 4;
+
     /// <summary>-1 for every creature, else a species index.</summary>
     public int Species { get; set; } = 2;
     public string Op { get; set; } = "below";
@@ -56,6 +59,9 @@ public sealed class EcoAlertInput
 
 public sealed class EcoAlertInputValidator : AbstractValidator<EcoAlertInput>
 {
+    /// <summary>The island's species: the constructor DI uses (registered by type in the client's Program.cs).</summary>
+    public EcoAlertInputValidator() : this(EcoAlertInput.SpeciesCount) { }
+
     public EcoAlertInputValidator(int speciesCount)
     {
         RuleFor(x => x.Species)

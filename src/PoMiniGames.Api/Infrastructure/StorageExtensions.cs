@@ -48,6 +48,8 @@ internal static class StorageExtensions
 
     private static readonly string[] CriticalTags = ["critical"];
     private static readonly string[] OptionalTags = ["optional"];
+    /// <summary>Each storage health check gets this long; a hung check reads as failed instead of holding /health.</summary>
+    internal static readonly TimeSpan HealthCheckTimeout = TimeSpan.FromSeconds(5);
 
     public static IServiceCollection AddPoMiniGamesStorage(this IServiceCollection services, IConfiguration configuration)
     {
@@ -89,11 +91,13 @@ internal static class StorageExtensions
                 // Unhealthy would 503 /api/health and trip monitors whenever Azurite is
                 // unreachable in dev — a condition the app explicitly tolerates.
                 failureStatus: HealthStatus.Degraded,
-                tags: CriticalTags)
+                tags: CriticalTags,
+                timeout: HealthCheckTimeout)
             .AddCheck<AzureTableStorageHealthCheck>(
                 "AzureTableStorage",
                 failureStatus: HealthStatus.Degraded,
-                tags: OptionalTags);
+                tags: OptionalTags,
+                timeout: HealthCheckTimeout);
 
         return services;
     }

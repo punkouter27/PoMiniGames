@@ -4,6 +4,7 @@
 @inject NavigationManager Navigation
 @using Microsoft.AspNetCore.Components.Forms
 @using PoMiniGames.Shared.Validation
+@inject FluentValidation.IValidator<InitialsInput> Validator
 @implements IDisposable
 
 @if (ShouldShow)
@@ -68,7 +69,6 @@
 }
 
 @code {
-    private static readonly InitialsInputValidator Validator = new();
     private readonly InitialsInput _model = new();
     private EditContext _editContext = default!;
     private FieldIdentifier _initialsField;

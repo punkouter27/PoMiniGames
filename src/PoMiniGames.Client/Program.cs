@@ -1,3 +1,5 @@
+using FluentValidation;
+using PoMiniGames.Shared.Validation;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
@@ -124,6 +126,12 @@ builder.Services.AddScoped<ScreenFxService>();
 builder.Services.AddScoped<SettingsService>();
 // Unified trim-safe localStorage service (replaces Blazored.LocalStorage).
 builder.Services.AddScoped<IBrowserStorage, BrowserStorageService>();
+// Form validators (PoMiniGames.Shared/Validation), registered one by one by type and injected
+// into the forms (no assembly scanning, no `new()` in components).
+builder.Services.AddScoped<IValidator<InitialsInput>, InitialsInputValidator>();
+builder.Services.AddScoped<IValidator<CreatureRenameInput>, CreatureRenameInputValidator>();
+builder.Services.AddScoped<IValidator<EcoAlertInput>, EcoAlertInputValidator>();
+builder.Services.AddScoped<IValidator<CoupleAnswerInput>, CoupleAnswerInputValidator>();
 // Radzen dialog / notification / tooltip services. Only PoMule, Brawl HQ, Leaderboards,
 // and Profile use Radzen components; their pages load the Radzen stylesheet on demand.
 builder.Services.AddRadzenComponents();
