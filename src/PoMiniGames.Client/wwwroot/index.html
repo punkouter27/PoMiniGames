@@ -66,7 +66,8 @@
         "transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js",
         "three-eco/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
         "three-eco/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
-        "three-eco/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+        "three-eco/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+        "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm"
       },
       "scopes": {
         "https://cdn.jsdelivr.net/npm/three@0.186.1/": {
@@ -260,6 +261,8 @@
     <script type="module" src="js/platform/audioBus.js"></script>
     <script type="module" src="js/platform/richAudio.js"></script>
     <script type="module" src="js/platform/speechBus.js"></script>
+    <script type="module" src="js/platform/localTts.js"></script>
+    <script type="module" src="js/platform/localEmbeddings.js"></script>
     <!-- uiAudio.js binds the keyboard-only data-sonify listener (menu focus/select cues) at load;
          without this tag it only arrived with the first game that imported it, so the hub was silent. -->
     <script type="module" src="js/platform/uiAudio.js"></script>

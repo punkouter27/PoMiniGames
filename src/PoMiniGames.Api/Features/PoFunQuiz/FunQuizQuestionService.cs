@@ -17,15 +17,17 @@ public interface IFunQuizQuestionSource
 /// Deals quizzes at random from the in-memory bank (<see cref="BundledQuizQuestions"/>, loaded once
 /// from <c>Data/questions.json</c>). No storage, no network, no cost.
 /// </summary>
-public sealed class FunQuizQuestionService : IFunQuizQuestionSource
+public sealed class FunQuizQuestionService(OpenTriviaService? openTrivia = null) : IFunQuizQuestionSource
 {
     private const int MaxCount = 50;
 
-    public Task<IReadOnlyList<QuizQuestion>> GetQuestionsAsync(
+    public async Task<IReadOnlyList<QuizQuestion>> GetQuestionsAsync(
         QuestionCategory category, int count, CancellationToken cancellationToken = default)
     {
-        var pool = BundledQuizQuestions.For(category);
-        return Task.FromResult(Deal(pool, Math.Clamp(count, 1, MaxCount)));
+        var bundled = BundledQuizQuestions.For(category);
+        var live = openTrivia is null ? [] : await openTrivia.GetCachedQuestionsAsync(category, cancellationToken);
+        IReadOnlyList<QuizQuestion> pool = live.Count == 0 ? bundled : [.. bundled, .. live];
+        return Deal(pool, Math.Clamp(count, 1, MaxCount));
     }
 
     /// <summary>A random <paramref name="count"/>-sized hand from <paramref name="pool"/>, as copies with the options reshuffled.</summary>

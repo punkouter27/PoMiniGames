@@ -278,6 +278,8 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
         hoop: uniform(new THREE.Vector4(opts.hide?.low ?? 1e9, opts.hide?.hoopAt ?? 0, opts.hide?.hoopReach ?? 0, opts.hide?.hoopHalf ?? 0)),
         hoopC: uniform(new THREE.Vector2(opts.hide?.cx ?? 0, opts.hide?.cz ?? 0)),
         hideOn: uniform(opts.hide ? 1 : 0), size: uniform(1),
+        ambientTint: uniform(new THREE.Color(opts.ambientTint ?? 0xffffff)),
+        flash: uniform(0),
     };
     if (opts.crop) U.crop.value.set(opts.crop.x, opts.crop.z, opts.crop.hx, opts.crop.hz);
 
@@ -322,7 +324,8 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
     const pk = c.z, cb = pk.div(65536).floor(), cg = pk.sub(cb.mul(65536)).div(256).floor(), cr = pk.sub(cb.mul(65536)).sub(cg.mul(256));
     const rgb = vec3(cr, cg, cb).div(255);
     const lin = mix(rgb, pow(max(rgb, 0), vec3(2.2)).mul(U.lift), U.linear);
-    const vColor = varying(lin, 'vSplatColor'), vAlpha = varying(a.w.mul(fade).mul(U.opacity), 'vSplatAlpha'), vQuad = varying(q, 'vSplatQuad');
+    const lit = lin.mul(U.ambientTint).add(vec3(U.flash));
+    const vColor = varying(lit, 'vSplatColor'), vAlpha = varying(a.w.mul(fade).mul(U.opacity), 'vSplatAlpha'), vQuad = varying(q, 'vSplatQuad');
 
     const material = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
     material.vertexNode = select(drop, vec4(0, 0, 2, 1), vec4(ndc.add(off), clip.z.div(clip.w), 1));
@@ -377,6 +380,11 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
 
     return {
         object: mesh, count: n, uniforms: U, update,
+        warmSort(camera) { last.has = false; update(camera); },
+        setLighting({ tint, flash } = {}) {
+            if (tint !== undefined) U.ambientTint.value.set(tint);
+            if (typeof flash === 'number') U.flash.value = Math.max(0, flash);
+        },
         setOpacity(v) { U.opacity.value = v; },
         dispose() {
             worker?.terminate(); if (url) URL.revokeObjectURL(url);

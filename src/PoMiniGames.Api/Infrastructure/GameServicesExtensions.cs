@@ -101,7 +101,22 @@ internal static class GameServicesExtensions
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
         // MultiplayerLobbyService is the in-memory registry for the SignalR hub
         // (CreateGame/JoinGame/StartGame/UpdateScore/PlayerFinished).
+        services.AddOptions<OpenTriviaOptions>().BindConfiguration(OpenTriviaOptions.SectionName);
+        services.AddHttpClient(OpenTriviaService.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri("https://opentdb.com/");
+            client.Timeout = TimeSpan.FromSeconds(6);
+        }).AddStandardResilienceHandler();
+        services.AddSingleton<OpenTriviaService>();
         services.AddSingleton<IFunQuizQuestionSource, FunQuizQuestionService>();
+
+        services.AddOptions<PoMiniGames.Features.Geo.GeoTerrainOptions>()
+            .BindConfiguration(PoMiniGames.Features.Geo.GeoTerrainOptions.SectionName);
+        services.AddHttpClient(PoMiniGames.Features.Geo.GeoTerrainEndpoints.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri("https://api.open-elevation.com/");
+            client.Timeout = TimeSpan.FromSeconds(8);
+        }).AddStandardResilienceHandler();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();
         // One shared ready/start room per quiz; the lobby hubs reserve the match on the game hubs.

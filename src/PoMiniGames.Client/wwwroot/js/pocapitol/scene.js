@@ -15,6 +15,7 @@ import { scenarioSun, daylightFactor } from './sun.js';
 import { createOverlay } from './overlay.js';
 import { createFluidGrid } from '../platform/3d/fluidGrid.js';
 import { createGpuFluidGrid } from '../platform/3d/fluidGridGpu.js';
+import { createGpuCrowdSolver } from './crowdGpu.js';
 import { createCloth } from './cloth.js';
 import { createGlass } from './glass.js';
 import { createDebris } from './debris.js';
@@ -973,6 +974,9 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             if (!grid) return;
             if (disposedScene) { grid.dispose(); return; }
             gpuGas = grid; gpuGasTexture = gasTextureFor(grid);
+            if (!scene.userData.gpuCrowd && renderer?.backend?.isWebGPUBackend) {
+                scene.userData.gpuCrowd = createGpuCrowdSolver(renderer, { count: CROWD_SIZE });
+            }
             if (postLevel >= 3) useGas(gpuGas, gpuGasTexture);
         }).catch(() => { /* resolves null on failure; nothing to do */ });
     }

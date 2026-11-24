@@ -59,8 +59,14 @@ export function stopSpeaking() {
  * @param {{ rate?: number, pitch?: number, force?: boolean, interrupt?: boolean }} [opts]
  */
 export function speak(text, opts = {}) {
-    if (!text || !isSupported() || isMuted()) return false;
+    if (!text || isMuted()) return false;
     if (!opts.force && !_enabled) return false;
+    // Prefer in-browser Kokoro-82M ONNX TTS when the player opted in (falls back to Web Speech API).
+    if (typeof window !== 'undefined' && window.PoLocalTts?.isLocalTtsEnabled?.()) {
+        window.PoLocalTts.speakLocal(String(text), { voice: opts.voice, speed: opts.rate ?? 1.0 }).catch(() => {});
+        return true;
+    }
+    if (!isSupported()) return false;
     try {
         if (opts.interrupt !== false) window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(String(text));

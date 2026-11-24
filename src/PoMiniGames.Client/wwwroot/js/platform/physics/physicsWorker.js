@@ -54,6 +54,16 @@ self.onmessage = async (e) => {
       if (m.linvel) rec.rb.setLinvel(m.linvel, true);
       if (m.angvel) rec.rb.setAngvel(m.angvel, true);
       if (m.impulse) rec.rb.applyImpulse(m.impulse, true);
+      if (m.torqueImpulse) rec.rb.applyTorqueImpulse(m.torqueImpulse, true);
+      if (m.force) rec.rb.addForce(m.force, true);
+      break;
+    }
+    case 'batchImpulse': {
+      if (!Array.isArray(m.items)) break;
+      for (const item of m.items) {
+        const rec = byId.get(item.id);
+        if (rec && item.impulse) rec.rb.applyImpulse(item.impulse, true);
+      }
       break;
     }
     case 'step': {

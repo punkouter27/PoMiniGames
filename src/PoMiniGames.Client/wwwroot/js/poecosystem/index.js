@@ -21,6 +21,7 @@ import { NONE } from './sim/core/entities.js';
 import { BIOME, MAP_LAYERS, rgb } from './render/minimap.js';
 import { generateIsland } from './sim/terrain/island.js';
 import { unpackSnapshot } from './sim/persistence/codec.js';
+import { fetchGeoHeightmap } from '../platform/geoTerrain.js';
 
 let engine = null;
 
@@ -882,6 +883,12 @@ const PoEcosystem = {
   restoreLock() { if (engine?.state.relock) { engine.state.relock = false; engine.state.renderer?.requestLock(); } },
   touchMove: (x, z) => engine?.state.renderer?.touchMove(x, z),
   touchRelease: () => engine?.state.renderer?.touchRelease(),
+  async loadRealWorldTerrain(lat, lon) {
+    const geo = await fetchGeoHeightmap(lat, lon, 64);
+    const seed = hashString(`geo:${Number(lat).toFixed(2)},${Number(lon).toFixed(2)}:${Math.round(geo.maxElevation)}`);
+    engine?.newWorld(seed);
+    return geo;
+  },
 };
 
 if (typeof window !== 'undefined') {

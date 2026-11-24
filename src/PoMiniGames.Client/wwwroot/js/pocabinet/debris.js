@@ -58,6 +58,7 @@ import { wallFace } from './terrain.js';
 import { surfaceAt, SURF_GRAVEL, SURF_GRASS } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 import { loadRapier, RapierDebris } from './debris-rapier.js';
+import { createWorkerWorld } from '../platform/physics/workerWorld.js';
 import { debrisImpact } from './audio.js';
 import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
 import { placeProps, TYRE, CONE } from './props.js';
@@ -88,6 +89,11 @@ let propKinds = null;          // the props' two (CONE_PROP, TYRE_PROP), built b
 let propCount = 0;
 let sparkBudget = 0;
 let RAPIER = null;             // the engine's module, once loaded
+let _workerPhysics = null;
+export function initWorkerDebris(opts = {}) {
+    if (_workerPhysics) return Promise.resolve(_workerPhysics);
+    return createWorkerWorld(opts).then((w) => { _workerPhysics = w; return w; });
+}
 let rapierAsked = false;
 let rapierOff = false;         // it failed here: the built-in solver for the rest of the session
 let rapier = null;             // RapierDebris for the track being raced

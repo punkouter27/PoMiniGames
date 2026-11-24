@@ -49,6 +49,7 @@ import {
   normalize, positionGeometry, positionView, screenUV, select, smoothstep, storage, uint, uniform, uniformArray, varying, vec2, vec3, vec4,
 } from 'three-eco/tsl';
 import { createDepthGrid } from './depthGrid.js';
+import { createWebgl2GpuParticles } from './gpuParticlesWebgl2.js';
 
 export const PRESETS = Object.freeze({ sparks: 0, debris: 1, dust: 2, snow: 3 });
 const CAPACITY = Object.freeze({ high: 65536, medium: 32768, low: 16384 });
@@ -86,7 +87,10 @@ function liveTier() {
  *                    setVisible:Function, stats:Function, dispose:Function, grid:any, PRESETS:object }}
  */
 export function createGpuParticles(renderer, scene, { camera, depth = null, tier = liveTier(), capacity = 0, collide = true } = {}) {
-  if (!renderer?.backend?.isWebGPUBackend || !camera) return null;
+  if (!camera) return null;
+  if (!renderer?.backend?.isWebGPUBackend) {
+    return createWebgl2GpuParticles(renderer, scene, { camera, tier, capacity });
+  }
   const vertexStorage = renderer.backend.device?.limits?.maxStorageBuffersInVertexStage;
   const cap = capacity > 0 ? Math.min(capacity | 0, CAPACITY.high) : (CAPACITY[tier] ?? CAPACITY.high);
 

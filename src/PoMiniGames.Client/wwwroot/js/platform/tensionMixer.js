@@ -20,6 +20,7 @@
 // schedules nothing while it is inaudible, so driving the mixer costs nothing then either.
 
 import { STEM_NAMES } from './musicLayers.js';
+import { createToneMusic } from './toneMusic.js';
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const num = (x, d) => (Number.isFinite(x) ? x : d);
@@ -96,6 +97,7 @@ export function stemGains(tension, d = {}) {
 export function createTensionMixer(music, opts = {}) {
     const attack = Math.max(0.05, opts.attack ?? 0.6);
     const release = Math.max(0.05, opts.release ?? 3.5);
+    const toneMusic = opts.tonePreset ? createToneMusic(opts.tonePreset) : null;
     let tension = 0;
     const gains = Object.fromEntries(STEM_NAMES.map((n) => [n, 0]));
     let lastAt = 0;
@@ -120,6 +122,9 @@ export function createTensionMixer(music, opts = {}) {
             if (music) {
                 music.setIntensity?.(tension);
                 music.setStemGains?.(gains);
+            }
+            if (toneMusic) {
+                for (const n of STEM_NAMES) toneMusic.setStem(n, gains[n]);
             }
             return tension;
         },
