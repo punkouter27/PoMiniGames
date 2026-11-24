@@ -105,18 +105,21 @@ Every command here was run on 2026-11-22 (Windows, PowerShell or Git Bash, from 
 date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) and, on the trimmed Release publish,
 `PoMuleUiTests.OnePlayer_PlaysAMonth…` (passes on the in-process host) and `PoEcosystemUiTests.Demo_TheIslandIsAlive`
 (the engine never reports ready under SwiftShader within 180 s, on both hosts).
-2026-11-24 (v4 audit, a machine at 100% CPU from parallel agents): Unit 468, Integration 17, E2E API 16 green; E2E UI on
-the trimmed publish 27/32 (red: Ecosystem demo ready-timeout, LinkAudit 60 s timeout, MarbleRace two-browser stream,
-Racer desertdustway score POST 503 from the busy Azurite, Voxel Strike demo whose throwing readiness predicate is now fixed).
+2026-11-24 (v4 fix pass 2, after the owner's one-circuit Racer, dry weather and Cabinet/Mule card changes): five full runs,
+the last three in a row green on the trimmed publish (Unit 456, Integration 15, E2E API 16, E2E UI 30/30); run 2 had 3 E2E UI
+reds at 100% CPU from parallel agents (a jsDelivr three.tsl.js connection reset, Mule's 10 s walk, Brawl online canvas). Root causes fixed on the way: SignalR
+keep-alive 30 s = the clients' 30 s server timeout (a sending-only Marble host dropped mid-race; now 15 s), a required score write
+short-circuited by an open storage breaker (Racer 503), the Ecosystem test never pressed the card's OK, LinkAudit waited for
+network idle and drove every game through one tab, and Escape could not cancel a start card whose only button is OK.
 
 | What | Command | Needs / skips |
 |---|---|---|
 | Format | `dotnet format PoMiniGames.slnx --verify-no-changes` | — |
 | Build | `dotnet build PoMiniGames.slnx -c Release` (warnings are errors) | — |
-| Unit (442) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
-| Integration (17) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
+| Unit (456) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
+| Integration (15) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
 | E2E API (16) | `dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build` | Azurite on 127.0.0.1:10000/10002 (`docker compose up -d azurite`); local only |
-| E2E UI (22 methods, 31 cases) | `pwsh scripts/run-e2eui.ps1` (publishes the trimmed Release build to a temp folder and runs the tier against it via `POMINIGAMES_E2EUI_APP_DIR`; `-Filter` narrows it) | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy. Plain `dotnet test tests/PoMiniGames.E2EUI` still runs the in-process (untrimmed) host |
+| E2E UI (24 methods, 30 cases) | `pwsh scripts/run-e2eui.ps1` (publishes the trimmed Release build to a temp folder and runs the tier against it via `POMINIGAMES_E2EUI_APP_DIR`; `-Filter` narrows it) | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy. Plain `dotnet test tests/PoMiniGames.E2EUI` still runs the in-process (untrimmed) host |
 | JS lint | `npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint` | Node |
 | CSS lint | `pwsh scripts/ci/css-lint.ps1` | PowerShell 7 |
 | Python lint | `uvx ruff check .` (CI runs it only when `ruff.toml` exists; the owner removed it in `1bb7cc8b`, 2026-11-22) | uv |
