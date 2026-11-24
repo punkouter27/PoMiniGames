@@ -165,8 +165,11 @@
 
 .pb-hp-fill {
     height: 100%;
-    width: var(--hp, 100%);
-    transition: width 0.15s ease-out;
+    width: 100%;
+    transform-origin: left center;
+    transform: scaleX(var(--hp-r, 1));
+    transition: transform 0.15s ease-out;
+    will-change: transform;
     position: relative;
     z-index: 1; /* over the ghost chip */
     /* Gloss on the fill itself — the top half of the bar catches light. Layered
@@ -216,14 +219,16 @@
     top: 0;
     bottom: 0;
     left: 0;
-    width: var(--hp, 100%);
+    width: 100%;
+    transform-origin: left center;
+    transform: scaleX(var(--hp-r, 1));
     background: linear-gradient(180deg, var(--pb-chip-hi), var(--pb-chip-lo));
-    transition: width 0.6s cubic-bezier(.4, 0, .2, 1) 0.45s;
+    transition: transform 0.6s cubic-bezier(.4, 0, .2, 1) 0.45s;
+    will-change: transform;
 }
 
 .pb-hp-right .pb-hp-ghost {
-    left: auto;
-    right: 0;
+    transform-origin: right center;
 }
 
 /* ── In the red ─────────────────────────────────────────────────────────
@@ -264,18 +269,21 @@
 
 .pb-en-fill {
     height: 100%;
-    width: var(--en, 50%);
+    width: 100%;
+    transform-origin: left center;
+    transform: scaleX(var(--en-r, 0.5));
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 60%),
         linear-gradient(90deg, var(--pb-energy), var(--pb-energy-light));
-    transition: width 0.25s linear;
+    transition: transform 0.25s linear;
+    will-change: transform;
 }
 
 /* P2's side is right-aligned, so both of its bars anchor right and drain inward toward
    the centre clock, mirroring P1. */
 .pb-hp-right .pb-en-fill,
 .pb-hp-right .pb-hp-fill {
-    margin-left: auto;
+    transform-origin: right center;
 }
 
 .pb-en-hot {
@@ -300,7 +308,12 @@
     height: 38px;
     flex: 0 0 auto;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
-    opacity: 0.92;
+    opacity: 0.96;
+    transition: opacity 0.25s ease;
+}
+
+.pb-body--calm {
+    opacity: 0.35;
 }
 
 .pb-body circle,

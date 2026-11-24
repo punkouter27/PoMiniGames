@@ -30,11 +30,9 @@
 
     protected override void OnInitialized()
     {
-        // Evaluated once per component instance (the layout lives across SPA
-        // navigations, so a newly added ?debug=1 needs a reload — acceptable
-        // for a diagnostics switch, and documented in the header).
-        _enabled = Env.IsDevelopment()
-            || Navigation.Uri.IndexOf("debug=1", StringComparison.OrdinalIgnoreCase) >= 0;
+        // Only surface the top-bar FPS chip when explicitly requested via ?debug=1 so
+        // the 56 px header stays uncluttered during normal play.
+        _enabled = Navigation.Uri.IndexOf("debug=1", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     // Ownership token for the single global sampler: each layout carries its own

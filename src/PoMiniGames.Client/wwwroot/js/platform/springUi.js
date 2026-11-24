@@ -158,6 +158,11 @@ function onDown(e) {
     st.vx = st.vy = 0;
     st.dragX = st.dragY = 0;
     st.drag = finePointer() && !st.magnetic;
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+        el.style.setProperty('--spring-px', `${(((e.clientX - rect.left) / rect.width) * 100).toFixed(1)}%`);
+        el.style.setProperty('--spring-py', `${(((e.clientY - rect.top) / rect.height) * 100).toFixed(1)}%`);
+    }
     _pressed = el;
     kick();
 }
@@ -193,6 +198,10 @@ function onUp() {
         st.tx.v += Math.max(-400, Math.min(400, st.vx * 0.05));
         st.ty.v += Math.max(-400, Math.min(400, st.vy * 0.05));
     }
+    el.removeAttribute('data-spring-ripple');
+    void el.offsetWidth;
+    el.setAttribute('data-spring-ripple', '');
+    setTimeout(() => { if (el.isConnected) el.removeAttribute('data-spring-ripple'); }, 420);
     kick();
 }
 

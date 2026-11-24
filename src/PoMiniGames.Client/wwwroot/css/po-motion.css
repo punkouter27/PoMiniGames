@@ -100,8 +100,8 @@
   45%, 100% { opacity: 0; }
 }
 @keyframes po-card-stage-in {
-  0%, 30% { opacity: 0; }
-  65%, 100% { opacity: 1; }
+  0%, 25% { opacity: 0; clip-path: inset(8% round 14px); }
+  70%, 100% { opacity: 1; clip-path: inset(0% round 0px); }
 }
 :root[data-hero-nav][data-hero-card]::view-transition-new(root) {
   animation: po-route-fade-in 380ms ease-out both;

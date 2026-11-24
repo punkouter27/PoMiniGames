@@ -99,11 +99,25 @@ public class ToastService
         var id = ++_nextId;
         var toast = new ToastItem { Id = id, Message = message, Type = type };
         _toasts.Add(toast);
+        _radzen?.Notify(new NotificationMessage
+        {
+            Severity = SeverityFor(type),
+            Summary = message,
+            Duration = 5000,
+        });
         Announce(type);
         StateChanged?.Invoke();
 
         _ = RemoveAfterDelay(id, 5000);
     }
+
+    private static NotificationSeverity SeverityFor(ToastType type) => type switch
+    {
+        ToastType.Success => NotificationSeverity.Success,
+        ToastType.Error => NotificationSeverity.Error,
+        ToastType.Warning => NotificationSeverity.Warning,
+        _ => NotificationSeverity.Info,
+    };
 
     /// <summary>
     /// Fire-and-forget the toast's cue. Not awaited because <see cref="Show"/> is

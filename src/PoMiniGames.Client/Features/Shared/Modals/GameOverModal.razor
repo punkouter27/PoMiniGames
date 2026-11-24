@@ -56,10 +56,12 @@
 
         @if (Stats != null && Stats.Any())
         {
+            var headlineStats = Stats.Take(3).ToList();
+            var extraStats = Stats.Skip(3).ToList();
             <div class="gps-modal-stats">
-                @for (var i = 0; i < Stats.Count; i++)
+                @for (var i = 0; i < headlineStats.Count; i++)
                 {
-                    var stat = Stats[i];
+                    var stat = headlineStats[i];
                     <div class="gps-stat">
                         @* The first cell is the one a new best assembles out of the swarm. *@
                         @if (i == 0)
@@ -74,6 +76,24 @@
                     </div>
                 }
             </div>
+            @if (extraStats.Count > 0)
+            {
+                <RadzenAccordion class="gps-modal-extra-stats">
+                    <Items>
+                        <RadzenAccordionItem Text="More stats">
+                            <div class="gps-modal-stats">
+                                @foreach (var stat in extraStats)
+                                {
+                                    <div class="gps-stat">
+                                        <span class="gps-stat-value">@stat.Value</span>
+                                        <span class="gps-stat-label">@stat.Label</span>
+                                    </div>
+                                }
+                            </div>
+                        </RadzenAccordionItem>
+                    </Items>
+                </RadzenAccordion>
+            }
         }
 
         @* Where the player actually stands. Silently absent when they have no row

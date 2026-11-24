@@ -51,7 +51,43 @@ dialog.gps-modal {
     0 24px 60px -8px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(255, 255, 255, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  animation: gps-modal-pop 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  opacity: 0;
+  transform: translate3d(0, 10px, 0) scale(0.97);
+  transition:
+    opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+    overlay 0.22s allow-discrete,
+    display 0.22s allow-discrete;
+}
+
+dialog.gps-modal[open] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+@starting-style {
+  dialog.gps-modal[open] {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.96);
+  }
+}
+
+dialog.gps-modal::backdrop {
+  opacity: 0;
+  transition:
+    opacity 0.22s ease-out,
+    overlay 0.22s allow-discrete,
+    display 0.22s allow-discrete;
+}
+
+dialog.gps-modal[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  dialog.gps-modal[open]::backdrop {
+    opacity: 0;
+  }
 }
 
 .gps-modal-header {
@@ -119,6 +155,18 @@ dialog.gps-modal:has(.gps-summary--wide details[open], .pocabinet-results__detai
 
 .gps-modal-stats:has(> :nth-child(6):last-child) {
   grid-template-columns: repeat(3, 1fr);
+}
+
+.gps-modal-extra-stats {
+  width: 100%;
+}
+
+dialog.gps-modal > footer.gps-play-again-actions {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  padding-top: 0.5rem;
+  background: linear-gradient(180deg, transparent, var(--color-surface) 28%);
 }
 
 .gps-stat {

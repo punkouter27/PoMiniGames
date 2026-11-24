@@ -16,11 +16,11 @@
         @* Real meters: a screen reader can query either bar between the sparse announcements. *@
         <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p1Hp" aria-label="@P1Fighter — health">
-            <div class="pb-hp-ghost" style="--hp: @(_p1Hp)%;"></div><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div>
+            <div class="pb-hp-ghost" style="--hp: @(_p1Hp)%; --hp-r: @Ratio(_p1Hp);"></div><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%; --hp-r: @Ratio(_p1Hp);"></div>
         </div>
         <div class="pb-en-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p1Energy" aria-label="@P1Fighter — energy" title="@EnergyTip">
-            <div class="pb-en-fill @EnergyClass(_p1Energy)" style="--en: @(_p1Energy)%;"></div>
+            <div class="pb-en-fill @EnergyClass(_p1Energy)" style="--en: @(_p1Energy)%; --en-r: @Ratio(_p1Energy);"></div>
         </div>
     </div>
     @BodyDiagram(_p1Regions)
@@ -35,11 +35,11 @@
         <span class="pb-hp-name" title="@P2Name">@P2Name@if (LocalSide == 2) { <b class="pb-hp-you">YOU</b> }</span>
         <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p2Hp" aria-label="@P2Fighter — health">
-            <div class="pb-hp-ghost" style="--hp: @(_p2Hp)%;"></div><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div>
+            <div class="pb-hp-ghost" style="--hp: @(_p2Hp)%; --hp-r: @Ratio(_p2Hp);"></div><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%; --hp-r: @Ratio(_p2Hp);"></div>
         </div>
         <div class="pb-en-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p2Energy" aria-label="@P2Fighter — energy" title="@EnergyTip">
-            <div class="pb-en-fill @EnergyClass(_p2Energy)" style="--en: @(_p2Energy)%;"></div>
+            <div class="pb-en-fill @EnergyClass(_p2Energy)" style="--en: @(_p2Energy)%; --en-r: @Ratio(_p2Energy);"></div>
         </div>
     </div>
     @* Decoration over the tracks; the meters above stay the accessible truth. *@
@@ -72,6 +72,9 @@
     // Mirrors game.js DANGER_HP (0.25): the plate cracks as the engine starts the heartbeat.
     public const int DangerHpPct = 25;
     public static bool InDanger(int hp) => hp > 0 && hp <= DangerHpPct;
+
+    private static string Ratio(int pct) =>
+        (Math.Clamp(pct, 0, 100) / 100.0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
     // Round-start values. _elapsed is the time LEFT (game.js _pushHud sends TIME_LIMIT - clock);
     // seeded at the limit so the clock never reads 0 before the engine's first pump.
@@ -132,7 +135,7 @@
     // slower off the canvas. The tint is CSS (color-mix over --dmg, see .pb-body in the .razor.css) — the
     // page passes only the number, per the repo's style="" rule.
     private static RenderFragment BodyDiagram(int[] regions) =>
-        @<svg class="pb-body" viewBox="0 0 40 64" role="img"
+        @<svg class="pb-body @(regions.All(r => r < 30) ? "pb-body--calm" : null)" viewBox="0 0 40 64" role="img"
               aria-label="Body damage — head @(regions[0]), torso @(regions[1]), arms @(regions[2]), legs @(regions[3])">
             <title>Head @(regions[0]) (stun, knockdowns) · Torso @(regions[1]) (energy regen) · Arms @(regions[2]) (strike power, guard) · Legs @(regions[3]) (speed, get-up)</title>
             <circle cx="20" cy="8" r="7" class="@RegionClass(regions[0])" style="--dmg: @(regions[0])" />

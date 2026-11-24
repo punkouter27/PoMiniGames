@@ -98,29 +98,27 @@
         }
         @if (Laps.LapRows > 0)
         {
-            @* Each lap's sectors and time in one table. Green: a personal-best sector; violet: this race's best. *@
-            <table class="pocabinet-laps">
-                <caption>Your laps</caption>
-                <thead><tr><th scope="col">Lap</th><th scope="col">S1</th><th scope="col">S2</th><th scope="col">S3</th><th scope="col">Time</th></tr></thead>
-                <tbody>
-                    @for (var i = 0; i < Laps.LapRows; i++)
-                    {
-                        var row = i;
-                        var sectors = row < Laps.LapSectors.Count ? Laps.LapSectors[row] : null;
-                        var time = row < Laps.LapTimes.Count ? Laps.LapTimes[row] : 0;
-                        var deleted = row < Laps.LapDeleted.Count && Laps.LapDeleted[row];
-                        <tr class="@(time > 0 && time == Laps.BestValidLap ? "pocabinet-laps__best" : null)">
-                            <th scope="row">@(row + 1)</th>
-                            @for (var s = 0; s < 3; s++)
-                            {
-                                var t = sectors?[s];
-                                <td><span class="pocabinet-sector @Laps.SectorClass(t, s)">@(t is { } v ? PoCabinetCatalog.FormatLap(v) : "—")</span></td>
-                            }
-                            <td class="@(deleted ? "pocabinet-lap--deleted" : null)" title="@(deleted ? "Deleted: track limits" : null)">@(time > 0 ? PoCabinetCatalog.FormatLap(time) : "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            @* Each lap's sectors and time in one sortable grid. Green: a personal-best sector; violet: this race's best. *@
+            <RadzenDataGrid Data="@LapGridRows()" TItem="LapGridRow" AllowSorting="true" Density="Density.Compact" class="pocabinet-laps">
+                <Columns>
+                    <RadzenDataGridColumn TItem="LapGridRow" Property="Lap" Title="Lap" Width="54px" />
+                    <RadzenDataGridColumn TItem="LapGridRow" Property="S1" Title="S1">
+                        <Template Context="r"><span class="pocabinet-sector @Laps.SectorClass(r.S1, 0)">@(r.S1 is { } v ? PoCabinetCatalog.FormatLap(v) : "—")</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="LapGridRow" Property="S2" Title="S2">
+                        <Template Context="r"><span class="pocabinet-sector @Laps.SectorClass(r.S2, 1)">@(r.S2 is { } v ? PoCabinetCatalog.FormatLap(v) : "—")</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="LapGridRow" Property="S3" Title="S3">
+                        <Template Context="r"><span class="pocabinet-sector @Laps.SectorClass(r.S3, 2)">@(r.S3 is { } v ? PoCabinetCatalog.FormatLap(v) : "—")</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="LapGridRow" Property="Time" Title="Time">
+                        <Template Context="r">
+                            <span class="@(r.Deleted ? "pocabinet-lap--deleted" : r.IsBest ? "pocabinet-laps__best" : null)"
+                                  title="@(r.Deleted ? "Deleted: track limits" : null)">@(r.Time > 0 ? PoCabinetCatalog.FormatLap(r.Time) : "—")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
         }
     </div>
     @if (!IsSpectating)
@@ -159,6 +157,28 @@
 @code {
     /// <summary>One results row: name plus a short detail (finish time, "You", "AI official").</summary>
     public sealed record Row(string Name, string Detail, bool IsLocal);
+
+    private sealed record LapGridRow(int Lap, double? S1, double? S2, double? S3, double Time, bool Deleted, bool IsBest);
+
+    private List<LapGridRow> LapGridRows()
+    {
+        var list = new List<LapGridRow>(Laps.LapRows);
+        for (var i = 0; i < Laps.LapRows; i++)
+        {
+            var sectors = i < Laps.LapSectors.Count ? Laps.LapSectors[i] : null;
+            var time = i < Laps.LapTimes.Count ? Laps.LapTimes[i] : 0;
+            var deleted = i < Laps.LapDeleted.Count && Laps.LapDeleted[i];
+            list.Add(new LapGridRow(
+                i + 1,
+                sectors is { Length: > 0 } ? sectors[0] : null,
+                sectors is { Length: > 1 } ? sectors[1] : null,
+                sectors is { Length: > 2 } ? sectors[2] : null,
+                time,
+                deleted,
+                time > 0 && time == Laps.BestValidLap));
+        }
+        return list;
+    }
 
     [Parameter, EditorRequired] public PoCabinetLapBook Laps { get; set; } = new();
     [Parameter] public List<Row>? Standings { get; set; }

@@ -76,13 +76,15 @@
        a page button, Previous/Next, PageUp/PageDown, the arrow keys on the pager, or a sideways swipe.
        Every game is at most two presses away: its page, then its mode chip. Off-page cards stay in the
        DOM with `hidden`, so they are out of the tab order and the accessibility tree. *@
-    <div class="home-grid" id="home-grid" @ref="_grid" aria-roledescription="paged list" aria-label="Games">
-        @{ var cardIndex = 0; }
+    <div class="home-grid @(_pageDir != 0 ? (_pageDir > 0 ? "home-grid--next" : "home-grid--prev") : null)"
+         id="home-grid" @ref="_grid" aria-roledescription="paged list" aria-label="Games">
+        @{ var cardIndex = 0; var visibleIndex = 0; }
         @foreach (var game in GameCatalog.AllSorted)
         {
             var playable = IsPlayable(game.Primary);
             var onPage = IsOnPage(cardIndex++);
-            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")" hidden="@(!onPage)">
+            var slot = onPage ? visibleIndex++ : 0;
+            <article class="home-card" style="@(onPage ? $"--card-i:{slot}" : null)" aria-labelledby="@($"home-card-{game.Key.Value}")" hidden="@(!onPage)">
                 @* Left-to-right row: icon + game name, description, then a button for each mode. *@
                 @if (playable)
                 {
@@ -149,22 +151,30 @@
        existing /api/matches endpoint via ActivityFeedService — no new API. *@
     @if (_activity.Count > 0)
     {
-        <section class="home-activity" aria-label="Your recent activity">
-            <h2 class="home-activity__title">Your recent activity</h2>
-            <ul class="home-activity__list">
-                @foreach (var item in _activity)
-                {
-                    <li class="home-activity__card">
-                        <span class="home-activity__icon" aria-hidden="true">@item.Icon</span>
-                        <span class="home-activity__body">
-                            <a class="home-activity__game" href="@item.Url">@item.GameTitle</a>
-                            <span class="home-activity__msg">@item.Message</span>
-                        </span>
-                        <span class="home-activity__time" title="@item.When.ToString("u")">@FormatRelative(item.When)</span>
-                    </li>
-                }
-            </ul>
-        </section>
+        <RadzenPanel AllowCollapse="true" Collapsed="true" class="home-activity" aria-label="Your recent activity">
+            <HeaderTemplate>
+                <h2 class="home-activity__title">Your recent activity (@_activity.Count)</h2>
+            </HeaderTemplate>
+            <ChildContent>
+                <RadzenTimeline Orientation="Orientation.Vertical" LinePosition="LinePosition.Start" class="home-activity__timeline">
+                    <Items>
+                        @foreach (var item in _activity)
+                        {
+                            <RadzenTimelineItem PointStyle="PointStyle.Primary" PointSize="PointSize.Small">
+                                <LabelContent>
+                                    <span class="home-activity__time" title="@item.When.ToString("u")">@FormatRelative(item.When)</span>
+                                </LabelContent>
+                                <ChildContent>
+                                    <span class="home-activity__icon" aria-hidden="true">@item.Icon</span>
+                                    <a class="home-activity__game" href="@item.Url">@item.GameTitle</a>
+                                    <span class="home-activity__msg">@item.Message</span>
+                                </ChildContent>
+                            </RadzenTimelineItem>
+                        }
+                    </Items>
+                </RadzenTimeline>
+            </ChildContent>
+        </RadzenPanel>
     }
 </div>
 
@@ -179,6 +189,7 @@
     // First card index of each page (from homePager.js measure); [0] = everything on one page until measured.
     private int[] _pageStarts = [0];
     private int _page;
+    private int _pageDir;
 
     private int PageCount => _pageStarts.Length;
 
@@ -193,7 +204,9 @@
     {
         var next = Math.Clamp(page, 0, PageCount - 1);
         if (next == _page) return;
+        _pageDir = next > _page ? 1 : -1;
         _page = next;
+        _ = JS.InvokeVoidAsync("PoUiAudio.pageTurnCue", _pageDir).AsTask();
         StateHasChanged();
     }
 

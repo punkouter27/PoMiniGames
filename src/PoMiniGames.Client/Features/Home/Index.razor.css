@@ -234,6 +234,27 @@
     box-shadow: var(--elevation-1);
 }
 
+/* Directional GPU-composited page-turn wipe with 18ms per-card stagger */
+.home-grid--next .home-card:not([hidden]) {
+    animation: home-card-wipe-next 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--card-i, 0) * 18ms);
+}
+
+.home-grid--prev .home-card:not([hidden]) {
+    animation: home-card-wipe-prev 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--card-i, 0) * 18ms);
+}
+
+@keyframes home-card-wipe-next {
+    from { opacity: 0; transform: translate3d(20px, 0, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes home-card-wipe-prev {
+    from { opacity: 0; transform: translate3d(-20px, 0, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
 /* The heading: icon + game name on the left, linking to the game's primary mode. */
 .home-card-head {
     display: inline-flex;

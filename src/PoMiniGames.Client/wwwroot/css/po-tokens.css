@@ -243,6 +243,25 @@ main {
 }
 
 /* ── Shell: the one Sign in button (and any link that looks like a button), same on every page ── */
+/* Tactile GPU-composited release sheen driven by springUi.js (--spring-px/--spring-py) */
+[data-spring-ripple] {
+  position: relative;
+  overflow: hidden;
+}
+[data-spring-ripple]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(circle at var(--spring-px, 50%) var(--spring-py, 50%), color-mix(in srgb, currentColor 22%, transparent), transparent 65%);
+  animation: po-spring-sheen 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes po-spring-sheen {
+  from { opacity: 0.9; transform: scale(0.55); }
+  to { opacity: 0; transform: scale(1.35); }
+}
+
 .po-link-btn {
   display: inline-flex;
   align-items: center;

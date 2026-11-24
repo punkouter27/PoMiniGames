@@ -157,6 +157,18 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
             window.PoCue?.fire('ui', 'fluidRipple');
         }
     };
+    // Subtle hover-card accent shift: hovering a game card on the hub nudges the ambient
+    // secondary tint toward the card's primary mode accent when fine pointer is active.
+    const onCardHover = (e) => {
+        const card = e.target?.closest?.('.home-card');
+        if (!card) return;
+        const accent = readTint('--po-accent', DEFAULT_HUE_B);
+        hueB = accent;
+        if (worker) {
+            try { worker.postMessage({ type: 'tint', hueA, hueB }); } catch { /* worker closed */ }
+        }
+    };
+    document.addEventListener('pointerover', onCardHover, { passive: true });
     // On the window, not the canvas: the canvas is pointer-events: none (taps must
     // reach the cards above it), so a listener on it never fired and the field sat
     // still under the pointer.
