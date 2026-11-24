@@ -33,12 +33,12 @@
             var idx = i;
             var (tab, label) = Tabs[idx];
             var selected = tab == _tab;
-            <button type="button" role="tab" id="pocabinet-tab-@tab" @ref="_tabRefs[idx]"
+            <PoButton role="tab" id="@($"pocabinet-tab-{tab}")" @ref="_tabRefs[idx]"
                     class="pocabinet-prerace__tab"
                     aria-selected="@(selected ? "true" : "false")"
-                    aria-controls="pocabinet-tabpanel-@tab"
-                    tabindex="@(selected ? 0 : -1)"
-                    @onclick="() => _tab = tab">@label</button>
+                    aria-controls="@($"pocabinet-tabpanel-{tab}")"
+                    TabIndex="@(selected ? 0 : -1)"
+                    Click="() => _tab = tab">@label</PoButton>
         }
     </div>
 
@@ -75,7 +75,7 @@
     [Parameter] public EventCallback<int> LiveryChanged { get; set; }
 
     private Tab _tab = Tab.Car;
-    private readonly ElementReference[] _tabRefs = new ElementReference[Tabs.Length];
+    private readonly PoButton?[] _tabRefs = new PoButton?[Tabs.Length];
     /// <summary>An arrow key moved the selection: focus follows it after the render.</summary>
     private bool _focusTab;
 
@@ -106,7 +106,7 @@
     {
         if (!_focusTab) return;
         _focusTab = false;
-        try { await _tabRefs[Array.FindIndex(Tabs, t => t.Tab == _tab)].FocusAsync(); }
+        try { if (_tabRefs[Array.FindIndex(Tabs, t => t.Tab == _tab)] is { } tabButton) await tabButton.Element.FocusAsync(); }
         catch { /* the card closed under it */ }
     }
 }

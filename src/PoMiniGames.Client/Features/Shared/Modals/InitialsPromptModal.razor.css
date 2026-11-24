@@ -100,7 +100,7 @@
     flex-wrap: wrap;
 }
 
-.arcade-btn {
+::deep .arcade-btn {
     min-height: 2.75rem;
     padding: 0.5rem 1.25rem;
     font-family: var(--font-display);
@@ -113,23 +113,23 @@
                 border-color var(--dur-fast) var(--ease-standard);
 }
 
-.arcade-btn--primary {
+::deep .arcade-btn--primary {
     background: var(--color-accent-solid);
     color: var(--color-accent-contrast);
 }
 
-.arcade-btn--primary:disabled {
+::deep .arcade-btn--primary:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
 
-.arcade-btn--skip {
+::deep .arcade-btn--skip {
     background: transparent;
     color: var(--color-text-primary);
     border-color: var(--color-border);
 }
 
-.arcade-btn--skip:hover {
+::deep .arcade-btn--skip:hover {
     background: var(--color-surface-hover);
 }
 

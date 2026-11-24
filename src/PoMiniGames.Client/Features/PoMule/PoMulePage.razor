@@ -134,12 +134,12 @@
             <div class="pm-species-label">Choose your species</div>
             <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" AllowPaging="false">
                 <Template Context="s">
-                    <button type="button" class="pm-species-card @(s.Id == _species ? "pm-species-card--on" : "")" title="@(_classic ? "No trait" : s.Trait)"
-                            aria-pressed="@(s.Id == _species ? "true" : "false")" @onclick="@(() => _species = s.Id)">
+                    <PoButton class="@($"pm-species-card {(s.Id == _species ? "pm-species-card--on" : "")}")" title="@(_classic ? "No trait" : s.Trait)"
+                            aria-pressed="@(s.Id == _species ? "true" : "false")" Click="@(() => _species = s.Id)">
                         <span class="pm-species-name">@PoMuleSpecies.Name(s.Id, _classic)</span>
                         <span class="pm-species-cash">@PoMuleSpecies.StartingCash(s.Id, _classic).ToString("N0") cr</span>
                         <span class="pm-species-trait">@(_classic ? "No trait" : s.Trait)</span>
-                    </button>
+                    </PoButton>
                 </Template>
             </RadzenDataList>
             @* A small screen shows the cards as name and cash only; the pick's trait is said once, here. *@

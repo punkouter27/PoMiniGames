@@ -347,7 +347,7 @@
     justify-content: center;
     gap: 8px;
   }
-  .cf-touch-controls button {
+  .cf-touch-controls ::deep button {
     min-width: 44px;
     min-height: 44px;
   }

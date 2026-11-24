@@ -488,7 +488,7 @@
 
 .mr-opt:hover:not(:disabled) { border-color: rgba(168, 85, 247, 0.7); }
 
-.mr-opt.is-on {
+::deep .mr-opt.is-on {
     border-color: rgba(168, 85, 247, 0.95);
     box-shadow: 0 0 14px rgba(168, 85, 247, 0.35);
     background: rgba(168, 85, 247, 0.16);
@@ -686,7 +686,7 @@
     overflow: hidden;
 }
 
-.mr-seg-btn {
+::deep .mr-seg-btn {
     font: inherit;
     font-size: 0.8rem;
     padding: 3px 12px;
@@ -696,7 +696,7 @@
     cursor: pointer;
 }
 
-.mr-seg-btn.is-on {
+::deep .mr-seg-btn.is-on {
     background: #7c3aed;
     color: #fff;
 }
@@ -748,7 +748,7 @@
 
 /* ── Micro-interactions (#26): options and pads press in ── */
 .mr-opt:active:not(:disabled),
-.mr-seg-btn:active { transform: scale(0.97); }
+::deep .mr-seg-btn:active { transform: scale(0.97); }
 
 .mr-opt { transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease, transform 90ms ease; }
 
@@ -812,7 +812,7 @@
     .mr-switch::after,
     .mr-progress i { transition: none; }
     .mr-opt:active:not(:disabled),
-    .mr-seg-btn:active,
+    ::deep .mr-seg-btn:active,
     .mr-chip-btn:active,
     .mr-nudge-pad:active { transform: none; }
 }
@@ -838,7 +838,7 @@
 /* Coarse pointers: chips and segmented choices at least 44px tall. */
 @media (pointer: coarse) {
     .mr-chip-btn,
-    .mr-seg-btn {
+    ::deep .mr-seg-btn {
         min-height: 44px;
         min-width: 44px;
     }
@@ -1072,7 +1072,7 @@
     box-shadow: 0 0 0 6px rgba(251, 146, 60, 0.18), inset 0 0 18px rgba(251, 146, 60, 0.35);
 }
 
-.mr-seg-btn {
+::deep .mr-seg-btn {
     position: relative;
     overflow: hidden;
     transition: background 160ms ease, color 160ms ease, transform 120ms cubic-bezier(.34, 1.56, .64, 1);

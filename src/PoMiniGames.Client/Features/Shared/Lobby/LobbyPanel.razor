@@ -132,16 +132,16 @@
                     @* "Ready ✓" is a ready that cannot be taken back (Couple Quiz starts the
                        moment everyone is in): the button is disabled, so it must not read
                        as the "Not Ready" action it cannot perform. *@
-                    <button type="button" class="app-btn app-btn--primary lobby__ready" aria-pressed="@(MyReady ? "true" : "false")"
-                            disabled="@(!CanReady || _busy)" @onclick="ReadyAsync">
+                    <PoButton class="app-btn app-btn--primary lobby__ready" aria-pressed="@(MyReady ? "true" : "false")"
+                            Disabled="@(!CanReady || _busy)" Click="ReadyAsync">
                         @(MyReady ? (CanReady ? UnreadyLabel : "Ready") : "Ready!")@if (MyReady && !CanReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }
-                    </button>
+                    </PoButton>
                 }
                 @if (ShowStart && IsHost)
                 {
-                    <button type="button" class="app-btn app-btn--primary" disabled="@(!EffectiveCanStart || _busy)" @onclick="StartAsync">@StartLabel</button>
+                    <PoButton class="app-btn app-btn--primary" Disabled="@(!EffectiveCanStart || _busy)" Click="StartAsync">@StartLabel</PoButton>
                 }
-                <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
+                <PoButton class="app-btn app-btn--secondary" Click="OnLeave">Leave</PoButton>
                 @ExtraActions
                 @if (ShowInvite)
                 {
@@ -151,7 +151,7 @@
             else if (NoSeat)
             {
                 @* Refused or removed with no roster to show: the way out still has to be there. *@
-                <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
+                <PoButton class="app-btn app-btn--secondary" Click="OnLeave">Leave</PoButton>
             }
             @* State null: the strip above already says "connecting…" — rendering a
                second copy here was the drift the strip exists to kill. *@

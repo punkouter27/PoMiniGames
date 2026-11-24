@@ -90,21 +90,21 @@
                             <div class="gps-intro-tabs @(bothViews ? null : "gps-intro-tabs--setup-only")" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
                                 @if (Controls != null)
                                 {
-                                    <button type="button" role="tab" class="gps-intro-tab" data-spring
+                                    <PoButton role="tab" class="gps-intro-tab" data-spring
                                             aria-selected="@(_view == IntroView.Controls ? "true" : "false")"
-                                            @onclick="() => _view = IntroView.Controls">Controls</button>
+                                            Click="() => _view = IntroView.Controls">Controls</PoButton>
                                 }
                                 @if (HowToPlay != null)
                                 {
-                                    <button type="button" role="tab" class="gps-intro-tab" data-spring
+                                    <PoButton role="tab" class="gps-intro-tab" data-spring
                                             aria-selected="@(_view == IntroView.Rules || Controls == null ? "true" : "false")"
-                                            @onclick="() => _view = IntroView.Rules">How to play</button>
+                                            Click="() => _view = IntroView.Rules">How to play</PoButton>
                                 }
                                 @if (Options != null)
                                 {
-                                    <button type="button" role="tab" class="gps-intro-tab gps-intro-tab--setup" data-spring
+                                    <PoButton role="tab" class="gps-intro-tab gps-intro-tab--setup" data-spring
                                             aria-selected="@(_view == IntroView.Setup ? "true" : "false")"
-                                            @onclick="() => _view = IntroView.Setup">Setup</button>
+                                            Click="() => _view = IntroView.Setup">Setup</PoButton>
                                 }
                             </div>
                         }
@@ -164,11 +164,12 @@
                 </label>
             }
             @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
-            <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
-                    @ref="_ok"
-                    disabled="@(!StartEnabled)"
-                    @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)"
-                    @onclick="StartAsync">OK</button>
+            <span class="gps-intro-contents" style="display: contents" @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)">
+                <PoButton class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
+                          @ref="_ok"
+                          Disabled="@(!StartEnabled)"
+                          Click="StartAsync">OK</PoButton>
+            </span>
             @* The one gesture every game shares, learned once: Tab opens the live
                stats panel (GameShell's GameDebugOverlay). Cascaded, so it disappears
                on the two pages that already bind Tab themselves. *@
@@ -307,7 +308,7 @@
 
     private ElementReference _root;
     private ElementReference _focusRoot;
-    private ElementReference _ok;
+    private PoButton? _ok;
     private bool _started;
     private bool _disposed;
     private bool _cancelled;
@@ -354,7 +355,7 @@
             if (!_kiosk && ShowStart != _lastShowStart)
             {
                 _lastShowStart = ShowStart;
-                try { await (ShowStart && StartEnabled ? _ok : _focusRoot).FocusAsync(); }
+                try { await (ShowStart && StartEnabled ? _ok!.Element : _focusRoot).FocusAsync(); }
                 catch { /* dialog already gone */ }
             }
             if (_demoElapsed && StartEnabled && !_started) await StartAsync();
@@ -387,7 +388,7 @@
         // Best-effort, like the re-render path above: a page that starts on its own
         // (PoCapitol's demo) can drop this card between showModal and focus, and a
         // missing focus target must not take the whole game down with it.
-        try { await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart ? _focusRoot : _ok).FocusAsync(); }
+        try { await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart ? _focusRoot : _ok!.Element).FocusAsync(); }
         catch (Exception ex) { Logger.LogDebug(ex, "Intro focus skipped for {Game}; the card is already gone.", CueScope); }
         if (_disposed) return;
 

@@ -86,7 +86,7 @@
     gap: var(--space-1);
 }
 
-.lb-search__toggle {
+::deep .lb-search__toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -100,8 +100,8 @@
     cursor: pointer;
 }
 
-.lb-search__toggle:hover,
-.lb-search--open .lb-search__toggle {
+::deep .lb-search__toggle:hover,
+.lb-search--open ::deep .lb-search__toggle {
     color: var(--color-text-primary);
     border-color: var(--color-accent);
 }
@@ -144,7 +144,7 @@
 
 /* The player's best placing: a compact chip that opens that board. Token colours
    only, so it reads in the light theme as well as the dark one. */
-.lb-me-chip {
+::deep .lb-me-chip {
     appearance: none;
     display: inline-flex;
     align-items: baseline;
@@ -162,7 +162,7 @@
     cursor: pointer;
 }
 
-.lb-me-chip:hover { background: var(--tint-soft); }
+::deep .lb-me-chip:hover { background: var(--tint-soft); }
 
 .lb-me-chip-k {
     font-size: var(--text-xs);
@@ -187,7 +187,7 @@
 }
 
 /* Keyboard focus, for every control on the page that is not a shared .app-* one. */
-.lb-me-chip:focus-visible {
+::deep .lb-me-chip:focus-visible {
     outline: 2px solid var(--accent-ring, var(--color-accent, #6366f1));
     outline-offset: 2px;
 }
@@ -540,7 +540,7 @@
         min-height: 44px;
         min-width: 44px;
     }
-    .lb-search__toggle {
+    ::deep .lb-search__toggle {
         width: 44px;
         height: 44px;
     }

@@ -34,10 +34,10 @@
     }
     @if (State == HubConnectionState.Disconnected && OnRetry.HasDelegate)
     {
-        <button type="button" class="app-btn app-btn--secondary app-btn--sm"
-                disabled="@_retrying" @onclick="RetryAsync">
+        <PoButton class="app-btn app-btn--secondary app-btn--sm"
+                Disabled="@_retrying" Click="RetryAsync">
             @(_retrying ? "Retrying…" : "Retry connection")
-        </button>
+        </PoButton>
     }
 </p>
 

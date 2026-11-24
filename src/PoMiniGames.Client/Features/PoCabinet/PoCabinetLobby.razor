@@ -37,9 +37,9 @@
             @if (IsHost && context.ConnectionId != _client?.ConnectionId && !InRace)
             {
                 @* Host only, between races: one AFK seat must not block every rematch. *@
-                <button type="button" class="pocabinet-seat__kick" disabled="@_busy"
-                        aria-label="Remove @context.DisplayName from the lobby" title="Remove from the lobby"
-                        @onclick="() => KickAsync(context.ConnectionId)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                <PoButton class="pocabinet-seat__kick" Disabled="@_busy"
+                        aria-label="@($"Remove {(context.DisplayName)} from the lobby")" title="Remove from the lobby"
+                        Click="() => KickAsync(context.ConnectionId)"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
             }
         </PlayerActions>
         <Status>
@@ -52,14 +52,14 @@
                 @* Our seat was freed (the host, or the rematch ready timeout): nothing rejoins on its own. *@
                 <div class="pocabinet-lobby__notice" role="alert">
                     <span>@_kickedReason</span>
-                    <button type="button" class="app-btn app-btn--secondary" disabled="@_busy" @onclick="RejoinAsync">Rejoin the lobby</button>
+                    <PoButton class="app-btn app-btn--secondary" Disabled="@_busy" Click="RejoinAsync">Rejoin the lobby</PoButton>
                 </div>
             }
             else if (InRace && Me is null)
             {
                 <div class="pocabinet-lobby__notice">
                     <span>Race in progress — you'll get a seat when it finishes.</span>
-                    <button type="button" class="app-btn app-btn--secondary" @onclick="WatchAsync">Watch</button>
+                    <PoButton class="app-btn app-btn--secondary" Click="WatchAsync">Watch</PoButton>
                 </div>
             }
             else if (State is not null && Me is null)

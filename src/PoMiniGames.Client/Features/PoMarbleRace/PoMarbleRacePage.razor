@@ -256,8 +256,8 @@
                 @foreach (var level in new[] { "full", "lite" })
                 {
                     var l = level;
-                    <button type="button" role="radio" aria-checked="@(p.Effects == l ? "true" : "false")"
-                            class="mr-seg-btn @(p.Effects == l ? "is-on" : "")" @onclick="() => SetEffectsAsync(l)">@(l == "full" ? "Full" : "Lite")</button>
+                    <PoButton role="radio" aria-checked="@(p.Effects == l ? "true" : "false")"
+                            class="@($"mr-seg-btn {(p.Effects == l ? "is-on" : "")}")" Click="() => SetEffectsAsync(l)">@(l == "full" ? "Full" : "Lite")</PoButton>
                 }
             </span>
         </div>

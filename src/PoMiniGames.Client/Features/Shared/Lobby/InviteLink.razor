@@ -11,14 +11,14 @@
    and needs no code. The QR is drawn by the server (/api/invites/qr) and only fetched
    when the popover first opens. *@
 <span class="invite">
-    <button type="button" class="app-btn app-btn--secondary" popovertarget="@_qrId">@Label</button>
+    <PoButton class="app-btn app-btn--secondary" popovertarget="@_qrId">@Label</PoButton>
     <span id="@_qrId" popover="auto" class="invite__qr">
         <img src="@($"/api/invites/qr?game={Game}")" width="220" height="220" loading="lazy"
              alt="QR code that opens this lobby" />
         <span class="invite__caption">Scan to join this lobby</span>
-        <button type="button" class="app-btn app-btn--primary invite__share"
+        <PoButton class="app-btn app-btn--primary invite__share"
                 popovertarget="@_qrId" popovertargetaction="hide"
-                @onclick="ShareAsync">Share the link</button>
+                Click="ShareAsync">Share the link</PoButton>
     </span>
 </span>
 

@@ -103,7 +103,7 @@
     white-space: nowrap;
 }
 
-.kiosk-bar-btn {
+::deep .kiosk-bar-btn {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -122,12 +122,12 @@
     transition: border-color 0.18s var(--ease-standard), background 0.18s var(--ease-standard);
 }
 
-.kiosk-bar-btn:hover {
+::deep .kiosk-bar-btn:hover {
     border-color: var(--color-accent);
     background: var(--surface-1);
 }
 
-.kiosk-bar-btn--exit:hover {
+::deep .kiosk-bar-btn--exit:hover {
     border-color: var(--color-danger, rgb(239, 68, 68));
     color: var(--color-danger, rgb(239, 68, 68));
 }
@@ -137,7 +137,7 @@
    (speaker-with-slash vs speaker-on) instead of swapping the same button
    out. Hover mirrors the exit button — accent-coloured — so the player can
    spot it from across the room. */
-.kiosk-bar-btn--mute { /* visual rules shared with .kiosk-bar-btn */ }
+::deep .kiosk-bar-btn--mute { /* visual rules shared with .kiosk-bar-btn */ }
 
 @media (max-width: 480px) {
     .kiosk-bar {
@@ -150,6 +150,6 @@
     .kiosk-bar-now { grid-column: span 3; }
     .kiosk-bar-count { grid-column: span 2; text-align: right; }
     .kiosk-bar-title { max-width: none; }
-    .kiosk-bar-btn { width: 2.75rem; height: 2.75rem; }
+    ::deep .kiosk-bar-btn { width: 2.75rem; height: 2.75rem; }
     .kiosk-bar-progress { display: none; }
 }

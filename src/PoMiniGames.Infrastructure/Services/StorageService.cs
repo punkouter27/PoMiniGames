@@ -215,7 +215,7 @@ public partial class StorageService : IStorageService
 
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 _serviceClient.GetTableClient(HealthProbeTableName)
                     .CreateIfNotExistsAsync(cts.Token)
                     .GetAwaiter()
@@ -230,6 +230,16 @@ public partial class StorageService : IStorageService
                 return false;
             }
         }
+    }
+
+    /// <summary>
+    /// A storage call just succeeded: close the breaker (logged once, on the unavailable→healthy transition).
+    /// </summary>
+    private void MarkAvailable()
+    {
+        if (_isStorageAvailable) return;
+        _isStorageAvailable = true;
+        _logger.LogInformation("Azure Table Storage answered a write; high score functionality restored.");
     }
 
     /// <summary>
@@ -266,7 +276,7 @@ public partial class StorageService : IStorageService
     {
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             _serviceClient.GetTableClient(HealthProbeTableName)
                 .CreateIfNotExistsAsync(cts.Token)
                 .GetAwaiter()

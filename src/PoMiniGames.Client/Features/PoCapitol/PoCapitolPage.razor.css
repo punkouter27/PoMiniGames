@@ -79,8 +79,8 @@
 .pc-phonecam .pc-film { background: none; }
 @keyframes pc-rec { to { opacity: 0.15; } }
 .pc-options { display: flex; flex-wrap: wrap; gap: 4px 28px; }
-.pc-debug-close { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; background: none; border: none; border-radius: 50%; color: #a4b3bf; cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
-.pc-debug-close:hover { color: #fff; background: #ffffff14; }
+::deep .pc-debug-close { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; background: none; border: none; border-radius: 50%; color: #a4b3bf; cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
+::deep .pc-debug-close:hover { color: #fff; background: #ffffff14; }
 @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── Rings: one gauge for every 0–100 reading (stamina, a line, a unit's health) ── */
@@ -256,7 +256,7 @@
 .pc-inspector-facts dd { margin: 0; font-size: 11px; color: #e6edf2; }
 .pc-inspector-meta { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; margin-bottom: 10px; border-top: 1px dotted #ffffff15; font-size: 10px; line-height: 1.4; color: #92a4b2; }
 .pc-inspector-actions { display: flex; gap: 8px; }
-.pc-inspector-actions .app-btn { display: inline-flex; align-items: center; gap: 6px; }
+.pc-inspector-actions ::deep .app-btn { display: inline-flex; align-items: center; gap: 6px; }
 .pc-inspector-actions .material-symbols-outlined { font-size: 17px; }
 .pc-harm { color: #8fd3c7; letter-spacing: 0.02em; }
 
@@ -274,16 +274,16 @@
 .pc-command-tally { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: #e6edf2; font-variant-numeric: tabular-nums; }
 .pc-command-tally .material-symbols-outlined { font-size: 16px; color: var(--pc-gold); margin-left: 6px; }
 .pc-command-lines { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.pc-command-line {
+::deep .pc-command-line {
     display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px;
     width: 100%; min-height: 52px; padding: 6px 10px 6px 6px; text-align: left;
     color: #e6edf2; background: #ffffff0a; border: 1px solid #ffffff14; border-radius: 10px; cursor: pointer;
     transition: background-color 160ms ease, border-color 160ms ease, box-shadow 200ms ease;
 }
-.pc-command-line:hover:not(:disabled) { background: #ffffff14; border-color: #e4c48266; }
-.pc-command-line--on { background: #e4c4821f; border-color: var(--pc-gold); box-shadow: 0 0 0 1px #e4c48255, 0 6px 22px #e4c48233; }
+::deep .pc-command-line:hover:not(:disabled) { background: #ffffff14; border-color: #e4c48266; }
+::deep .pc-command-line--on { background: #e4c4821f; border-color: var(--pc-gold); box-shadow: 0 0 0 1px #e4c48255, 0 6px 22px #e4c48233; }
 .pc-command-line--braced .pc-ring { box-shadow: 0 0 0 2px #6fb4ff88, 0 0 18px #6fb4ff55; }
-.pc-command-line--fallen { opacity: 0.5; cursor: default; animation: pc-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
+::deep .pc-command-line--fallen { opacity: 0.5; cursor: default; animation: pc-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
 .pc-command-text { display: grid; gap: 3px; min-width: 0; }
 .pc-command-name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pc-command-name kbd { font: 700 9px/1 inherit; padding: 2px 5px; border-radius: 3px; background: #ffffff1f; color: #c9d4de; }
@@ -295,13 +295,13 @@
 .pc-command-tired { position: relative; height: 4px; border-radius: 2px; background: #ffffff14; overflow: hidden; }
 .pc-command-tired i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: linear-gradient(90deg, #f5b33d, #ff5a4e); transition: width 260ms ease; }
 .pc-command-orders { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.pc-order {
+::deep .pc-order {
     position: relative; display: grid; justify-items: center; gap: 2px; min-height: 58px; padding: 6px 2px;
     color: #f3ead8; background: #ffffff0d; border: 1px solid #ffffff1f; border-radius: 10px; cursor: pointer; overflow: hidden;
     transition: background-color 160ms ease, border-color 160ms ease, --cd 900ms linear;
 }
-.pc-order:hover:not(:disabled) { background: #e4c48222; border-color: #e4c48288; }
-.pc-order:disabled { cursor: default; color: #8d9aa6; }
+::deep .pc-order:hover:not(:disabled) { background: #e4c48222; border-color: #e4c48288; }
+::deep .pc-order:disabled { cursor: default; color: #8d9aa6; }
 .pc-order .material-symbols-outlined { font-size: 20px; color: var(--pc-gold); }
 .pc-order:disabled .material-symbols-outlined { color: #6d7a86; }
 .pc-order-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
@@ -331,44 +331,44 @@
 .pc-swatch--push { background: #e5484d; } .pc-swatch--tip { background: #f5a524; } .pc-swatch--calm { background: #4c8dff; } .pc-swatch--back { background: #8b8d98; }
 
 /* Secondary buttons on the dark in-game glass: light text and a hairline, not the theme's dark text. */
-.pc-panel .app-btn:not(.app-btn--primary), .pc-inspector-actions .app-btn:not(.app-btn--primary) { color: #f3ead8; background: #ffffff10; border: 1px solid #ffffff38; }
-.pc-panel .app-btn:not(.app-btn--primary):hover, .pc-inspector-actions .app-btn:not(.app-btn--primary):hover { background: #ffffff1f; border-color: #e4c48299; }
+.pc-panel ::deep .app-btn:not(.app-btn--primary), .pc-inspector-actions ::deep .app-btn:not(.app-btn--primary) { color: #f3ead8; background: #ffffff10; border: 1px solid #ffffff38; }
+.pc-panel ::deep .app-btn:not(.app-btn--primary):hover, .pc-inspector-actions ::deep .app-btn:not(.app-btn--primary):hover { background: #ffffff1f; border-color: #e4c48299; }
 
 /* ── Hold to confirm (ui.js): a bar of light fills along the button while it is held ── */
 
-.pc-hold { position: relative; display: inline-flex; align-items: center; gap: 6px; isolation: isolate; }
+::deep .pc-hold { position: relative; display: inline-flex; align-items: center; gap: 6px; isolation: isolate; }
 .pc-hold .material-symbols-outlined { font-size: 18px; }
-.pc-hold { overflow: hidden; }
-.pc-hold::after {
+::deep .pc-hold { overflow: hidden; }
+::deep .pc-hold::after {
     content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--pc-hold); pointer-events: none;
     background: linear-gradient(90deg, #b98c45, #ffe3a6); box-shadow: 0 0 10px #e4c482;
     opacity: 0; transition: opacity 120ms ease;
 }
-.pc-hold[data-holding]::after { opacity: 1; }
+::deep .pc-hold[data-holding]::after { opacity: 1; }
 
 /* ── Touch ── */
 
 @media (pointer: coarse) {
     /* 76px clears the shared Stats chip, which sits in the same bottom-left corner. */
     .pc-touch { display: flex; position: absolute; z-index: 5; bottom: max(76px, env(safe-area-inset-bottom)); left: max(20px, env(safe-area-inset-left)); right: max(20px, env(safe-area-inset-right)); justify-content: space-between; align-items: end; pointer-events: none; }
-    .pc-touch button { width: 48px; height: 48px; border: 1px solid #dfc79780; border-radius: 10px; color: #f9e3b2; background: #142536b8; font-size: 20px; touch-action: none; pointer-events: auto; user-select: none; }
+    .pc-touch ::deep button { width: 48px; height: 48px; border: 1px solid #dfc79780; border-radius: 10px; color: #f9e3b2; background: #142536b8; font-size: 20px; touch-action: none; pointer-events: auto; user-select: none; }
     .pc-dpad { display: grid; grid-template-columns: repeat(3, 48px); gap: 4px; }
-    .pc-dpad button:first-child { grid-column: 2; }
-    .pc-dpad button:nth-child(2) { grid-column: 1; }
-    .pc-touch .pc-fire { width: 68px; height: 68px; border-radius: 50%; font-size: 13px; }
+    .pc-dpad ::deep button:first-child { grid-column: 2; }
+    .pc-dpad ::deep button:nth-child(2) { grid-column: 1; }
+    .pc-touch ::deep .pc-fire { width: 68px; height: 68px; border-radius: 50%; font-size: 13px; }
     /* Fire or push on the right, with the two grenades beside it showing what is left. */
     .pc-touch-actions { display: flex; align-items: end; gap: 8px; pointer-events: none; }
-    .pc-touch .pc-throw { display: grid; place-content: center; width: 56px; height: 56px; border-radius: 50%; font-size: 9px; letter-spacing: 0.06em; line-height: 1.15; }
+    .pc-touch ::deep .pc-throw { display: grid; place-content: center; width: 56px; height: 56px; border-radius: 50%; font-size: 9px; letter-spacing: 0.06em; line-height: 1.15; }
     .pc-throw small { display: block; color: #fff; font-size: 14px; font-weight: 800; }
-    .pc-touch button:disabled { opacity: 0.4; }
-    .pc-touch button:active:not(:disabled) { background: #22405cd0; transform: scale(0.94); }
+    .pc-touch ::deep button:disabled { opacity: 0.4; }
+    .pc-touch ::deep button:active:not(:disabled) { background: #22405cd0; transform: scale(0.94); }
     /* The d-pad owns the bottom-left corner on a touchscreen: the vitals move up under the clock. */
     .pc-hud-vitals { bottom: auto; top: 84px; left: max(12px, env(safe-area-inset-left)); }
     .pc-hud-vitals .pc-ring { --size: 50px; }
     .pc-day { display: none; }
     .pc-inspector-card { top: max(64px, env(safe-area-inset-top)); bottom: auto; left: 50%; translate: -50% 0; }
     /* The 44px floor for the small controls. */
-    .pc-debug-close, .pc-radar-toggle, .pc-keycap { min-width: 44px; min-height: 44px; }
+    ::deep .pc-debug-close, ::deep .pc-radar-toggle, .pc-keycap { min-width: 44px; min-height: 44px; }
 }
 @media (max-width: 650px) {
     .pc-root { min-height: min(420px, var(--gps-area-h)); }
@@ -392,13 +392,13 @@
 .pc-tab-hud-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pc-tab-hud-head strong { display: block; margin-top: 2px; font-size: 13px; }
 .pc-tab-radar { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
-.pc-radar-toggle {
+::deep .pc-radar-toggle {
     display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 5px 10px;
     background: #0d1a27e0; border: 1px solid #d5b77c60; border-radius: 8px; color: #e4c793;
     font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer;
     transition: background-color 180ms ease, border-color 180ms ease;
 }
-.pc-radar-toggle:hover { background: #172d42; border-color: #f2cf87; }
+::deep .pc-radar-toggle:hover { background: #172d42; border-color: #f2cf87; }
 .pc-radar-toggle .material-symbols-outlined { font-size: 18px; }
 .pc-radar-body { padding: 8px; background: #070e17f2; border: 1px solid #d5b77c80; border-radius: 10px; box-shadow: 0 12px 32px #000000aa; animation: pc-fade-in 180ms ease; }
 .pc-radar-canvas { display: block; width: 200px; height: 270px; margin: 0 auto; border-radius: 4px; border: 1px solid #5a8bb855; cursor: crosshair; }
@@ -466,8 +466,8 @@
 .pc-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #f3e2bd; border: 2px solid #b98c45; }
 .pc-range:hover::-webkit-slider-thumb, .pc-range:active::-webkit-slider-thumb { scale: 1.2; }
 .pc-range:focus-visible { outline: 2px solid #b98c45; outline-offset: 2px; border-radius: 4px; }
-.pc-opt-button { margin-top: 12px; }
-.pc-model-input { min-width: 150px; }
+::deep .pc-opt-button { margin-top: 12px; }
+::deep .pc-model-input { min-width: 150px; }
 /* These lines change length or appear late; holding their height keeps the card still. */
 .pc-probe { min-height: 1.5em; }
 
@@ -489,14 +489,14 @@
 .pc-keycap--swapped { animation: pc-swap 700ms cubic-bezier(0.2, 0.9, 0.3, 1.3) 1; border-color: #b98c45; }
 @keyframes pc-listen { 50% { box-shadow: 0 0 0 6px #b98c4522; } }
 @keyframes pc-swap { 0% { transform: translateY(-10px) scale(1.1); background-color: #b98c4544; } 100% { transform: none; } }
-.pc-key-select { min-width: 110px; min-height: 32px; padding: 4px 8px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, currentColor 40%, transparent); border-radius: 4px; font: inherit; font-size: 13px; }
+::deep .pc-key-select { min-width: 110px; min-height: 32px; padding: 4px 8px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, currentColor 40%, transparent); border-radius: 4px; font: inherit; font-size: 13px; }
 
 /* ── Start card: who you are, as four cards ── */
 
 /* The start card is on the light theme surface: take its text colour, not the in-game cream. */
 .pc-intro-opts { color: var(--color-text-primary); }
 .pc-roles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%; }
-.pc-role {
+::deep .pc-role {
     display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 58px; padding: 6px 4px;
     color: inherit; background: color-mix(in srgb, currentColor 4%, transparent);
     border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px;
@@ -504,10 +504,10 @@
 }
 .pc-role .material-symbols-outlined { font-size: 22px; color: #b98c45; transition: scale 200ms cubic-bezier(0.2, 0.9, 0.3, 1.4); }
 .pc-role-name { font-size: 12px; font-weight: 600; line-height: 1.15; text-align: center; }
-.pc-role:hover { border-color: #b98c4588; }
-.pc-role--on { border-color: #b98c45; background: color-mix(in srgb, #b98c45 14%, transparent); box-shadow: 0 0 0 1px #b98c45, 0 6px 18px #b98c4533; }
+::deep .pc-role:hover { border-color: #b98c4588; }
+::deep .pc-role--on { border-color: #b98c45; background: color-mix(in srgb, #b98c45 14%, transparent); box-shadow: 0 0 0 1px #b98c45, 0 6px 18px #b98c4533; }
 .pc-role--on .material-symbols-outlined { scale: 1.15; }
-.pc-role:focus-visible { outline: 2px solid #b98c45; outline-offset: 2px; }
+::deep .pc-role:focus-visible { outline: 2px solid #b98c45; outline-offset: 2px; }
 .pc-role-brief { min-height: 3em; }
 
 /* ── The debrief: what happened in three sentences, and what wrote them ── */
@@ -521,11 +521,11 @@
 .pc-debrief-meta--warn::before { content: "⚠ "; }
 
 @media (prefers-reduced-motion: reduce) {
-    .pc-rec-pill i, .pc-ring--bad, .pc-shake, .pc-command-line--fallen, .pc-leader line, .pc-leader circle,
+    .pc-rec-pill i, .pc-ring--bad, .pc-shake, ::deep .pc-command-line--fallen, .pc-leader line, .pc-leader circle,
     .pc-keycap--listening, .pc-keycap--swapped, .pc-stat, .pc-flap span, .pc-toast::before { animation: none; }
     .pc-toast { animation: pc-toast-calm 4.8s linear forwards; }
     .pc-day { animation: pc-toast-calm 5s linear forwards; }
     .pc-root[data-anchored] .pc-inspector-card { animation: none; }
-    .pc-ring, .pc-order, .pc-order--cooling::before { transition: none; }
+    .pc-ring, ::deep .pc-order, .pc-order--cooling::before { transition: none; }
 }
 @keyframes pc-toast-calm { 0%, 90% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }

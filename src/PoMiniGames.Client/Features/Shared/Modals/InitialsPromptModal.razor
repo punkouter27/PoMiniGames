@@ -50,18 +50,18 @@
             </div>
 
             <div class="arcade-modal-actions">
-                <button type="submit"
+                <PoButton ButtonType="ButtonType.Submit"
                         class="arcade-btn arcade-btn--primary"
-                        disabled="@_submitting"
+                        Disabled="@_submitting"
                         aria-busy="@(_submitting ? "true" : "false")">
                     @(_submitting ? "Saving…" : "Save initials")
-                </button>
-                <button type="button"
+                </PoButton>
+                <PoButton
                         class="arcade-btn arcade-btn--skip"
-                        disabled="@_submitting"
-                        @onclick="SkipAsync">
+                        Disabled="@_submitting"
+                        Click="SkipAsync">
                     Skip
-                </button>
+                </PoButton>
             </div>
         </EditForm>
         </div>

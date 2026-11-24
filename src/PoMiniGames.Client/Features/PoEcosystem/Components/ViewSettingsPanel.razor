@@ -46,15 +46,15 @@
                         <th scope="row">@Label(action)</th>
                         <td>@foreach (var key in codes.Select(KeyName).Distinct()) { <kbd>@key</kbd> }</td>
                         <td>
-                            <button type="button" class="poeco-btn poeco-btn--sm" disabled="@(Capturing is not null)" @onclick="() => OnRebind.InvokeAsync(action)">
+                            <PoButton class="poeco-btn poeco-btn--sm" Disabled="@(Capturing is not null)" Click="() => OnRebind.InvokeAsync(action)">
                                 @(Capturing == action ? "Press a key…" : "Change")
-                            </button>
+                            </PoButton>
                         </td>
                     </tr>
                 }
             </tbody>
         </table>
-        <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnResetBindings">Reset to defaults</button>
+        <PoButton class="poeco-btn poeco-btn--sm" Click="OnResetBindings">Reset to defaults</PoButton>
     }
     <p class="poeco-note">Fixed: <kbd>Tab</kbd> dashboard · <kbd>Esc</kbd> close · <kbd>0</kbd>–<kbd>3</kbd> speed · <kbd>/</kbd> find · <kbd>L</kbd> lens · <kbd>H</kbd> keys</p>
 </div>

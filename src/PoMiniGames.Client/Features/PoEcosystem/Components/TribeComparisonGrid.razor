@@ -24,9 +24,9 @@
                             <h4 class="poeco-tribe-name">@tribe.Name</h4>
                             <span class="poeco-badge poeco-badge--tech">@tribe.Tech</span>
                         </div>
-                        <button type="button" class="poeco-pill poeco-pill--focus" @onclick="() => OnSelectTribe.InvokeAsync(tribe.Id)" title="Focus camera on this tribe">
+                        <PoButton class="poeco-pill poeco-pill--focus" Click="() => OnSelectTribe.InvokeAsync(tribe.Id)" title="Focus camera on this tribe">
                             🎯 Focus
-                        </button>
+                        </PoButton>
                     </div>
 
                     <div class="poeco-tribe-stats-row">

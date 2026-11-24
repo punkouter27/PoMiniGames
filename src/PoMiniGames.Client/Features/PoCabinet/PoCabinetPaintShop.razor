@@ -20,15 +20,15 @@
         @foreach (var (name, hex) in COLORS)
         {
             var isSelected = string.Equals(name, SelectedColor, StringComparison.OrdinalIgnoreCase);
-            <button type="button"
-                    class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
+            <PoButton
+                    class="@($"pocabinet-swatch {(isSelected ? "pocabinet-swatch--selected" : null)}")"
                     role="radio"
                     aria-checked="@(isSelected ? "true" : "false")"
                     aria-label="@name"
                     title="@name"
-                    style="--swatch: @hex;"
-                    @onclick="() => Select(name)">
-            </button>
+                    style="@($"--swatch: {(hex)};")"
+                    Click="() => Select(name)">
+            </PoButton>
         }
     </div>
 
@@ -38,13 +38,13 @@
             var idx = i;
             var label = LIVERIES[idx];
             var isSelected = SelectedLivery == idx;
-            <button type="button"
-                    class="pocabinet-livery @(isSelected ? "pocabinet-livery--selected" : null)"
+            <PoButton
+                    class="@($"pocabinet-livery {(isSelected ? "pocabinet-livery--selected" : null)}")"
                     role="radio"
                     aria-checked="@(isSelected ? "true" : "false")"
-                    @onclick="() => SelectLivery(idx)">
+                    Click="() => SelectLivery(idx)">
                 @label
-            </button>
+            </PoButton>
         }
     </div>
 </div>

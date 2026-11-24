@@ -301,7 +301,7 @@
 /* Fullscreen lives on the strip now, not floating over the arena's corner. Under Pointer
    Lock nothing on the strip can be clicked (there is no cursor), so the pause dialog
    carries a second one; this is the one a touch player reaches. */
-.pvs-hud-btn {
+::deep .pvs-hud-btn {
     position: relative;
     overflow: hidden;
     pointer-events: auto;
@@ -319,13 +319,13 @@
     transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), background 0.16s ease, color 0.16s ease;
 }
 
-.pvs-hud-btn:hover { color: #f4f7fd; background: rgba(15, 23, 42, 0.8); }
+::deep .pvs-hud-btn:hover { color: #f4f7fd; background: rgba(15, 23, 42, 0.8); }
 
-.pvs-hud-btn:active {
+::deep .pvs-hud-btn:active {
     transform: perspective(420px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg)) scale(0.94);
 }
 
-.pvs-hud-btn:focus-visible {
+::deep .pvs-hud-btn:focus-visible {
     outline: 2px solid var(--accent-ring);
     outline-offset: 2px;
 }
@@ -650,7 +650,7 @@
 
 /* ── Button micro-interactions: 3D tilt, radial ripple & light-sweep sheen ── */
 
-.pvs-btn,
+::deep .pvs-btn,
 .pvs-start ::deep .gps-intro-ok,
 .pvs-start ::deep .app-seg__btn {
     position: relative;
@@ -659,7 +659,7 @@
     transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
-.pvs-btn {
+::deep .pvs-btn {
     padding: 0.45rem 1.1rem;
     border-radius: 8px;
     border: 1px solid var(--color-border);
@@ -670,7 +670,7 @@
 }
 
 /* Pointer-origin radial ripple glow */
-.pvs-btn::before,
+::deep .pvs-btn::before,
 .pvs-start ::deep .gps-intro-ok::before,
 .pvs-start ::deep .app-seg__btn::before {
     content: "";
@@ -683,7 +683,7 @@
 }
 
 /* Hover light-sweep sheen */
-.pvs-btn::after,
+::deep .pvs-btn::after,
 .pvs-start ::deep .gps-intro-ok::after {
     content: "";
     position: absolute;
@@ -697,38 +697,38 @@
     pointer-events: none;
 }
 
-.pvs-btn:hover::before,
+::deep .pvs-btn:hover::before,
 .pvs-start ::deep .gps-intro-ok:hover::before,
 .pvs-start ::deep .app-seg__btn:hover::before {
     opacity: 1;
 }
 
-.pvs-btn:hover::after,
+::deep .pvs-btn:hover::after,
 .pvs-start ::deep .gps-intro-ok:hover::after {
     left: 145%;
 }
 
-.pvs-btn:hover { background: var(--color-border); }
+::deep .pvs-btn:hover { background: var(--color-border); }
 
-.pvs-btn:active,
+::deep .pvs-btn:active,
 .pvs-start ::deep .gps-intro-ok:active,
 .pvs-start ::deep .app-seg__btn:active {
     transform: perspective(520px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg)) scale(0.96);
 }
 
-.pvs-btn:focus-visible {
+::deep .pvs-btn:focus-visible {
     outline: 2px solid var(--accent-ring);
     outline-offset: 2px;
 }
 
-.pvs-btn-primary {
+::deep .pvs-btn-primary {
     background: var(--color-accent-solid);
     border-color: var(--color-accent-solid);
     color: var(--color-accent-contrast);
     box-shadow: 0 4px 14px color-mix(in srgb, var(--color-accent-solid) 38%, transparent);
 }
 
-.pvs-btn-primary:hover { filter: brightness(1.1); }
+::deep .pvs-btn-primary:hover { filter: brightness(1.1); }
 
 /* ── Engine-injected nodes ───────────────────────────────────────────────
    Created by the JS engine inside the canvas host, so they carry no scope attribute and
@@ -928,7 +928,7 @@
 /* Coarse pointers: the strip's fullscreen button (30px) and the touch pause button (42px)
    are the two touch controls under the 44px floor. */
 @media (pointer: coarse) {
-    .pvs-hud-btn { width: 44px; height: 44px; }
+    ::deep .pvs-hud-btn { width: 44px; height: 44px; }
     .pvs-canvas-host ::deep .pvs-tbtn-pause { width: 44px; height: 44px; }
 }
 
@@ -956,12 +956,12 @@
     .pvs-odo-digit::before,
     .pvs-hud-score,
     .pvs-canvas-host ::deep canvas,
-    .pvs-btn,
-    .pvs-hud-btn,
+    ::deep .pvs-btn,
+    ::deep .pvs-hud-btn,
     .pvs-tile,
     .pvs-start ::deep .gps-intro-ok,
     .pvs-start ::deep .app-seg__btn,
-    .pvs-btn::after,
+    ::deep .pvs-btn::after,
     .pvs-start ::deep .gps-intro-ok::after {
         transition: none;
         transform: none;

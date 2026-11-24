@@ -56,11 +56,11 @@
 <div class="pocabinet-results__actions">
     @if (OnRaceAgain.HasDelegate)
     {
-        <button type="button" class="app-btn app-btn--primary pocabinet-results__again" @onclick="() => OnRaceAgain.InvokeAsync()">@RaceAgainLabel</button>
+        <PoButton class="app-btn app-btn--primary pocabinet-results__again" Click="() => OnRaceAgain.InvokeAsync()">@RaceAgainLabel</PoButton>
     }
-    <button type="button" class="app-btn app-btn--ghost pocabinet-results__more-toggle"
+    <PoButton class="app-btn app-btn--ghost pocabinet-results__more-toggle"
             aria-expanded="@(_details ? "true" : "false")" aria-controls="pocabinet-results-details"
-            @onclick="() => _details = !_details">@(_details ? "Hide race details" : "Race details")</button>
+            Click="() => _details = !_details">@(_details ? "Hide race details" : "Race details")</PoButton>
 </div>
 <div id="pocabinet-results-details" class="pocabinet-results__details @(_details ? "pocabinet-results__details--open" : null)"
      inert="@(!_details)">

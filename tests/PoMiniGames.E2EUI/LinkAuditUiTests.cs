@@ -38,6 +38,11 @@ namespace PoMiniGames.E2EUI;
 public class LinkAuditUiTests
 {
     private const double MaxLayoutShift = 0.25;
+
+    // Loads wait for the `load` event, then for the page's own readiness signal (a home card, the start card, the
+    // route's path), never for network idle: game pages stream video, models and audio on and off for as long as
+    // they are open, so "500 ms without a request" may never come (v4 audit 2026-11-24: /pofighter/arcade timed
+    // out after 60 s on a busy machine).
     private const int SettleMs = 1500;
 
     /// <summary>The desktop pass's viewport: a 1280×720 laptop, the smallest common one.</summary>
@@ -196,7 +201,7 @@ public class LinkAuditUiTests
 
         await page.GotoAsync($"{_fixture.ServerAddress}", new PageGotoOptions
         {
-            WaitUntil = WaitUntilState.NetworkIdle,
+            WaitUntil = WaitUntilState.Load,
             Timeout = 60_000,
         });
         await page.Locator(".home-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
@@ -219,7 +224,7 @@ public class LinkAuditUiTests
                 // re-installed by the init script, so shifts count from that load.
                 await page.GotoAsync(new Uri(origin, route.TrimStart('/')).ToString(), new PageGotoOptions
                 {
-                    WaitUntil = WaitUntilState.NetworkIdle,
+                    WaitUntil = WaitUntilState.Load,
                     Timeout = 60_000,
                 });
                 start = 0;
@@ -270,7 +275,7 @@ public class LinkAuditUiTests
             current = route;
             await page.GotoAsync(new Uri(origin, route.TrimStart('/')).ToString(), new PageGotoOptions
             {
-                WaitUntil = WaitUntilState.NetworkIdle,
+                WaitUntil = WaitUntilState.Load,
                 Timeout = 60_000,
             });
             try

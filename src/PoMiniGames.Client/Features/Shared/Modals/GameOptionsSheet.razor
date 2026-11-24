@@ -16,16 +16,16 @@
     dialog left in the top layer across a route change reads as a frozen page.
 *@
 
-<button type="button" class="game-opts-gear" aria-label="@Heading" title="@Heading"
-        aria-haspopup="dialog" @onclick="OpenAsync">
+<PoButton class="game-opts-gear" aria-label="@Heading" title="@Heading"
+        aria-haspopup="dialog" Click="OpenAsync">
     @* Sliders, not a gear: the app's Settings gear sits beside this one in the top bar. *@
     <span class="material-symbols-outlined" aria-hidden="true">tune</span>
-</button>
+</PoButton>
 
 <dialog @ref="_dialog" class="game-opts-sheet" closedby="any" aria-labelledby="game-opts-title">
     <header class="game-opts-head">
         <h2 id="game-opts-title" class="game-opts-title">@Heading</h2>
-        <button type="button" class="game-opts-close" aria-label="Close game options" @onclick="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+        <PoButton class="game-opts-close" aria-label="Close game options" Click="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
     </header>
     <div class="game-opts-body">
         @ChildContent

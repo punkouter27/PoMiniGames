@@ -86,8 +86,8 @@
                         <h2>@(CanPause ? "Paused" : "Race menu")</h2>
                         @if (!CanPause) { <p class="racer-note">The race keeps running while this is open.</p> }
                         <div class="racer-actions">
-                            <button class="racer-primary" @ref="_resumeButton" @onclick="TogglePauseAsync">Resume</button>
-                            <button class="racer-ghost" @onclick="RestartRaceAsync">Back to start</button>
+                            <PoButton class="racer-primary" @ref="_resumeButton" Click="TogglePauseAsync">Resume</PoButton>
+                            <PoButton class="racer-ghost" Click="RestartRaceAsync">Back to start</PoButton>
                         </div>
                         @if (CanGhost)
                         {

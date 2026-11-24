@@ -45,14 +45,14 @@
 
         @* Audio mute toggle. Persistent via localStorage so a 5-minute museum loop
            at full volume doesn't become a problem on the second run. *@
-        <button type="button" class="kiosk-bar-btn kiosk-bar-btn--mute"
+        <PoButton class="kiosk-bar-btn kiosk-bar-btn--mute"
                 aria-label="@(Settings.Muted ? "Unmute audio" : "Mute audio")"
                 title="@(Settings.Muted ? "Unmute" : "Mute")"
-                @onclick="ToggleMuteAsync"><span class="material-symbols-outlined" aria-hidden="true">@(Settings.Muted ? "volume_off" : "volume_up")</span></button>
+                Click="ToggleMuteAsync"><span class="material-symbols-outlined" aria-hidden="true">@(Settings.Muted ? "volume_off" : "volume_up")</span></PoButton>
 
-        <button type="button" class="kiosk-bar-btn kiosk-bar-btn--exit"
+        <PoButton class="kiosk-bar-btn kiosk-bar-btn--exit"
                 aria-label="Stop watching demos and return home" title="Exit"
-                @onclick="ExitAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                Click="ExitAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
     </div>
 }
 

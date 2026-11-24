@@ -6,11 +6,11 @@
 <div class="cfb-pick">
     <p class="cfb-pick__label" id="cfb-pick-label">Board</p>
     <div class="app-seg" role="radiogroup" aria-labelledby="cfb-pick-label">
-        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(!_is3d ? "true" : "false")"
-                @onclick="() => SelectAsync(false)">2D</button>
-        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(_is3d ? "true" : "false")"
+        <PoButton role="radio" class="app-seg__btn" aria-checked="@(!_is3d ? "true" : "false")"
+                Click="() => SelectAsync(false)">2D</PoButton>
+        <PoButton role="radio" class="app-seg__btn" aria-checked="@(_is3d ? "true" : "false")"
                 title="A 3D board with real lighting. Falls back to 2D when graphics are limited."
-                @onclick="() => SelectAsync(true)">3D</button>
+                Click="() => SelectAsync(true)">3D</PoButton>
     </div>
 </div>
 

@@ -143,9 +143,9 @@
         @if (PlayMode != "demo")
         {
             <div class="cf-touch-controls" role="group" aria-label="Choose a column">
-                <button type="button" aria-label="Previous column" @onclick="() => _touchColumn = Math.Max(0, _touchColumn - 1)" disabled="@(_touchColumn == 0)">◀</button>
-                <button type="button" aria-label="@($"Drop in column {_touchColumn + 1}")" @onclick="() => HandleDrop(_touchColumn)">Drop @(_touchColumn + 1)</button>
-                <button type="button" aria-label="Next column" @onclick="() => _touchColumn = Math.Min(ConnectFiveBoard.Cols - 1, _touchColumn + 1)" disabled="@(_touchColumn == ConnectFiveBoard.Cols - 1)">▶</button>
+                <PoButton aria-label="Previous column" Click="() => _touchColumn = Math.Max(0, _touchColumn - 1)" Disabled="@(_touchColumn == 0)">◀</PoButton>
+                <PoButton aria-label="@($"Drop in column {_touchColumn + 1}")" Click="() => HandleDrop(_touchColumn)">Drop @(_touchColumn + 1)</PoButton>
+                <PoButton aria-label="Next column" Click="() => _touchColumn = Math.Min(ConnectFiveBoard.Cols - 1, _touchColumn + 1)" Disabled="@(_touchColumn == ConnectFiveBoard.Cols - 1)">▶</PoButton>
             </div>
         }
         }

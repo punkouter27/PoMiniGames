@@ -5,14 +5,14 @@
    every other question the page asks. *@
 <aside class="poeco-finder" role="dialog" aria-label="Find a creature or a clan" @onkeydown="OnKey">
     <div class="poeco-finder-head">
-        <input @ref="_input" type="search" class="poeco-finder-input" placeholder="Name or species…" autocomplete="off" spellcheck="false"
-               aria-label="Name or species" value="@_text" @oninput="OnInput" />
-        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close the finder"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+        <PoTextBox @ref="_input" type="search" class="poeco-finder-input" Placeholder="Name or species…" autocomplete="off" spellcheck="false"
+                   aria-label="Name or species" Value="@_text" Immediate="true" ValueChanged="@((string v) => OnInput(new ChangeEventArgs { Value = v }))" />
+        <PoButton class="poeco-icon-btn" Click="OnClose" aria-label="Close the finder"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
     </div>
     <div class="poeco-finder-sorts" role="group" aria-label="Order by">
         @foreach (var (id, label) in Sorts)
         {
-            <button type="button" class="poeco-pill @(_sort == id ? "poeco-pill--on" : "")" aria-pressed="@(_sort == id ? "true" : "false")" @onclick="() => SetSort(id)">@label</button>
+            <PoButton class="@($"poeco-pill {(_sort == id ? "poeco-pill--on" : "")}")" aria-pressed="@(_sort == id ? "true" : "false")" Click="() => SetSort(id)">@label</PoButton>
         }
     </div>
 
@@ -20,21 +20,21 @@
         @foreach (var t in MatchingTribes)
         {
             <li>
-                <button type="button" class="poeco-thought-item" @onclick="() => OnPickTribe.InvokeAsync(t.Id)">
+                <PoButton class="poeco-thought-item" Click="() => OnPickTribe.InvokeAsync(t.Id)">
                     <i class="poeco-species-chip" style="background: @t.BannerColor" aria-hidden="true"></i>
                     <span class="poeco-thought-name">@t.Name</span>
                     <span class="poeco-thought-text">clan · @t.Population people · @t.Tech</span>
-                </button>
+                </PoButton>
             </li>
         }
         @foreach (var r in Results)
         {
             <li>
-                <button type="button" class="poeco-thought-item" @onclick="() => OnPick.InvokeAsync(r)">
+                <PoButton class="poeco-thought-item" Click="() => OnPick.InvokeAsync(r)">
                     <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(r.Species)" aria-hidden="true"></i>
                     <span class="poeco-thought-name">@r.Name@(r.Watched ? " ★" : "")</span>
                     <span class="poeco-thought-text">@Describe(r)</span>
-                </button>
+                </PoButton>
             </li>
         }
         @if (Results.Count == 0 && MatchingTribes.Count == 0)
@@ -62,7 +62,7 @@
     [Parameter] public EventCallback<int> OnPickTribe { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
-    private ElementReference _input;
+    private PoTextBox? _input;
     private string _text = "";
     private string _sort = "oldest";
     private bool _asked;
@@ -74,7 +74,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        try { await _input.FocusAsync(); } catch { /* the panel may already be gone */ }
+        try { if (_input is not null) await _input.Element.FocusAsync(); } catch { /* the panel may already be gone */ }
         await QueryAsync();
     }
 

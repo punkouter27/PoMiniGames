@@ -95,7 +95,7 @@
     transform: translate(var(--sp-shake-x), var(--sp-shake-y));
 }
 
-.sp-btn {
+::deep .sp-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -114,22 +114,22 @@
     transition: background 120ms, border-color 120ms, transform 120ms;
 }
 
-.sp-btn:hover:not(:disabled) {
+::deep .sp-btn:hover:not(:disabled) {
     background: var(--tint-medium);
 }
 
-.sp-btn:active:not(:disabled) {
+::deep .sp-btn:active:not(:disabled) {
     transform: translateY(1px);
 }
 
-.sp-btn:focus-visible,
-.sp-pill:focus-visible,
-.sp-line:focus-visible {
+::deep .sp-btn:focus-visible,
+::deep .sp-pill:focus-visible,
+::deep .sp-line:focus-visible {
     outline: 2px solid var(--accent-ring);
     outline-offset: 2px;
 }
 
-.sp-btn.active {
+::deep .sp-btn.active {
     background: var(--accent-amber);
     border-color: color-mix(in srgb, var(--accent-amber) 85%, white);
     box-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 45%, transparent);
@@ -142,7 +142,7 @@
     white-space: nowrap;
 }
 
-.sp-btn:disabled {
+::deep .sp-btn:disabled {
     opacity: 0.3;
     cursor: default;
 }
@@ -154,7 +154,7 @@
     background: linear-gradient(180deg, transparent, var(--color-border), transparent);
 }
 
-.sp-brush {
+::deep .sp-brush {
     font-size: var(--text-xs);
     font-variant-numeric: tabular-nums;
 }
@@ -167,7 +167,7 @@
     background: var(--accent-amber);
 }
 
-.sp-detonate {
+::deep .sp-detonate {
     font-size: 12px;
     font-weight: 700;
     color: var(--accent-danger-ink);
@@ -199,7 +199,7 @@
 
 /* Under the dock and tray, against the right edge (where the ⋯ button sits);
    the column caps its height, so it scrolls inside itself, never the page. */
-.sand-playground-menu {
+::deep .sand-playground-menu {
     align-self: flex-end;
     flex: 0 1 auto;
     min-height: 0;
@@ -250,8 +250,8 @@
     font-size: var(--text-xs);
 }
 
-.sp-pill,
-.sp-line {
+::deep .sp-pill,
+::deep .sp-line {
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: var(--tint-soft);
@@ -260,11 +260,11 @@
     cursor: pointer;
 }
 
-.sp-pill {
+::deep .sp-pill {
     padding: 4px 8px;
 }
 
-.sp-line {
+::deep .sp-line {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -280,29 +280,29 @@
     white-space: nowrap;
 }
 
-.sp-pill:hover:not(:disabled),
-.sp-line:hover {
+::deep .sp-pill:hover:not(:disabled),
+::deep .sp-line:hover {
     background: var(--tint-medium);
 }
 
-.sp-pill.active,
-.sp-line.active {
+::deep .sp-pill.active,
+::deep .sp-line.active {
     border-color: var(--accent-amber);
     background: color-mix(in srgb, var(--accent-amber) 22%, transparent);
 }
 
-.sp-pill:disabled {
+::deep .sp-pill:disabled {
     opacity: 0.4;
     cursor: default;
 }
 
 /* Tilt-to-wind needs an orientation sensor; a mouse-driven machine has none. */
-.sp-touch-only {
+::deep .sp-touch-only {
     display: none;
 }
 
 @media (pointer: coarse) {
-    .sp-touch-only {
+    ::deep .sp-touch-only {
         display: inline-block;
     }
 }
@@ -332,7 +332,7 @@
     animation: sp-toast 5s ease-out;
 }
 
-.sand-playground-toast .sp-pill {
+.sand-playground-toast ::deep .sp-pill {
     color: #f1f4f9;
     border-color: rgba(255, 255, 255, 0.35);
     background: rgba(255, 255, 255, 0.12);
@@ -372,7 +372,7 @@
         padding: 3px 4px;
     }
 
-    .sp-btn {
+    ::deep .sp-btn {
         min-width: 29px;
         height: 32px;
         padding: 0 3px;
@@ -388,13 +388,13 @@
         padding: 3px 4px;
     }
 
-    .sand-playground-tray .sp-pill {
+    .sand-playground-tray ::deep .sp-pill {
         padding: 4px 6px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .sp-btn,
+    ::deep .sp-btn,
     .sand-playground-dock {
         transition: none;
     }
@@ -426,12 +426,12 @@
    Menu, tray and dock all wrap, so their targets simply grow: on a narrow phone in
    portrait the dock's nine chips take two rows and the tray and menu follow below. */
 @media (pointer: coarse) {
-    .sp-pill,
-    .sp-line {
+    ::deep .sp-pill,
+    ::deep .sp-line {
         min-height: 44px;
     }
 
-    .sp-pill {
+    ::deep .sp-pill {
         min-width: 44px;
     }
 
@@ -439,7 +439,7 @@
         min-height: 44px;
     }
 
-    .sp-btn {
+    ::deep .sp-btn {
         min-width: 44px;
         height: 44px;
     }

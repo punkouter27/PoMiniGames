@@ -144,7 +144,7 @@
                            them (data-active) on touch screens or when the setting forces them on. *@
                         <div id="pocabinetTouch" class="pocabinet-touch" aria-hidden="true">
                             <div class="pocabinet-touch__steer" data-ctl="steer"><span class="pocabinet-touch__knob"></span></div>
-                            <button type="button" class="pocabinet-touch__tilt" data-ctl="tilt-enable" tabindex="-1">Enable tilt</button>
+                            <PoButton class="pocabinet-touch__tilt" data-ctl="tilt-enable" tabindex="-1">Enable tilt</PoButton>
                             <div class="pocabinet-touch__pedals">
                                 <div class="pocabinet-touch__pedal pocabinet-touch__pedal--brake" data-ctl="brake">Brake</div>
                                 <div class="pocabinet-touch__pedal pocabinet-touch__pedal--gas" data-ctl="gas">Gas</div>
@@ -195,18 +195,18 @@
                         <span class="pocabinet-hudbar">
                             @if (Pausable)
                             {
-                                <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
+                                <PoButton class="pocabinet-iconbtn" Click="TogglePauseAsync"
                                         aria-label="@(_paused ? "Resume race" : "Pause race")">
                                     @(_paused ? "▶" : "⏸")
-                                </button>
+                                </PoButton>
                             }
                             @if (IsMultiplayerMode && _phase == Phase.Racing)
                             {
                                 @* Online there is no pause: this is the way out for drivers, wrecks and
                                    spectators. A driver taps twice (the first tap arms it). *@
-                                <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
+                                <PoButton class="pocabinet-iconbtn" Click="LeaveWireRaceAsync"
                                         aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
-                                        title="Leave the race and go back to the lobby">@if (_confirmLeave) { <text>Leave?</text> } else { <span class="material-symbols-outlined" aria-hidden="true">close</span> }</button>
+                                        title="Leave the race and go back to the lobby">@if (_confirmLeave) { <text>Leave?</text> } else { <span class="material-symbols-outlined" aria-hidden="true">close</span> }</PoButton>
                             }
                         </span>
                         @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
@@ -216,8 +216,8 @@
                             @* The race connection is gone for good: say so and offer the ways out. *@
                             <div class="pocabinet-reconnect pocabinet-reconnect--lost" role="alert">
                                 <span>@_connectionLost</span>
-                                <button type="button" class="app-btn app-btn--primary" @onclick="BackToLobbyAsync">Back to lobby</button>
-                                <button type="button" class="app-btn app-btn--ghost" @onclick="QuitOnlineAsync">Quit to menu</button>
+                                <PoButton class="app-btn app-btn--primary" Click="BackToLobbyAsync">Back to lobby</PoButton>
+                                <PoButton class="app-btn app-btn--ghost" Click="QuitOnlineAsync">Quit to menu</PoButton>
                             </div>
                         }
                         else if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
@@ -253,10 +253,10 @@
                                 </dl>
                                 @SectorChips
                                 <div class="pocabinet-pause__actions">
-                                    <button class="app-btn app-btn--primary" @onclick="ResumeRaceAsync">Resume</button>
-                                    <button class="app-btn app-btn--secondary" @onclick="RestartRaceAsync">Restart</button>
-                                    <button class="app-btn app-btn--secondary" @onclick="OpenDrawerAsync">Settings</button>
-                                    <button class="app-btn app-btn--ghost" @onclick="QuitToMenuAsync">Quit to menu</button>
+                                    <PoButton class="app-btn app-btn--primary" Click="ResumeRaceAsync">Resume</PoButton>
+                                    <PoButton class="app-btn app-btn--secondary" Click="RestartRaceAsync">Restart</PoButton>
+                                    <PoButton class="app-btn app-btn--secondary" Click="OpenDrawerAsync">Settings</PoButton>
+                                    <PoButton class="app-btn app-btn--ghost" Click="QuitToMenuAsync">Quit to menu</PoButton>
                                 </div>
                             </div>
                         </GamePauseDialog>
@@ -327,8 +327,8 @@
                     <p class="pocabinet-crash__detail pocabinet-muted">@message</p>
                 }
                 <div class="pocabinet-crash__actions">
-                    <button type="button" class="app-btn app-btn--secondary" @onclick="RetryLiteAsync">Retry with lite graphics</button>
-                    <button type="button" class="app-btn app-btn--ghost" @onclick="LeaveCrashAsync">@(IsMultiplayerMode ? "Back to lobby" : "Back")</button>
+                    <PoButton class="app-btn app-btn--secondary" Click="RetryLiteAsync">Retry with lite graphics</PoButton>
+                    <PoButton class="app-btn app-btn--ghost" Click="LeaveCrashAsync">@(IsMultiplayerMode ? "Back to lobby" : "Back")</PoButton>
                 </div>
             </ErrorState>
         </div>

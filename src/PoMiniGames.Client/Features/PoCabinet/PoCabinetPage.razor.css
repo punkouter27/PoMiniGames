@@ -129,7 +129,7 @@
     z-index: 6;
 }
 
-.pocabinet-hudbar .pocabinet-iconbtn {
+.pocabinet-hudbar ::deep .pocabinet-iconbtn {
     color: var(--pocabinet-glass-text);
     background: var(--pocabinet-glass-fill), rgba(6, 10, 22, 0.5);
     border-color: var(--pocabinet-glass-edge);
@@ -138,12 +138,12 @@
     transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-.pocabinet-hudbar .pocabinet-iconbtn:hover {
+.pocabinet-hudbar ::deep .pocabinet-iconbtn:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
-.pocabinet-hudbar .pocabinet-iconbtn:active {
+.pocabinet-hudbar ::deep .pocabinet-iconbtn:active {
     transform: scale(0.93);
 }
 
@@ -590,7 +590,7 @@
     outline-offset: -2px;
 }
 
-.pocabinet-iconbtn {
+::deep .pocabinet-iconbtn {
     min-width: 2.25rem;
     min-height: 2.25rem;
     background: transparent;
@@ -602,23 +602,23 @@
     font: inherit;
 }
 
-.pocabinet-iconbtn:focus-visible {
+::deep .pocabinet-iconbtn:focus-visible {
     outline: 2px solid var(--color-focus, currentColor);
     outline-offset: 2px;
 }
 
 /* Buttons answer the finger: a hover lift on a mouse, a press that sinks. */
-.pocabinet-iconbtn,
-.pocabinet-root .app-btn {
+::deep .pocabinet-iconbtn,
+.pocabinet-root ::deep .app-btn {
     transition: transform 0.12s ease, border-color 0.15s ease;
 }
 
 @media (hover: hover) {
-    .pocabinet-iconbtn:hover { border-color: var(--color-primary); transform: translateY(-1px); }
+    ::deep .pocabinet-iconbtn:hover { border-color: var(--color-primary); transform: translateY(-1px); }
 }
 
-.pocabinet-iconbtn:active,
-.pocabinet-root .app-btn:active { transform: scale(0.95); }
+::deep .pocabinet-iconbtn:active,
+.pocabinet-root ::deep .app-btn:active { transform: scale(0.95); }
 
 /* ─── Pause overlay ──────────────────────────────────────────────────────── */
 /* A modal <dialog> (showModal): the browser centres it in the top layer and makes the
@@ -777,7 +777,7 @@
     visibility: hidden;
 }
 
-.pocabinet-touch__tilt {
+::deep .pocabinet-touch__tilt {
     display: none;
     pointer-events: auto;
     align-self: center;
@@ -789,7 +789,7 @@
     font: inherit;
 }
 
-.pocabinet-touch[data-steer="tilt"]:not([data-tilt="on"]) .pocabinet-touch__tilt {
+.pocabinet-touch[data-steer="tilt"]:not([data-tilt="on"]) ::deep .pocabinet-touch__tilt {
     display: block;
 }
 
@@ -1203,10 +1203,10 @@
 }
 
 @media (pointer: coarse) {
-    .pocabinet-iconbtn {
+    ::deep .pocabinet-iconbtn {
         min-height: 44px;
     }
-    .pocabinet-iconbtn { min-width: 44px; }
+    ::deep .pocabinet-iconbtn { min-width: 44px; }
 }
 
 /* ─── Reduced motion ──────────────────────────────────────────────────────
@@ -1219,9 +1219,9 @@
         animation: none !important;
         transition: none !important;
     }
-    .pocabinet-iconbtn:hover,
-    .pocabinet-iconbtn:active,
-    .pocabinet-root .app-btn:active { transform: none; }
+    ::deep .pocabinet-iconbtn:hover,
+    ::deep .pocabinet-iconbtn:active,
+    .pocabinet-root ::deep .app-btn:active { transform: none; }
 }
 
 /* Track limits: the lap in progress will not count. Under the place badge, amber, not alarming. */

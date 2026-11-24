@@ -99,7 +99,7 @@
 
 /* The shared segmented control is 32px tall on a fine pointer; 40px keeps it a
    comfortable target everywhere (coarse pointers already get 44px from app.css). */
-.prf-band-seg .app-seg__btn { min-height: 44px; min-width: 4.5rem; }
+.prf-band-seg ::deep .app-seg__btn { min-height: 44px; min-width: 4.5rem; }
 
 .prf-chips {
     display: grid;
@@ -648,7 +648,7 @@
 .prf-h2h-w { color: var(--accent-success); font-weight: 600; }
 .prf-h2h-l { color: var(--accent-danger); font-weight: 600; }
 .prf-h2h-d { color: var(--color-text-secondary); }
-.prf-h2h-invite { min-height: 40px; }
+::deep .prf-h2h-invite { min-height: 40px; }
 
 /* A thumb needs 44px (Profile B): "Watch again" / "Play again" were 23px tall. */
 @media (pointer: coarse) {

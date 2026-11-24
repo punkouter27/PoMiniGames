@@ -518,9 +518,12 @@ public partial class StorageService
         // Storage is down: the write does not land. The sanitized entry still goes back so
         // the endpoint's response shape is unchanged, and the client's PendingScoreStore
         // holds the score in localStorage until ScoreSyncService can flush it for real.
-        if (!IsStorageAvailable())
+        // A score the player must keep (requirePersistence) still gets one real write while the breaker is open:
+        // the write is its own probe. The breaker trips on one transient failure (a timeout on a busy machine) and
+        // its throttled re-probe can keep failing for a while, which turned every required submit in that window
+        // into a 503 although storage was answering again (E2E UI, PoRacer score POST, v4 audit 2026-11-24).
+        if (!requirePersistence && !IsStorageAvailable())
         {
-            if (requirePersistence) throw new IOException("Score storage is unavailable.");
             return sanitized;
         }
 
@@ -537,6 +540,7 @@ public partial class StorageService
         try
         {
             await UpsertHighScoreRowAsync(descriptor, effectivePartition, rowKey, fields);
+            MarkAvailable();
         }
         catch (Exception ex)
         {

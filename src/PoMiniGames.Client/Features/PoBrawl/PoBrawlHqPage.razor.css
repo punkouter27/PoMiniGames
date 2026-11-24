@@ -97,9 +97,13 @@
 
 .hq ::deep .hq-tabs .rz-tabview-panels {
     padding: 12px;
-    /* Room for the play strip, the GameShell header and the tab strip; a long board
-       scrolls inside its panel rather than pushing the whole page. */
-    max-height: calc(100dvh - 14rem);
+}
+
+/* Room for the play strip, the GameShell header and the tab strip; a long board scrolls inside its panel rather
+   than pushing the whole page. The scroller is our own region with tabindex="0" so a keyboard can scroll it
+   (axe scrollable-region-focusable; Radzen's .rz-tabview-panels takes no tabindex). */
+.hq-panel {
+    max-height: calc(100dvh - 14rem - 24px);
     overflow-y: auto;
 }
 
@@ -362,12 +366,12 @@
     gap: 8px;
 }
 
-.hq-keep-actions .app-btn {
+.hq-keep-actions ::deep .app-btn {
     min-height: 40px;
 }
 
 @media (pointer: coarse) {
-    .hq-keep-actions .app-btn {
+    .hq-keep-actions ::deep .app-btn {
         min-height: 44px;
     }
 }

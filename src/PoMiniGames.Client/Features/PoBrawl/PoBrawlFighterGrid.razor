@@ -18,13 +18,13 @@
         var p1 = idx == P1Index;
         var p2 = idx == P2Index;
         <li role="none">
-            <button type="button"
+            <PoButton
                     role="radio"
                     aria-checked="@(p1 || p2 ? "true" : "false")"
-                    class="pb-select-tile @(p1 ? "pb-select-tile--p1" : "") @(p2 ? "pb-select-tile--p2" : "")"
+                    class="@($"pb-select-tile {(p1 ? "pb-select-tile--p1" : "")} {(p2 ? "pb-select-tile--p2" : "")}")"
                     aria-label="@(f.Name + (p1 ? $", {P1Name}" : "") + (p2 ? ", Player 2" : ""))"
-                    disabled="@Disabled"
-                    @onclick="() => OnPick.InvokeAsync(idx)">
+                    Disabled="@Disabled"
+                    Click="() => OnPick.InvokeAsync(idx)">
                 <span class="pb-select-portrait" aria-hidden="true" data-fighter="@f.Id" data-index="@idx"></span>
                 @if (Face is not null)
                 {
@@ -52,7 +52,7 @@
                 {
                     <span class="pb-select-mark pb-select-mark--p2" aria-hidden="true">P2</span>
                 }
-            </button>
+            </PoButton>
         </li>
     }
     @for (var i = 0; i < ByeSlots; i++)

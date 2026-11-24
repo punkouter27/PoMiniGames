@@ -673,7 +673,7 @@
     color: var(--pb-card-muted);
 }
 
-.pb-net-btn {
+::deep .pb-net-btn {
     margin-top: 0.5rem;
     padding: 0.5rem 1rem;
     border-radius: var(--radius-pill);
@@ -683,7 +683,7 @@
     font-weight: 600;
 }
 
-.pb-net-btn:focus-visible {
+::deep .pb-net-btn:focus-visible {
     outline: 2px solid var(--pb-btn-ring);
     outline-offset: 2px;
 }
@@ -696,7 +696,7 @@
     gap: 8px;
 }
 
-button.pb-net-btn {
+::deep button.pb-net-btn {
     border: 0;
     font: inherit;
     font-weight: 600;
@@ -709,7 +709,7 @@ button.pb-net-btn {
 }
 
 /* ── Pause: the touch button under the HUD, and the card over the frozen arena ── */
-.pb-pause-btn {
+::deep .pb-pause-btn {
     align-self: flex-end;
     width: 40px;
     height: 40px;
@@ -727,14 +727,14 @@ button.pb-net-btn {
     touch-action: manipulation;
 }
 
-.pb-pause-btn:focus-visible {
+::deep .pb-pause-btn:focus-visible {
     outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
 
 /* A mouse and keyboard have Escape and P. */
 @media (hover: hover) and (pointer: fine) {
-    .pb-pause-btn {
+    ::deep .pb-pause-btn {
         display: none;
     }
 }
@@ -771,7 +771,7 @@ button.pb-net-btn {
     gap: 6px;
 }
 
-.pb-pause-act {
+::deep .pb-pause-act {
     min-height: 42px;
     font: inherit;
     font-size: 0.95rem;
@@ -783,16 +783,16 @@ button.pb-net-btn {
     cursor: pointer;
 }
 
-.pb-pause-act:hover {
+::deep .pb-pause-act:hover {
     border-color: rgba(255, 209, 102, 0.6);
 }
 
-.pb-pause-act:focus-visible {
+::deep .pb-pause-act:focus-visible {
     outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
 
-.pb-pause-act--go {
+::deep .pb-pause-act--go {
     border-color: var(--pb-gold);
     background: var(--pb-gold);
     color: var(--pb-versus-ink);
@@ -1051,7 +1051,7 @@ button.pb-net-btn {
 
 /* ── Training bar (floats over the arena) ───────────────────────────── */
 
-.pb-seg {
+::deep .pb-seg {
     font: inherit;
     font-size: 0.78rem;
     line-height: 1;
@@ -1064,22 +1064,22 @@ button.pb-net-btn {
     backdrop-filter: blur(var(--gfx-blur, 6px));
 }
 
-.pb-seg:hover {
+::deep .pb-seg:hover {
     border-color: rgba(255, 209, 102, 0.6);
 }
 
-.pb-seg:focus-visible {
+::deep .pb-seg:focus-visible {
     outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
 
 /* The training bar's exit: reads as "go". */
-.pb-seg--ladder {
+::deep .pb-seg--ladder {
     border-color: rgba(34, 197, 94, 0.55);
     color: var(--pb-go-ink);
 }
 
-.pb-seg--ladder:hover {
+::deep .pb-seg--ladder:hover {
     border-color: var(--pb-go);
 }
 
@@ -1179,7 +1179,7 @@ button.pb-net-btn {
     border: 1px solid var(--color-border);
 }
 
-.pb-tab {
+::deep .pb-tab {
     flex: 1;
     min-height: 36px;
     font: inherit;
@@ -1192,22 +1192,22 @@ button.pb-net-btn {
     cursor: pointer;
 }
 
-.pb-tab:hover {
+::deep .pb-tab:hover {
     color: var(--color-text-primary);
 }
 
-.pb-tab[aria-selected="true"] {
+::deep .pb-tab[aria-selected="true"] {
     background: var(--color-surface);
     color: var(--color-text-primary);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 
-.pb-tab:focus-visible {
+::deep .pb-tab:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
 }
 
-.pb-tabpanel {
+::deep .pb-tabpanel {
     text-align: left;
 }
 
@@ -1353,7 +1353,7 @@ button.pb-net-btn {
 }
 
 /* The glass: shared by the side cards and the tiles. */
-.pb-select-side,
+::deep .pb-select-side,
 .pb-select-tile {
     position: relative;
     border-radius: var(--radius-md);
@@ -1366,7 +1366,7 @@ button.pb-net-btn {
     box-shadow: var(--glass-inner), 0 4px 14px rgba(0, 0, 0, 0.16);
 }
 
-.pb-select-side::before,
+::deep .pb-select-side::before,
 .pb-select-tile::before {
     content: "";
     position: absolute;
@@ -1383,7 +1383,7 @@ button.pb-net-btn {
 
 /* Glare above the render: the pointer's specular (--mx/--my from selectStage.js) and a
    light sweep across the pane on hover. */
-.pb-select-side::after,
+::deep .pb-select-side::after,
 .pb-select-tile::after {
     content: "";
     position: absolute;
@@ -1401,7 +1401,7 @@ button.pb-net-btn {
     transition: opacity 0.2s ease, background-position 0s;
 }
 
-.pb-select-side:hover::after,
+::deep .pb-select-side:hover::after,
 .pb-select-tile:hover::after,
 .pb-select-tile:focus-visible::after {
     opacity: 1;
@@ -1409,20 +1409,20 @@ button.pb-net-btn {
     transition: opacity 0.2s ease, background-position 0.7s ease-out;
 }
 
-:root[data-motion='reduce'] .pb-select-side::after,
+:root[data-motion='reduce'] ::deep .pb-select-side::after,
 :root[data-motion='reduce'] .pb-select-tile::after {
     background-image: radial-gradient(circle at var(--mx, 50%) var(--my, 25%), rgba(255, 255, 255, 0.2), transparent 46%);
     transition: none;
 }
 
 @media (prefers-reduced-transparency: reduce) {
-    .pb-select-side::before,
+    ::deep .pb-select-side::before,
     .pb-select-tile::before {
         background: var(--color-surface-hover);
     }
 }
 
-.pb-select-side:focus-visible,
+::deep .pb-select-side:focus-visible,
 .pb-select-tile:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
@@ -1437,7 +1437,7 @@ button.pb-net-btn {
 }
 
 /* ── Side cards: the lock toggles, and the hero render ── */
-.pb-select-side {
+::deep .pb-select-side {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1449,15 +1449,15 @@ button.pb-net-btn {
 .pb-select-side--p1 { border-color: var(--accent-success); }
 .pb-select-side--p2 { border-color: var(--accent-danger, var(--accent-warning)); }
 
-.pb-select-side--locked::before {
+::deep .pb-select-side--locked::before {
     background:
         linear-gradient(160deg, color-mix(in srgb, var(--color-text-primary) 8%, transparent), transparent 55%),
         var(--accent-success-soft),
         color-mix(in srgb, var(--color-surface-hover) 72%, transparent);
 }
 
-.pb-select-side--p1.pb-select-side--locked { box-shadow: var(--glass-inner), 0 0 18px color-mix(in srgb, var(--accent-success) 45%, transparent); }
-.pb-select-side--p2.pb-select-side--locked { box-shadow: var(--glass-inner), 0 0 18px color-mix(in srgb, var(--accent-danger, var(--accent-warning)) 45%, transparent); }
+::deep .pb-select-side--p1.pb-select-side--locked { box-shadow: var(--glass-inner), 0 0 18px color-mix(in srgb, var(--accent-success) 45%, transparent); }
+::deep .pb-select-side--p2.pb-select-side--locked { box-shadow: var(--glass-inner), 0 0 18px color-mix(in srgb, var(--accent-danger, var(--accent-warning)) 45%, transparent); }
 
 .pb-select-who {
     font-size: var(--text-xs);
@@ -1660,7 +1660,7 @@ button.pb-net-btn {
     background: linear-gradient(to top, color-mix(in srgb, var(--color-surface) 90%, transparent) 50%, transparent);
 }
 
-:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) ::deep .pb-select-side {
     justify-content: space-between;
     min-height: 136px;
     padding: 0;
@@ -1693,7 +1693,7 @@ button.pb-net-btn {
         min-height: 68px;
     }
 
-    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
+    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) ::deep .pb-select-side {
         min-height: 116px;
     }
 
@@ -1720,7 +1720,7 @@ button.pb-net-btn {
         min-height: 44px;
     }
 
-    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
+    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) ::deep .pb-select-side {
         min-height: 96px;
     }
 

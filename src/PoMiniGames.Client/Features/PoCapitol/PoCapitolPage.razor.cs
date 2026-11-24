@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using PoMiniGamesClient.Features.Shared;
 using PoMiniGamesClient.Models;
 using PoMiniGames.Shared.Games;
 using Radzen;
@@ -84,7 +85,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     private string? _listening, _swapped;
     // The longest wait seen for each order since it was last ready: the cooldown sweep's 100%.
     private readonly Dictionary<string, int> _orderMax = [];
-    private readonly ElementReference[] _roleRefs = new ElementReference[4];
+    private readonly PoButton?[] _roleRefs = new PoButton?[4];
 
     /// <summary>The start card's role cards: engine value, label, Material Symbols icon.</summary>
     private static readonly (string Value, string Label, string Icon)[] Roles =
@@ -400,7 +401,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         _role = Roles[next].Value;
         StateHasChanged();
         await Task.Yield();
-        try { await _roleRefs[next].FocusAsync(); }
+        try { if (_roleRefs[next] is { } role) await role.Element.FocusAsync(); }
         catch (InvalidOperationException) { /* not rendered yet */ }
     }
 

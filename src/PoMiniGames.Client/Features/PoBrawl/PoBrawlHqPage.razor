@@ -36,147 +36,157 @@
             <RadzenTabs @bind-SelectedIndex="_tab" AriaLabel="Brawl HQ" class="hq-tabs">
                 <Tabs>
                     <RadzenTabsItem Text="Ladder">
-                        <dl class="hq-stats" aria-label="Your Brawl record">
-                            <div><dt>Ladder</dt><dd>@_ladder<small>/@PoBrawlRoster.Count</small></dd></div>
-                            <div><dt>Elo</dt><dd>@_rating.Elo</dd></div>
-                            <div><dt>Fastest KO</dt><dd>@(_bestKo > 0 ? $"{_bestKo:0.00}s" : "—")</dd></div>
-                            <div><dt>Record</dt><dd>@_rating.Wins<small>–@_rating.Losses</small></dd></div>
-                            <div><dt>Clears</dt><dd>@_clears</dd></div>
-                            <div><dt>Cup titles</dt><dd>@_titles.Values.Sum()</dd></div>
-                        </dl>
-                        @* A stamp per president beaten on the ladder, in ladder order. *@
-                        <h2 class="hq-sub">Presidents beaten <small>@_beaten.Count of @PoBrawlRoster.Count</small></h2>
-                        <ul class="hq-stamps" aria-label="Presidents beaten on the ladder">
-                            @foreach (var f in PoBrawlRoster.Fighters)
-                            {
-                                var done = _beaten.Contains(f.Id);
-                                <li class="hq-stamp @(done ? "hq-stamp--on" : "")" aria-label="@f.Name: @(done ? "beaten" : "not beaten yet")">
-                                    <span aria-hidden="true">@(done ? "✔" : "·")</span> @f.Name
-                                </li>
-                            }
-                        </ul>
-                        @* The feats: how the fights were won (js/pobrawl/feats.js). Earned ones first. *@
-                        <h2 class="hq-sub">Feats <small>@_feats.Count of @PoBrawlFeats.All.Count</small></h2>
-                        <ul class="hq-feats" aria-label="Brawl feats">
-                            @foreach (var feat in PoBrawlFeats.All.OrderByDescending(x => _feats.ContainsKey(x.Id)))
-                            {
-                                var n = _feats.GetValueOrDefault(feat.Id);
-                                <li class="hq-feat @(n > 0 ? "hq-feat--on" : "")">
-                                    <span class="hq-feat-icon" aria-hidden="true">@feat.Icon</span>
-                                    <span class="hq-feat-text">
-                                        <b>@feat.Title</b>@if (n > 1) { <small> ×@n</small> }
-                                        <span class="hq-feat-hint">@(n > 0 ? "Earned. " : "")@feat.Hint</span>
-                                    </span>
-                                </li>
-                            }
-                        </ul>
+                        <div class="hq-panel" tabindex="0" role="region" aria-label="Ladder">
+                            <dl class="hq-stats" aria-label="Your Brawl record">
+                                <div><dt>Ladder</dt><dd>@_ladder<small>/@PoBrawlRoster.Count</small></dd></div>
+                                <div><dt>Elo</dt><dd>@_rating.Elo</dd></div>
+                                <div><dt>Fastest KO</dt><dd>@(_bestKo > 0 ? $"{_bestKo:0.00}s" : "—")</dd></div>
+                                <div><dt>Record</dt><dd>@_rating.Wins<small>–@_rating.Losses</small></dd></div>
+                                <div><dt>Clears</dt><dd>@_clears</dd></div>
+                                <div><dt>Cup titles</dt><dd>@_titles.Values.Sum()</dd></div>
+                            </dl>
+                            @* A stamp per president beaten on the ladder, in ladder order. *@
+                            <h2 class="hq-sub">Presidents beaten <small>@_beaten.Count of @PoBrawlRoster.Count</small></h2>
+                            <ul class="hq-stamps" aria-label="Presidents beaten on the ladder">
+                                @foreach (var f in PoBrawlRoster.Fighters)
+                                {
+                                    var done = _beaten.Contains(f.Id);
+                                    <li class="hq-stamp @(done ? "hq-stamp--on" : "")" aria-label="@f.Name: @(done ? "beaten" : "not beaten yet")">
+                                        <span aria-hidden="true">@(done ? "✔" : "·")</span> @f.Name
+                                    </li>
+                                }
+                            </ul>
+                            @* The feats: how the fights were won (js/pobrawl/feats.js). Earned ones first. *@
+                            <h2 class="hq-sub">Feats <small>@_feats.Count of @PoBrawlFeats.All.Count</small></h2>
+                            <ul class="hq-feats" aria-label="Brawl feats">
+                                @foreach (var feat in PoBrawlFeats.All.OrderByDescending(x => _feats.ContainsKey(x.Id)))
+                                {
+                                    var n = _feats.GetValueOrDefault(feat.Id);
+                                    <li class="hq-feat @(n > 0 ? "hq-feat--on" : "")">
+                                        <span class="hq-feat-icon" aria-hidden="true">@feat.Icon</span>
+                                        <span class="hq-feat-text">
+                                            <b>@feat.Title</b>@if (n > 1) { <small> ×@n</small> }
+                                            <span class="hq-feat-hint">@(n > 0 ? "Earned. " : "")@feat.Hint</span>
+                                        </span>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Map">
-                        <div class="hq-map">
-                            <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
+                        <div class="hq-panel" tabindex="0" role="region" aria-label="Map">
+                            <div class="hq-map">
+                                <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
+                            </div>
                         </div>
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Boards">
-                        <section class="hq-boards" aria-label="Boards">
-                            <RadzenSelectBar TValue="string" @bind-Value="_board" Size="ButtonSize.Medium" class="hq-select" aria-label="Board">
-                                <Items>
-                                    <RadzenSelectBarItem Text="Ladder" Value="@("pobrawl")" />
-                                    <RadzenSelectBarItem Text="Fastest KO" Value="@("pobrawlko")" />
-                                    <RadzenSelectBarItem Text="Fighters" Value="@("pobrawldemo")" />
-                                </Items>
-                            </RadzenSelectBar>
-                            <p class="hq-board-note">@BoardNote</p>
+                        <div class="hq-panel" tabindex="0" role="region" aria-label="Boards">
+                            <section class="hq-boards" aria-label="Boards">
+                                <RadzenSelectBar TValue="string" @bind-Value="_board" Size="ButtonSize.Medium" class="hq-select" aria-label="Board">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Ladder" Value="@("pobrawl")" />
+                                        <RadzenSelectBarItem Text="Fastest KO" Value="@("pobrawlko")" />
+                                        <RadzenSelectBarItem Text="Fighters" Value="@("pobrawldemo")" />
+                                    </Items>
+                                </RadzenSelectBar>
+                                <p class="hq-board-note">@BoardNote</p>
 
-                            @if (!_boardsLoaded)
-                            {
-                                <LoadingState Label="Loading the boards…" />
-                            }
-                            else if (Rows.Count == 0)
-                            {
-                                <EmptyState Title="Nobody is on this board yet" />
-                            }
-                            else if (_board == "pobrawldemo")
-                            {
-                                @* The fighter board ranks presidents, not players: a chart reads it better. *@
-                                <RadzenChart class="hq-chart" Style="@($"height: {Math.Max(220, Rows.Count * 26 + 40)}px")">
-                                    <RadzenBarSeries Data="@Rows" CategoryProperty="Name" ValueProperty="Value" Title="Elo" Fill="#6366f1">
-                                        <RadzenSeriesDataLabels Visible="true" />
-                                    </RadzenBarSeries>
-                                    <RadzenValueAxis Min="@AxisMin">
-                                        <RadzenGridLines Visible="true" />
-                                    </RadzenValueAxis>
-                                    <RadzenCategoryAxis />
-                                    <RadzenLegend Visible="false" />
-                                </RadzenChart>
-                            }
-                            else
-                            {
-                                <RadzenDataGrid Data="@Rows" TItem="BoardRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false"
-                                                RowRender="@MarkMe" class="hq-grid-table">
-                                    <Columns>
-                                        <RadzenDataGridColumn TItem="BoardRow" Title="#" Width="52px">
-                                            <Template Context="r">@r.Rank</Template>
-                                        </RadzenDataGridColumn>
-                                        <RadzenDataGridColumn TItem="BoardRow" Title="Player">
-                                            <Template Context="r">@r.Name@(r.Me ? " (you)" : "")</Template>
-                                        </RadzenDataGridColumn>
-                                        <RadzenDataGridColumn TItem="BoardRow" Title="@Unit" Width="110px" TextAlign="TextAlign.Right">
-                                            <Template Context="r"><strong>@r.Display</strong></Template>
-                                        </RadzenDataGridColumn>
-                                    </Columns>
-                                </RadzenDataGrid>
-                            }
-                        </section>
+                                @if (!_boardsLoaded)
+                                {
+                                    <LoadingState Label="Loading the boards…" />
+                                }
+                                else if (Rows.Count == 0)
+                                {
+                                    <EmptyState Title="Nobody is on this board yet" />
+                                }
+                                else if (_board == "pobrawldemo")
+                                {
+                                    @* The fighter board ranks presidents, not players: a chart reads it better. *@
+                                    <RadzenChart class="hq-chart" Style="@($"height: {Math.Max(220, Rows.Count * 26 + 40)}px")">
+                                        <RadzenBarSeries Data="@Rows" CategoryProperty="Name" ValueProperty="Value" Title="Elo" Fill="#6366f1">
+                                            <RadzenSeriesDataLabels Visible="true" />
+                                        </RadzenBarSeries>
+                                        <RadzenValueAxis Min="@AxisMin">
+                                            <RadzenGridLines Visible="true" />
+                                        </RadzenValueAxis>
+                                        <RadzenCategoryAxis />
+                                        <RadzenLegend Visible="false" />
+                                    </RadzenChart>
+                                }
+                                else
+                                {
+                                    <RadzenDataGrid Data="@Rows" TItem="BoardRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false"
+                                                    RowRender="@MarkMe" class="hq-grid-table">
+                                        <Columns>
+                                            <RadzenDataGridColumn TItem="BoardRow" Title="#" Width="52px">
+                                                <Template Context="r">@r.Rank</Template>
+                                            </RadzenDataGridColumn>
+                                            <RadzenDataGridColumn TItem="BoardRow" Title="Player">
+                                                <Template Context="r">@r.Name@(r.Me ? " (you)" : "")</Template>
+                                            </RadzenDataGridColumn>
+                                            <RadzenDataGridColumn TItem="BoardRow" Title="@Unit" Width="110px" TextAlign="TextAlign.Right">
+                                                <Template Context="r"><strong>@r.Display</strong></Template>
+                                            </RadzenDataGridColumn>
+                                        </Columns>
+                                    </RadzenDataGrid>
+                                }
+                            </section>
+                        </div>
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Titles">
-                        <p class="hq-board-note">Cups won in this browser.</p>
-                        @if (_titles.Count == 0)
-                        {
-                            <EmptyState Title="No Cup won in this browser yet"><a href="/pobrawl/demo">Watch the Cup</a></EmptyState>
-                        }
-                        else
-                        {
-                            <ol class="hq-titles">
-                                @foreach (var (id, n) in _titles.OrderByDescending(kv => kv.Value).ThenBy(kv => FighterName(kv.Key)))
-                                {
-                                    <li><span>@FighterName(id)</span><b>@n @(n == 1 ? "title" : "titles")</b></li>
-                                }
-                            </ol>
-                        }
-                    </RadzenTabsItem>
-                    <RadzenTabsItem Text="Last fight">
-                        @* The poster of the last 1P, 2P or Cup fight this session
-                           (js/pobrawl/keepsake.js). It is here, not on the end card, because the
-                           end card has one button. Held in memory only. *@
-                        <section class="hq-keep" aria-label="Last fight">
-                            @if (string.IsNullOrEmpty(_posterUrl))
+                        <div class="hq-panel" tabindex="0" role="region" aria-label="Titles">
+                            <p class="hq-board-note">Cups won in this browser.</p>
+                            @if (_titles.Count == 0)
                             {
-                                <EmptyState Title="No fight to show yet">Finish a 1P, 2P or Cup fight and its poster shows up here. It is kept until you reload or close the site.</EmptyState>
+                                <EmptyState Title="No Cup won in this browser yet"><a href="/pobrawl/demo">Watch the Cup</a></EmptyState>
                             }
                             else
                             {
-                                <p class="hq-board-note">@_caption. Kept until you reload or close the site; nothing is uploaded.</p>
-                                <div class="hq-keep-grid">
-                                    @if (!string.IsNullOrEmpty(_posterUrl))
+                                <ol class="hq-titles">
+                                    @foreach (var (id, n) in _titles.OrderByDescending(kv => kv.Value).ThenBy(kv => FighterName(kv.Key)))
                                     {
-                                        <figure class="hq-keep-item">
-                                            <img src="@_posterUrl" alt="Poster: @_caption" />
-                                            <figcaption class="hq-keep-actions">
-                                                <button type="button" class="app-btn app-btn--primary" @onclick="@(() => DownloadKeepsakeAsync("poster"))">Download poster</button>
-                                                @if (_posterShare)
-                                                {
-                                                    <button type="button" class="app-btn app-btn--ghost" @onclick="@(() => ShareKeepsakeAsync("poster"))">Share</button>
-                                                }
-                                            </figcaption>
-                                        </figure>
+                                        <li><span>@FighterName(id)</span><b>@n @(n == 1 ? "title" : "titles")</b></li>
                                     }
-                                </div>
-                                @if (_keepStatus is not null)
-                                {
-                                    <p class="hq-board-note" role="status">@_keepStatus</p>
-                                }
+                                </ol>
                             }
-                        </section>
+                        </div>
+                    </RadzenTabsItem>
+                    <RadzenTabsItem Text="Last fight">
+                        <div class="hq-panel" tabindex="0" role="region" aria-label="Last fight">
+                            @* The poster of the last 1P, 2P or Cup fight this session
+                               (js/pobrawl/keepsake.js). It is here, not on the end card, because the
+                               end card has one button. Held in memory only. *@
+                            <section class="hq-keep" aria-label="Last fight">
+                                @if (string.IsNullOrEmpty(_posterUrl))
+                                {
+                                    <EmptyState Title="No fight to show yet">Finish a 1P, 2P or Cup fight and its poster shows up here. It is kept until you reload or close the site.</EmptyState>
+                                }
+                                else
+                                {
+                                    <p class="hq-board-note">@_caption. Kept until you reload or close the site; nothing is uploaded.</p>
+                                    <div class="hq-keep-grid">
+                                        @if (!string.IsNullOrEmpty(_posterUrl))
+                                        {
+                                            <figure class="hq-keep-item">
+                                                <img src="@_posterUrl" alt="Poster: @_caption" />
+                                                <figcaption class="hq-keep-actions">
+                                                    <PoButton class="app-btn app-btn--primary" Click="@(() => DownloadKeepsakeAsync("poster"))">Download poster</PoButton>
+                                                    @if (_posterShare)
+                                                    {
+                                                        <PoButton class="app-btn app-btn--ghost" Click="@(() => ShareKeepsakeAsync("poster"))">Share</PoButton>
+                                                    }
+                                                </figcaption>
+                                            </figure>
+                                        }
+                                    </div>
+                                    @if (_keepStatus is not null)
+                                    {
+                                        <p class="hq-board-note" role="status">@_keepStatus</p>
+                                    }
+                                }
+                            </section>
+                        </div>
                     </RadzenTabsItem>
                 </Tabs>
             </RadzenTabs>

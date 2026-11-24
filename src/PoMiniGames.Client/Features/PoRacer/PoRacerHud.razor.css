@@ -31,8 +31,8 @@
 .race-pos strong { color: inherit; font-size: 20px; }
 .race-pos small { opacity: .7; }
 @keyframes race-pos-flip { from { transform: perspective(240px) rotateX(-90deg); filter: brightness(1.8); } to { transform: none; filter: none; } }
-.race-pause { position: absolute; top: 0; right: 0; pointer-events: auto; min-width: 44px; min-height: 44px; border: 1px solid var(--racer-edge); border-radius: 12px; background: var(--racer-glass); backdrop-filter: blur(10px); color: var(--racer-ink); font: inherit; font-size: 12px; cursor: pointer; }
-.race-pause:focus-visible { outline: 3px solid var(--racer-ink); }
+::deep .race-pause { position: absolute; top: 0; right: 0; pointer-events: auto; min-width: 44px; min-height: 44px; border: 1px solid var(--racer-edge); border-radius: 12px; background: var(--racer-glass); backdrop-filter: blur(10px); color: var(--racer-ink); font: inherit; font-size: 12px; cursor: pointer; }
+::deep .race-pause:focus-visible { outline: 3px solid var(--racer-ink); }
 .race-laps { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 5px 12px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--racer-muted); }
 .race-laps strong { color: var(--racer-ink); }
 .race-laps em { margin-left: 5px; font-style: normal; color: var(--racer-warn); }
@@ -54,9 +54,9 @@
 .local-driver { color: var(--racer-accent-line); font-weight: 700; }
 .race-touch { display: none; position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); justify-content: space-between; gap: 12px; }
 .race-touch > div { display: flex; gap: 8px; align-items: end; }
-.race-touch button { min-width: 56px; min-height: 64px; border: 1px solid var(--racer-accent-line); border-radius: 14px; background: var(--racer-control); color: var(--racer-ink); font: inherit; font-weight: 700; touch-action: none; user-select: none; }
-.race-touch button.is-pressed { background: var(--racer-accent); color: var(--racer-on-accent); }
-.race-touch button:focus-visible { outline: 3px solid var(--racer-ink); }
+.race-touch ::deep button { min-width: 56px; min-height: 64px; border: 1px solid var(--racer-accent-line); border-radius: 14px; background: var(--racer-control); color: var(--racer-ink); font: inherit; font-weight: 700; touch-action: none; user-select: none; }
+.race-touch ::deep button.is-pressed { background: var(--racer-accent); color: var(--racer-on-accent); }
+.race-touch ::deep button:focus-visible { outline: 3px solid var(--racer-ink); }
 @media (pointer: coarse) { .race-touch { display: flex; } }
 @media (max-width: 600px) {
     .race-hud { inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
@@ -68,12 +68,12 @@
     .race-minimap { display: none; }
 }
 /* The pause button and the pads get the same press response as every other control in the app. */
-.race-pause { transition: transform .12s cubic-bezier(.2, .9, .3, 1.4), background .12s ease, box-shadow .12s ease; }
-.race-pause:hover { background: var(--racer-control); }
-.race-pause:active { transform: scale(.93); box-shadow: inset 0 3px 10px #0006; }
-.race-touch button { transition: transform .09s ease, background .09s ease; }
-.race-touch button.is-pressed { transform: scale(.94); }
+::deep .race-pause { transition: transform .12s cubic-bezier(.2, .9, .3, 1.4), background .12s ease, box-shadow .12s ease; }
+::deep .race-pause:hover { background: var(--racer-control); }
+::deep .race-pause:active { transform: scale(.93); box-shadow: inset 0 3px 10px #0006; }
+.race-touch ::deep button { transition: transform .09s ease, background .09s ease; }
+.race-touch ::deep button.is-pressed { transform: scale(.94); }
 @media (prefers-reduced-motion: reduce) {
     .race-pos { animation: none; }
-    .race-pause, .race-touch button, .race-bar::after { transition: none; }
+    ::deep .race-pause, .race-touch ::deep button, .race-bar::after { transition: none; }
 }

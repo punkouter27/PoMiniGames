@@ -29,7 +29,7 @@ public partial class PoRacerPage
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _connecting;
     private DotNetObjectReference<PoRacerPage>? _reference;
-    private ElementReference _resumeButton;
+    private PoButton? _resumeButton;
     private bool _disposed, _engineReady, _isStarting, _trial, _pauseOpen, _focusResume, _showResults;
     // Race your best lap on this track (js/platform/ghostTrack.js). Solo only; the switch is in the pause menu.
     private bool _ghost = true;
@@ -116,7 +116,7 @@ public partial class PoRacerPage
         if (_focusResume)
         {
             _focusResume = false;
-            try { await _resumeButton.FocusAsync(); } catch (JSException) { /* the menu closed again before it rendered */ }
+            try { if (_resumeButton is not null) await _resumeButton.Element.FocusAsync(); } catch (JSException) { /* the menu closed again before it rendered */ }
         }
         if (!firstRender) return;
         _reference = DotNetObjectReference.Create(this);

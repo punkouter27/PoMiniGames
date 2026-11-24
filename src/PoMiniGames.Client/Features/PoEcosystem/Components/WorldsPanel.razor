@@ -18,17 +18,17 @@
             </div>
             @if (Visiting)
             {
-                <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="OnReturn">Back to my island</button>
+                <PoButton class="poeco-btn poeco-btn--sm poeco-btn--primary" Click="OnReturn">Back to my island</PoButton>
             }
         </div>
         <label class="poeco-field">
             <span>Seed for a new world</span>
-            <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+            <PoTextBox Value="@Seed" Immediate="true" ValueChanged="@((string v) => SeedChanged.InvokeAsync(v ?? string.Empty))" />
         </label>
         <div class="poeco-world-actions">
-            <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
-            <button type="button" class="poeco-btn" @onclick="OnTodaysIsland"
-                    title="Everyone who opens today's island watches the same world unfold (seed @DailySeed). The island is deterministic: the same seed tells the same story.">Today's island</button>
+            <PoButton class="poeco-btn poeco-btn--primary" Click="() => OnNewWorld.InvokeAsync(Seed)">New world</PoButton>
+            <PoButton class="poeco-btn" Click="OnTodaysIsland"
+                    title="@($"Everyone who opens today's island watches the same world unfold (seed {(DailySeed)}). The island is deterministic: the same seed tells the same story.")">Today's island</PoButton>
         </div>
 
         <label class="poeco-persist-toggle">
@@ -38,7 +38,7 @@
 
         <div class="poeco-cloud-head">
             <h3>Cloud slots</h3>
-            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="OnRefresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Refresh</button>
+            <PoButton class="poeco-pill" Disabled="@Busy" Click="OnRefresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Refresh</PoButton>
         </div>
         <ul class="poeco-slots">
             @foreach (var slot in EcoWorldSlots.All)
@@ -61,16 +61,16 @@
                         }
                     </div>
                     <div class="poeco-slot-actions">
-                        <button type="button" class="poeco-pill poeco-pill--on" disabled="@(Busy || Stats is null || Visiting)" title="Save the running island here" @onclick="() => OnSave.InvokeAsync(slot)">Save</button>
+                        <PoButton class="poeco-pill poeco-pill--on" Disabled="@(Busy || Stats is null || Visiting)" title="Save the running island here" Click="() => OnSave.InvokeAsync(slot)">Save</PoButton>
                         @if (w is not null)
                         {
-                            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnLoad.InvokeAsync(slot)">Load</button>
-                            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnShare.InvokeAsync((slot, w.ShareCode is null))">@(w.ShareCode is null ? "Share" : "Unshare")</button>
+                            <PoButton class="poeco-pill" Disabled="@Busy" Click="() => OnLoad.InvokeAsync(slot)">Load</PoButton>
+                            <PoButton class="poeco-pill" Disabled="@Busy" Click="() => OnShare.InvokeAsync((slot, w.ShareCode is null))">@(w.ShareCode is null ? "Share" : "Unshare")</PoButton>
                             @if (w.ShareCode is { } code)
                             {
-                                <button type="button" class="poeco-pill" title="Share or copy a link that opens this island" @onclick="() => OnLink.InvokeAsync((code, w.Name))">🔗 Link</button>
+                                <PoButton class="poeco-pill" title="Share or copy a link that opens this island" Click="() => OnLink.InvokeAsync((code, w.Name))">🔗 Link</PoButton>
                             }
-                            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnDelete.InvokeAsync(slot)">Delete</button>
+                            <PoButton class="poeco-pill" Disabled="@Busy" Click="() => OnDelete.InvokeAsync(slot)">Delete</PoButton>
                         }
                     </div>
                 </li>
@@ -88,7 +88,7 @@
             @if (Gallery.Length > 1)
             {
                 <div class="poeco-gallery-tools">
-                    <input type="search" class="poeco-finder-input" placeholder="Filter…" aria-label="Filter the gallery by name or owner" value="@_filter" @oninput="e => _filter = e.Value?.ToString() ?? string.Empty" />
+                    <PoTextBox type="search" class="poeco-finder-input" Placeholder="Filter…" aria-label="Filter the gallery by name or owner" Value="@_filter" Immediate="true" ValueChanged="@((string v) => _filter = v ?? string.Empty)" />
                     <select value="@_sort" @onchange="e => _sort = e.Value?.ToString() ?? string.Empty" aria-label="Sort the gallery">
                         <option value="new">Newest</option>
                         <option value="old">Oldest island</option>
@@ -113,9 +113,9 @@
                             <span class="poeco-note" title="@Counts(g.Counts)">by @g.OwnerName · year @g.Year · @((g.Counts ?? []).Sum()) alive · @Ago(g.SavedAt)</span>
                         </div>
                         <div class="poeco-slot-actions">
-                            <button type="button" class="poeco-pill" disabled="@Busy" title="Fly over this island without saving over yours" @onclick="() => OnVisit.InvokeAsync(g.Code)">Visit</button>
-                            <button type="button" class="poeco-pill @(Compare?.Code == g.Code ? "poeco-pill--on" : "")" disabled="@Busy" title="Chart this island's history against the one on screen" @onclick="() => OnCompare.InvokeAsync(g)">Compare</button>
-                            <button type="button" class="poeco-pill" title="Share or copy a link that opens this island" @onclick="() => OnLink.InvokeAsync((g.Code, g.Name))">🔗</button>
+                            <PoButton class="poeco-pill" Disabled="@Busy" title="Fly over this island without saving over yours" Click="() => OnVisit.InvokeAsync(g.Code)">Visit</PoButton>
+                            <PoButton class="@($"poeco-pill {(Compare?.Code == g.Code ? "poeco-pill--on" : "")}")" Disabled="@Busy" title="Chart this island's history against the one on screen" Click="() => OnCompare.InvokeAsync(g)">Compare</PoButton>
+                            <PoButton class="poeco-pill" title="Share or copy a link that opens this island" Click="() => OnLink.InvokeAsync((g.Code, g.Name))">🔗</PoButton>
                         </div>
                     </li>
                 }

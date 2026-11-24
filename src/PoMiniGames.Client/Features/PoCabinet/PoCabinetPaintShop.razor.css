@@ -50,7 +50,7 @@
     gap: 0.5rem;
 }
 
-.pocabinet-swatch {
+::deep .pocabinet-swatch {
     aspect-ratio: 1 / 1;
     width: 100%;
     min-height: 32px;
@@ -63,12 +63,12 @@
     transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
-.pocabinet-swatch:hover {
+::deep .pocabinet-swatch:hover {
     border-color: var(--color-primary);
     transform: translateY(-1px);
 }
 
-.pocabinet-swatch--selected {
+::deep .pocabinet-swatch--selected {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
     box-shadow: 0 0 12px color-mix(in srgb, var(--swatch) 55%, transparent);
@@ -81,7 +81,7 @@
     gap: 0.35rem;
 }
 
-.pocabinet-livery {
+::deep .pocabinet-livery {
     font-size: 0.74rem;
     font-weight: 600;
     padding: 0.28rem 0.6rem;
@@ -93,12 +93,12 @@
     transition: background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
 }
 
-.pocabinet-livery:hover {
+::deep .pocabinet-livery:hover {
     background: rgba(255, 255, 255, 0.12);
     border-color: var(--color-primary);
 }
 
-.pocabinet-livery--selected {
+::deep .pocabinet-livery--selected {
     background: rgba(56, 189, 248, 0.22);
     border-color: rgba(56, 189, 248, 0.75);
     /* The page's text colour, not white: on the light theme white on this tint was 1.2:1 (axe). */

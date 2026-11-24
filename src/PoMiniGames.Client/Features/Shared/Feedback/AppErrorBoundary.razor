@@ -69,9 +69,9 @@
                 Error ID: <code>@errorId</code>
                 @if (isDev)
                 {
-                    <button type="button" class="app-error-boundary__copy" @onclick="() => Copy(ex, errorId)">
+                    <PoButton class="app-error-boundary__copy" Click="() => Copy(ex, errorId)">
                         @if (_copied) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }@(_copied ? "Copied" : "Copy diagnostic")
-                    </button>
+                    </PoButton>
                 }
             </p>
             <div class="app-error-boundary__actions">

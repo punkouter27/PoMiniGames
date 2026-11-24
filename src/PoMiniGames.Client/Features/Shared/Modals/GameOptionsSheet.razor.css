@@ -2,7 +2,7 @@
    drawer on the right edge of a wide window, a bottom sheet under 640px, both a native
    modal <dialog>. Every colour reads through a design token. */
 
-.game-opts-gear {
+::deep .game-opts-gear {
     appearance: none;
     display: inline-flex;
     align-items: center;
@@ -18,7 +18,7 @@
     cursor: pointer;
 }
 
-.game-opts-gear:hover {
+::deep .game-opts-gear:hover {
     background: var(--surface-3);
     color: var(--color-text-primary);
 }
@@ -78,7 +78,7 @@
     font-weight: 700;
 }
 
-.game-opts-close {
+::deep .game-opts-close {
     appearance: none;
     width: 2.75rem;
     height: 2.75rem;
@@ -91,7 +91,7 @@
     cursor: pointer;
 }
 
-.game-opts-close:hover {
+::deep .game-opts-close:hover {
     background: var(--surface-3);
     color: var(--color-text-primary);
 }
@@ -103,8 +103,8 @@
     padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
 }
 
-.game-opts-gear:focus-visible,
-.game-opts-close:focus-visible {
+::deep .game-opts-gear:focus-visible,
+::deep .game-opts-close:focus-visible {
     outline: 2px solid var(--accent-ring);
     outline-offset: 2px;
 }
@@ -133,5 +133,5 @@
 
 /* A thumb needs 44px (Profile B); the 36px gear was under it. */
 @media (pointer: coarse) {
-    .game-opts-gear { width: 2.75rem; height: 2.75rem; }
+    ::deep .game-opts-gear { width: 2.75rem; height: 2.75rem; }
 }

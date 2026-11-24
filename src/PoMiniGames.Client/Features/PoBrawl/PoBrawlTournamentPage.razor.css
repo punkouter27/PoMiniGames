@@ -36,7 +36,7 @@
     backdrop-filter: blur(var(--gfx-blur, 6px));
 }
 
-.pt-speed-btn {
+::deep .pt-speed-btn {
     min-width: 40px;
     min-height: 34px;
     font: inherit;
@@ -49,18 +49,18 @@
     cursor: pointer;
 }
 
-.pt-speed-btn[aria-pressed="true"] {
+::deep .pt-speed-btn[aria-pressed="true"] {
     background: var(--pb-gold);
     color: var(--pb-versus-ink);
 }
 
-.pt-speed-btn:focus-visible {
+::deep .pt-speed-btn:focus-visible {
     outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
 
 /* The camera button: the shared .pb-seg glass, at a 40px target. */
-.pt-btn {
+::deep .pt-btn {
     min-height: 40px;
     padding: 0 14px;
     font-size: 0.85rem;
@@ -81,7 +81,7 @@
     container-type: inline-size;
 }
 
-.pt-tabpanel {
+::deep .pt-tabpanel {
     overflow-x: auto;
     overscroll-behavior-x: contain;
 }
@@ -99,7 +99,7 @@
     background: rgba(255, 255, 255, 0.06);
 }
 
-.pt-tab {
+::deep .pt-tab {
     flex: 1;
     min-height: 36px;
     font: inherit;
@@ -112,12 +112,12 @@
     cursor: pointer;
 }
 
-.pt-tab[aria-selected="true"] {
+::deep .pt-tab[aria-selected="true"] {
     background: var(--pb-gold);
     color: var(--pb-versus-ink);
 }
 
-.pt-tab:focus-visible {
+::deep .pt-tab:focus-visible {
     outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
@@ -600,14 +600,14 @@
 /* Touch: the speed chips, tabs and the HQ link reach the 44px target on a coarse pointer
    (GAME-CONSISTENCY rule 8); a mouse keeps the slimmer controls. */
 @media (pointer: coarse) {
-    .pt-speed-btn,
-    .pt-btn,
-    .pt-tab,
+    ::deep .pt-speed-btn,
+    ::deep .pt-btn,
+    ::deep .pt-tab,
     .pt-hq-link {
         min-height: 44px;
     }
 
-    .pt-speed-btn {
+    ::deep .pt-speed-btn {
         min-width: 44px;
     }
 }

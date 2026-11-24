@@ -53,7 +53,8 @@ public sealed class GameModalButtonTests
 
             var actions = Buttons(html).Where(b => b.Contains("data-intro-action")).ToList();
             Assert.Single(actions);
-            Assert.Matches(@">\s*OK\s*</button>", actions[0]);
+            // Its visible text is exactly "OK" (a RadzenButton wraps the label in its .rz-button-box span).
+            Assert.Equal("OK", Regex.Replace(actions[0], "<[^>]+>", "").Trim());
             // Nothing else in the footer acts: the only other buttons a card may carry are the
             // tabs and toggles that switch what it shows (none in this card).
             Assert.Single(Buttons(Footer(html)));

@@ -15,6 +15,7 @@
 
 <EmptyState Icon="@Icon"
             Title="@Title"
+            HeadingLevel="HeadingLevel"
             Tone="StateTone.Error"
             RetryLabel="@RetryLabel"
             OnRetry="OnRetry"
@@ -25,6 +26,9 @@
 @code {
     [Parameter] public string? Icon { get; set; } = "⚠️";
     [Parameter] public string? Title { get; set; }
+
+    /// <summary>Passed to <see cref="EmptyState.HeadingLevel"/>.</summary>
+    [Parameter] public int HeadingLevel { get; set; } = 3;
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     /// <summary>Optional action slot; wins over <see cref="OnRetry"/> when both are set.</summary>

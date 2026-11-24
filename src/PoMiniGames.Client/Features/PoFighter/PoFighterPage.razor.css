@@ -45,7 +45,7 @@
 /* ---- glass, shared by the toolbar, the strip and the sheet ---- */
 .pf-toolbar,
 .pf-moves ul,
-.pf-moves-pill {
+::deep .pf-moves-pill {
     border: 1px solid var(--pf-glass-line);
     background: var(--pf-glass);
     color: var(--pf-text);
@@ -100,11 +100,11 @@
     text-shadow: 0 0 12px rgba(255, 210, 63, 0.55);
 }
 
-.pf-avatar,
-.pf-seg button,
-.pf-create,
-.pf-icon-btn,
-.pf-btn {
+::deep .pf-avatar,
+.pf-seg ::deep button,
+::deep .pf-create,
+::deep .pf-icon-btn,
+::deep .pf-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -119,31 +119,31 @@
     transition: transform 120ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 
-.pf-avatar:hover,
-.pf-seg button:hover,
-.pf-icon-btn:hover,
-.pf-btn:hover {
+::deep .pf-avatar:hover,
+.pf-seg ::deep button:hover,
+::deep .pf-icon-btn:hover,
+::deep .pf-btn:hover {
     background: rgba(255, 255, 255, 0.14);
 }
 
-.pf-avatar:active,
-.pf-seg button:active,
-.pf-create:active,
-.pf-icon-btn:active,
-.pf-btn:active {
+::deep .pf-avatar:active,
+.pf-seg ::deep button:active,
+::deep .pf-create:active,
+::deep .pf-icon-btn:active,
+::deep .pf-btn:active {
     transform: scale(0.94);
 }
 
-.pf-avatar:focus-visible,
-.pf-seg button:focus-visible,
-.pf-create:focus-visible,
-.pf-icon-btn:focus-visible,
-.pf-btn:focus-visible {
+::deep .pf-avatar:focus-visible,
+.pf-seg ::deep button:focus-visible,
+::deep .pf-create:focus-visible,
+::deep .pf-icon-btn:focus-visible,
+::deep .pf-btn:focus-visible {
     outline: 2px solid var(--pf-gold);
     outline-offset: 2px;
 }
 
-.pf-avatar {
+::deep .pf-avatar {
     padding: 3px 10px 3px 3px;
     border-radius: 999px;
 }
@@ -174,27 +174,27 @@
     display: inline-flex;
 }
 
-.pf-seg button {
+.pf-seg ::deep button {
     width: 42px;
     padding: 0;
 }
 
-.pf-seg button:first-child {
+.pf-seg ::deep button:first-child {
     border-radius: 999px 0 0 999px;
 }
 
-.pf-seg button:last-child {
+.pf-seg ::deep button:last-child {
     margin-left: -1px;
     border-radius: 0 999px 999px 0;
 }
 
-.pf-seg button[aria-pressed="true"] {
+.pf-seg ::deep button[aria-pressed="true"] {
     border-color: var(--pf-gold);
     background: rgba(255, 210, 63, 0.2);
     color: var(--pf-gold);
 }
 
-.pf-create {
+::deep .pf-create {
     padding: 0 14px 0 12px;
     border-color: transparent;
     border-radius: 999px;
@@ -203,7 +203,7 @@
     box-shadow: 0 4px 14px rgba(255, 176, 32, 0.4);
 }
 
-.pf-create:hover {
+::deep .pf-create:hover {
     filter: brightness(1.08);
 }
 
@@ -234,7 +234,7 @@
     scroll-snap-align: start;
 }
 
-.pf-move {
+::deep .pf-move {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -250,16 +250,16 @@
     transition: transform 140ms cubic-bezier(.3, 1.6, .5, 1), background-color 120ms ease;
 }
 
-button.pf-move {
+::deep button.pf-move {
     cursor: pointer;
     border-color: rgba(255, 255, 255, 0.12);
 }
 
-button.pf-move:hover {
+::deep button.pf-move:hover {
     background: rgba(255, 255, 255, 0.08);
 }
 
-.pf-move.is-active {
+::deep .pf-move.is-active {
     background: var(--pf-gold);
     color: var(--pf-ink);
     transform: translateY(-4px) scale(1.06);
@@ -305,7 +305,7 @@ button.pf-move:hover {
 }
 
 /* Folded: only the "?" pill is left. */
-.pf-moves-pill {
+::deep .pf-moves-pill {
     display: none;
     align-items: center;
     gap: 4px;
@@ -321,7 +321,7 @@ button.pf-move:hover {
     display: none;
 }
 
-.pf-moves.is-collapsed .pf-moves-pill {
+.pf-moves.is-collapsed ::deep .pf-moves-pill {
     display: inline-flex;
     animation: pf-drop-in 260ms cubic-bezier(.3, 1.4, .5, 1) both;
 }
@@ -376,7 +376,7 @@ button.pf-move:hover {
     font-size: 1.15rem;
 }
 
-.pf-icon-btn {
+::deep .pf-icon-btn {
     width: 40px;
     padding: 0;
     border-radius: 50%;
@@ -429,7 +429,7 @@ button.pf-move:hover {
     flex: 1;
 }
 
-.pf-step button {
+.pf-step ::deep button {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -444,7 +444,7 @@ button.pf-move:hover {
     cursor: pointer;
 }
 
-.pf-step button:disabled {
+.pf-step ::deep button:disabled {
     cursor: default;
     opacity: 0.55;
 }
@@ -463,7 +463,7 @@ button.pf-move:hover {
     font-size: 16px;
 }
 
-.pf-step--current button {
+.pf-step--current ::deep button {
     border-color: var(--pf-gold);
     color: var(--pf-text);
 }
@@ -473,7 +473,7 @@ button.pf-move:hover {
     color: var(--pf-ink);
 }
 
-.pf-step--done button {
+.pf-step--done ::deep button {
     border-color: rgba(31, 157, 92, 0.8);
 }
 
@@ -544,7 +544,7 @@ button.pf-move:hover {
     gap: 12px;
 }
 
-.pf-source {
+::deep .pf-source {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -561,15 +561,15 @@ button.pf-move:hover {
     transition: transform 160ms cubic-bezier(.3, 1.4, .5, 1), border-color 160ms ease, background-color 160ms ease;
 }
 
-.pf-source:hover,
-.pf-source:focus-within {
+::deep .pf-source:hover,
+::deep .pf-source:focus-within {
     border-color: var(--pf-gold);
     background: rgba(255, 210, 63, 0.08);
     transform: translateY(-2px);
 }
 
-.pf-source:disabled,
-.pf-source.is-disabled {
+::deep .pf-source:disabled,
+::deep .pf-source.is-disabled {
     opacity: 0.5;
     pointer-events: none;
 }
@@ -606,7 +606,7 @@ button.pf-move:hover {
     list-style: none;
 }
 
-.pf-capture {
+::deep .pf-capture {
     position: relative;
     display: grid;
     grid-template-columns: auto 1fr;
@@ -625,20 +625,20 @@ button.pf-move:hover {
     transition: transform 140ms ease, border-color 160ms ease;
 }
 
-.pf-capture:hover {
+::deep .pf-capture:hover {
     border-color: var(--pf-gold);
 }
 
-.pf-capture:active {
+::deep .pf-capture:active {
     transform: scale(0.97);
 }
 
-.pf-capture:disabled {
+::deep .pf-capture:disabled {
     cursor: progress;
     opacity: 0.7;
 }
 
-.pf-capture.is-done {
+::deep .pf-capture.is-done {
     border-color: rgba(31, 157, 92, 0.7);
 }
 
@@ -689,7 +689,7 @@ button.pf-move:hover {
     color: var(--pf-text-dim);
 }
 
-.pf-studio-name input {
+.pf-studio-name ::deep input {
     padding: 10px 12px;
     border: 1px solid var(--pf-glass-line);
     border-radius: 10px;
@@ -699,7 +699,7 @@ button.pf-move:hover {
     font-size: 1rem;
 }
 
-.pf-studio-name input:focus-visible {
+.pf-studio-name ::deep input:focus-visible {
     outline: 2px solid var(--pf-gold);
     outline-offset: 1px;
 }
@@ -710,23 +710,23 @@ button.pf-move:hover {
     gap: 8px;
 }
 
-.pf-btn {
+::deep .pf-btn {
     padding: 0 16px;
     border-radius: 999px;
 }
 
-.pf-btn--primary {
+::deep .pf-btn--primary {
     border-color: transparent;
     background: linear-gradient(135deg, var(--pf-gold), var(--pf-punch));
     color: var(--pf-ink);
 }
 
-.pf-btn--primary:hover {
+::deep .pf-btn--primary:hover {
     background: linear-gradient(135deg, var(--pf-gold), var(--pf-punch));
     filter: brightness(1.08);
 }
 
-.pf-btn:disabled {
+::deep .pf-btn:disabled {
     cursor: default;
     opacity: 0.45;
     transform: none;
@@ -760,7 +760,7 @@ button.pf-move:hover {
     gap: 8px;
 }
 
-.pf-touch button {
+.pf-touch ::deep button {
     display: grid;
     place-items: center;
     min-width: 56px;
@@ -782,13 +782,13 @@ button.pf-move:hover {
     font-size: 30px;
 }
 
-.pf-touch button:active {
+.pf-touch ::deep button:active {
     transform: scale(0.9);
     background: rgba(255, 255, 255, 0.25);
 }
 
 /* Punch and kick: round arcade buttons, the kick a step higher, as on a cabinet. */
-.pf-touch-attack button {
+.pf-touch-attack ::deep button {
     width: 76px;
     height: 76px;
     min-height: 0;
@@ -800,17 +800,17 @@ button.pf-move:hover {
     box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.25), 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
-.pf-touch .pf-touch-punch {
+.pf-touch ::deep .pf-touch-punch {
     background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.45), var(--pf-punch) 55%);
     color: var(--pf-ink);
 }
 
-.pf-touch .pf-touch-kick {
+.pf-touch ::deep .pf-touch-kick {
     margin-bottom: 34px;
     background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.4), var(--pf-kick) 55%);
 }
 
-.pf-touch-attack button:active {
+.pf-touch-attack ::deep button:active {
     transform: scale(0.88);
     box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
@@ -837,12 +837,12 @@ button.pf-move:hover {
         display: none;
     }
 
-    .pf-create {
+    ::deep .pf-create {
         width: 42px;
         padding: 0;
     }
 
-    .pf-avatar {
+    ::deep .pf-avatar {
         padding: 3px;
     }
 
@@ -858,7 +858,7 @@ button.pf-move:hover {
         transform: none;
     }
 
-    .pf-move {
+    ::deep .pf-move {
         min-width: 3.6rem;
         padding: 4px 6px;
     }
@@ -867,21 +867,21 @@ button.pf-move:hover {
 @media (prefers-reduced-motion: reduce) {
     .pf-room,
     .pf-toolbar,
-    .pf-moves-pill,
+    ::deep .pf-moves-pill,
     .pf-capture-check {
         animation: none;
     }
 
     .pf-sheet,
     .pf-studio,
-    .pf-move {
+    ::deep .pf-move {
         transition: none;
     }
 }
 
 :root[data-motion="reduce"] .pf-room,
 :root[data-motion="reduce"] .pf-toolbar,
-:root[data-motion="reduce"] .pf-moves-pill,
+:root[data-motion="reduce"] ::deep .pf-moves-pill,
 :root[data-motion="reduce"] .pf-capture-check {
     animation: none;
 }

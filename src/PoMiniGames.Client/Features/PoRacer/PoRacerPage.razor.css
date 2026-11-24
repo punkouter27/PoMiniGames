@@ -64,25 +64,25 @@
 .racer-card ::deep .racer-chips input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
 
 .racer-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
-.racer-primary, .racer-ghost { min-height: 44px; padding: 10px 20px; border: 1px solid var(--racer-accent); border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; }
-.racer-primary { background: var(--racer-accent); color: var(--racer-on-accent); }
-.racer-primary:disabled { opacity: .6; cursor: wait; }
-.racer-ghost { background: var(--racer-panel); color: var(--racer-text); }
+::deep .racer-primary, ::deep .racer-ghost { min-height: 44px; padding: 10px 20px; border: 1px solid var(--racer-accent); border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; }
+::deep .racer-primary { background: var(--racer-accent); color: var(--racer-on-accent); }
+::deep .racer-primary:disabled { opacity: .6; cursor: wait; }
+::deep .racer-ghost { background: var(--racer-panel); color: var(--racer-text); }
 
 /* ── Micro-interactions ───────────────────────────────────────────────────
    Every control in the panel answers a press: the surface gives, a ripple spreads
    from the middle, and the label settles back on a spring. Purely CSS, so it
    costs nothing on a frame the game is already spending on the canvas. */
-.racer-primary, .racer-ghost {
+::deep .racer-primary, ::deep .racer-ghost {
     position: relative; overflow: hidden; isolation: isolate;
     transition: transform .13s cubic-bezier(.2, .9, .3, 1.35), background .15s ease,
         box-shadow .15s ease, border-color .15s ease; }
-.racer-primary:hover:not(:disabled), .racer-ghost:hover { transform: translateY(-1px); box-shadow: 0 8px 22px #0007; border-color: var(--racer-accent-line); }
-.racer-primary:active:not(:disabled), .racer-ghost:active { transform: scale(.965); box-shadow: inset 0 4px 14px #0007; }
-.racer-primary::after, .racer-ghost::after {
+::deep .racer-primary:hover:not(:disabled), ::deep .racer-ghost:hover { transform: translateY(-1px); box-shadow: 0 8px 22px #0007; border-color: var(--racer-accent-line); }
+::deep .racer-primary:active:not(:disabled), ::deep .racer-ghost:active { transform: scale(.965); box-shadow: inset 0 4px 14px #0007; }
+::deep .racer-primary::after, ::deep .racer-ghost::after {
     content: ''; position: absolute; inset: 50%; border-radius: 50%; pointer-events: none;
     background: radial-gradient(circle, #ffffff70, #ffffff00 70%); opacity: 0; }
-.racer-primary:active:not(:disabled)::after, .racer-ghost:active::after {
+::deep .racer-primary:active:not(:disabled)::after, ::deep .racer-ghost:active::after {
     inset: -45%; opacity: .85; transition: inset .3s ease-out, opacity .4s ease-out; }
 .racer-card ::deep .racer-chips label {
     transition: transform .12s ease, border-color .15s ease, background .15s ease, color .15s ease; }
@@ -91,9 +91,9 @@
 .racer-ghost-toggle input { transition: transform .12s ease; }
 .racer-ghost-toggle:active input { transform: scale(.9); }
 @media (prefers-reduced-motion: reduce) {
-    .racer-primary, .racer-ghost, .racer-card ::deep .racer-chips label { transition: none; }
-    .racer-primary:hover:not(:disabled), .racer-ghost:hover { transform: none; }
-    .racer-primary::after, .racer-ghost::after { display: none; }
+    ::deep .racer-primary, ::deep .racer-ghost, .racer-card ::deep .racer-chips label { transition: none; }
+    ::deep .racer-primary:hover:not(:disabled), ::deep .racer-ghost:hover { transform: none; }
+    ::deep .racer-primary::after, ::deep .racer-ghost::after { display: none; }
 }
 
 /* The lobby panel brings its own page padding and card; inside this card it is just a section. */

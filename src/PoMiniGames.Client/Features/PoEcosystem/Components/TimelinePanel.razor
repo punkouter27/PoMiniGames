@@ -68,8 +68,8 @@
                 <input type="checkbox" checked="@_follow" @onchange="e => _follow = e.Value is true" />
                 <span>Follow the present</span>
             </label>
-            <button type="button" class="poeco-btn poeco-btn--sm" title="Play these years as chords — one voice per species, pitch is how many there were"
-                    @onclick="PlayWindowAsync">♪ Hear it</button>
+            <PoButton class="poeco-btn poeco-btn--sm" title="Play these years as chords — one voice per species, pitch is how many there were"
+                    Click="PlayWindowAsync">♪ Hear it</PoButton>
         </div>
 
         <svg viewBox="0 0 @W @H" preserveAspectRatio="none" class="poeco-chart poeco-timeline-chart" role="img" aria-label="@Summary">
@@ -107,8 +107,8 @@
             @foreach (var (kind, label) in Kinds)
             {
                 var on = !_hidden.Contains(kind);
-                <button type="button" class="poeco-pill poeco-mark--@kind @(on ? "poeco-pill--on" : "")" aria-pressed="@(on ? "true" : "false")"
-                        @onclick="() => Toggle(kind)">@label</button>
+                <PoButton class="@($"poeco-pill poeco-mark--{(kind)} {(on ? "poeco-pill--on" : "")}")" aria-pressed="@(on ? "true" : "false")"
+                        Click="() => Toggle(kind)">@label</PoButton>
             }
         </div>
 
@@ -118,7 +118,7 @@
                 <strong>Year @sel.Year</strong> · @sel.Text
                 @if (sel.Tile >= 0)
                 {
-                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => OnFly.InvokeAsync(sel.Tile)">Fly there</button>
+                    <PoButton class="poeco-btn poeco-btn--sm" Click="() => OnFly.InvokeAsync(sel.Tile)">Fly there</PoButton>
                 }
             </p>
         }
@@ -139,12 +139,12 @@
             <strong title="A copy of this island is kept every ten years. Open one to watch that decade again — read-only: the past cannot be saved over the present.">Time machine</strong>
             @foreach (var k in Keyframes)
             {
-                <button type="button" class="poeco-pill @(Past == k.Year ? "poeco-pill--on" : "")" aria-pressed="@(Past == k.Year ? "true" : "false")"
-                        title="Year @k.Year — @CountsOf(k)" @onclick="() => OnOpenKeyframe.InvokeAsync(k.Year)">Y@(k.Year)</button>
+                <PoButton class="@($"poeco-pill {(Past == k.Year ? "poeco-pill--on" : "")}")" aria-pressed="@(Past == k.Year ? "true" : "false")"
+                        title="@($"Year {(k.Year)} — {(CountsOf(k))}")" Click="() => OnOpenKeyframe.InvokeAsync(k.Year)">Y@(k.Year)</PoButton>
             }
             @if (Past >= 0)
             {
-                <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="OnReturn">Back to the present</button>
+                <PoButton class="poeco-btn poeco-btn--sm poeco-btn--primary" Click="OnReturn">Back to the present</PoButton>
             }
         </div>
     }

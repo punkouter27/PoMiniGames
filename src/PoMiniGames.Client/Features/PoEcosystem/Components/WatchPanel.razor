@@ -11,12 +11,12 @@
             @foreach (var w in Watched)
             {
                 <li class="@(w.Alive ? "" : "poeco-watch--dead")">
-                    <button type="button" class="poeco-thought-item" disabled="@(!w.Alive)" title="@(w.Alive ? $"Inspect {w.Name}" : "Gone")" @onclick="() => OnSelect.InvokeAsync(w.Handle)">
+                    <PoButton class="poeco-thought-item" Disabled="@(!w.Alive)" title="@(w.Alive ? $"Inspect {w.Name}" : "Gone")" Click="() => OnSelect.InvokeAsync(w.Handle)">
                         <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(w.Species)" aria-hidden="true"></i>
                         <span class="poeco-thought-name">@w.Name</span>
                         <span class="poeco-thought-text">@(w.Alive ? $"{w.AgeYears:0.0} y" : $"† {w.Cause.Replace('_', ' ')} at {w.AgeYears:0.0} y")</span>
-                    </button>
-                    <button type="button" class="poeco-icon-btn" aria-label="Stop watching @w.Name" title="Stop watching" @onclick="() => OnUnwatch.InvokeAsync(w.Handle)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                    </PoButton>
+                    <PoButton class="poeco-icon-btn" aria-label="@($"Stop watching {(w.Name)}")" title="Stop watching" Click="() => OnUnwatch.InvokeAsync(w.Handle)"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
                 </li>
             }
         </ul>

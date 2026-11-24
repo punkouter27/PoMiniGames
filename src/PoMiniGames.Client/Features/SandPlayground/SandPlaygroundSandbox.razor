@@ -50,54 +50,54 @@
             @foreach (var g in Groups)
             {
                 var t = CurrentOf(g);
-                <button type="button"
-                        class="sp-btn @(GroupOf(ActiveTool) == g ? "active" : "")"
+                <PoButton
+                        class="@($"sp-btn {(GroupOf(ActiveTool) == g ? "active" : "")}")"
                         title="@($"{t.Label} ({t.Key}) — {t.Hint}")"
                         aria-label="@(g.Tools.Length > 1 ? $"{g.Label}: {t.Label}" : t.Label)"
                         aria-pressed="@Pressed(GroupOf(ActiveTool) == g)"
-                        disabled="@(!Array.Exists(g.Tools, x => ToolAllowed(x.Id)))"
-                        @onclick="() => SelectToolAsync(CurrentOf(g).Id)">
+                        Disabled="@(!Array.Exists(g.Tools, x => ToolAllowed(x.Id)))"
+                        Click="() => SelectToolAsync(CurrentOf(g).Id)">
                     @t.Icon
                     @if (GroupOf(ActiveTool) == g)
                     {
                         <span class="sp-btn-label">@t.Label</span>
                     }
-                </button>
+                </PoButton>
             }
 
             <span class="sp-sep" aria-hidden="true"></span>
 
-            <button type="button" class="sp-btn sp-brush"
+            <PoButton class="sp-btn sp-brush"
                     title="Brush size — click to cycle, or use the wheel / [ ]"
                     aria-label="@($"Brush size {BrushSize} pixels")"
-                    @onclick="CycleBrushAsync">
+                    Click="CycleBrushAsync">
                 <span class="sp-brush-dot" style="--sp-brush: @BrushSize" aria-hidden="true"></span>@BrushSize
-            </button>
-            <button type="button" class="sp-btn"
+            </PoButton>
+            <PoButton class="sp-btn"
                     title="@(Paused ? "Run (Space)" : "Pause (Space)")"
                     aria-label="@(Paused ? "Run" : "Pause")"
                     aria-pressed="@Pressed(Paused)"
-                    @onclick="TogglePauseAsync">@(Paused ? "▶" : "⏸")</button>
+                    Click="TogglePauseAsync">@(Paused ? "▶" : "⏸")</PoButton>
             @* Step only means something while paused, so it only exists then. *@
             @if (Paused)
             {
-                <button type="button" class="sp-btn" title="Advance one step (.)" aria-label="Step once"
-                        @onclick="StepAsync">⏭</button>
+                <PoButton class="sp-btn" title="Advance one step (.)" aria-label="Step once"
+                        Click="StepAsync">⏭</PoButton>
             }
-            <button type="button" class="sp-btn" title="Undo (Ctrl+Z)" aria-label="Undo"
-                    disabled="@(UndoDepth == 0)"
-                    @onclick="UndoAsync">↶</button>
+            <PoButton class="sp-btn" title="Undo (Ctrl+Z)" aria-label="Undo"
+                    Disabled="@(UndoDepth == 0)"
+                    Click="UndoAsync">↶</PoButton>
             @* Only exists while radio-fused bombs are lying about. *@
             @if (RemoteBombs > 0)
             {
-                <button type="button" class="sp-btn sp-detonate" title="Detonate the radio bombs (Enter)"
+                <PoButton class="sp-btn sp-detonate" title="Detonate the radio bombs (Enter)"
                         aria-label="@($"Detonate {RemoteBombs} radio bombs")"
-                        @onclick="DetonateAsync">💥@RemoteBombs</button>
+                        Click="DetonateAsync">💥@RemoteBombs</PoButton>
             }
-            <button type="button" class="sp-btn @(MenuOpen ? "active" : "")"
+            <PoButton class="@($"sp-btn {(MenuOpen ? "active" : "")}")"
                     title="Worlds, challenges, saves, speed, weather, share"
                     aria-label="Menu" aria-expanded="@Pressed(MenuOpen)" aria-controls="sand-playground-menu"
-                    @onclick="ToggleMenuAsync">⋯</button>
+                    Click="ToggleMenuAsync">⋯</PoButton>
         </div>
 
         @* The tray under the dock: what the active tool carries. *@
@@ -106,26 +106,26 @@
             <div class="sand-playground-tray" role="toolbar" aria-label="@($"{GroupOf(ActiveTool)?.Label} options")">
                 @foreach (var t in tray)
                 {
-                    <button type="button" class="sp-pill @(ActiveTool == t.Id ? "active" : "")"
+                    <PoButton class="@($"sp-pill {(ActiveTool == t.Id ? "active" : "")}")"
                             title="@($"{t.Label} ({t.Key}) — {t.Hint}")"
                             aria-pressed="@Pressed(ActiveTool == t.Id)"
-                            disabled="@(!ToolAllowed(t.Id))"
-                            @onclick="() => SelectToolAsync(t.Id)">@t.Icon @t.Label</button>
+                            Disabled="@(!ToolAllowed(t.Id))"
+                            Click="() => SelectToolAsync(t.Id)">@t.Icon @t.Label</PoButton>
                 }
                 @if (ActiveTool == "tnt")
                 {
                     <span class="sp-sep" aria-hidden="true"></span>
                     @foreach (var f in Fuses)
                     {
-                        <button type="button" class="sp-pill @(Fuse == f.Id ? "active" : "")" title="@f.Hint"
+                        <PoButton class="@($"sp-pill {(Fuse == f.Id ? "active" : "")}")" title="@f.Hint"
                                 aria-pressed="@Pressed(Fuse == f.Id)"
-                                @onclick="() => SetFuseAsync(f.Id)">@f.Label</button>
+                                Click="() => SetFuseAsync(f.Id)">@f.Label</PoButton>
                     }
                     <span class="sp-sep" aria-hidden="true"></span>
-                    <button type="button" class="sp-pill @(BigCharge ? "" : "active")" title="Small charge: about half the crater"
-                            aria-pressed="@Pressed(!BigCharge)" @onclick="() => SetChargeAsync(false)">Small</button>
-                    <button type="button" class="sp-pill @(BigCharge ? "active" : "")" title="Full charge"
-                            aria-pressed="@Pressed(BigCharge)" @onclick="() => SetChargeAsync(true)">Big</button>
+                    <PoButton class="@($"sp-pill {(BigCharge ? "" : "active")}")" title="Small charge: about half the crater"
+                            aria-pressed="@Pressed(!BigCharge)" Click="() => SetChargeAsync(false)">Small</PoButton>
+                    <PoButton class="@($"sp-pill {(BigCharge ? "active" : "")}")" title="Full charge"
+                            aria-pressed="@Pressed(BigCharge)" Click="() => SetChargeAsync(true)">Big</PoButton>
                 }
             </div>
         }
@@ -139,15 +139,15 @@
                     <div class="sp-row">
                         @foreach (var p in Presets)
                         {
-                            <button type="button" class="sp-pill @(Preset == p.Id ? "active" : "")"
-                                    title="@p.Hint" @onclick="() => LoadWorldAsync(p.Id)">@p.Label</button>
+                            <PoButton class="@($"sp-pill {(Preset == p.Id ? "active" : "")}")"
+                                    title="@p.Hint" Click="() => LoadWorldAsync(p.Id)">@p.Label</PoButton>
                         }
                     </div>
                     <div class="sp-row">
-                        <button type="button" class="sp-pill" title="Same kind of world, new seed" @onclick="ResetAsync">New world</button>
-                        <button type="button" class="sp-pill" title="Rebuild this exact world" @onclick="ReplaySeedAsync">↻ Replay seed @Seed</button>
-                        <button type="button" class="sp-pill" title="The same world for everyone until midnight UTC" @onclick="DailyAsync">Today's world</button>
-                        <button type="button" class="sp-pill" title="Copy a link that opens this exact world" @onclick="CopyLinkAsync">🔗 Copy link</button>
+                        <PoButton class="sp-pill" title="Same kind of world, new seed" Click="ResetAsync">New world</PoButton>
+                        <PoButton class="sp-pill" title="Rebuild this exact world" Click="ReplaySeedAsync">↻ Replay seed @Seed</PoButton>
+                        <PoButton class="sp-pill" title="The same world for everyone until midnight UTC" Click="DailyAsync">Today's world</PoButton>
+                        <PoButton class="sp-pill" title="Copy a link that opens this exact world" Click="CopyLinkAsync">🔗 Copy link</PoButton>
                     </div>
                 </section>
 
@@ -155,11 +155,11 @@
                     <h2>Challenges</h2>
                     @foreach (var c in Challenges)
                     {
-                        <button type="button" class="sp-line @(ChallengeId == c.Id ? "active" : "")"
-                                title="@c.Hint" @onclick="() => StartChallengeAsync(c.Id)">
+                        <PoButton class="@($"sp-line {(ChallengeId == c.Id ? "active" : "")}")"
+                                title="@c.Hint" Click="() => StartChallengeAsync(c.Id)">
                             <span>@c.Name</span>
                             <span class="sp-dim">@(c.Best > 0 ? $"best {FormatTime(c.Best)}" : "not beaten")</span>
-                        </button>
+                        </PoButton>
                     }
                 </section>
 
@@ -171,13 +171,13 @@
                         var when = SlotTimes[slot - 1];
                         <div class="sp-row sp-row--slot">
                             <span class="sp-dim">@slot · @(when > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(when).LocalDateTime.ToString("MMM d HH:mm") : "empty")</span>
-                            <button type="button" class="sp-pill" @onclick="() => SaveSlotAsync(slot)">Save</button>
-                            <button type="button" class="sp-pill" disabled="@(when == 0)" @onclick="() => LoadSlotAsync(slot)">Load</button>
+                            <PoButton class="sp-pill" Click="() => SaveSlotAsync(slot)">Save</PoButton>
+                            <PoButton class="sp-pill" Disabled="@(when == 0)" Click="() => LoadSlotAsync(slot)">Load</PoButton>
                         </div>
                     }
                     <div class="sp-row">
-                        <button type="button" class="sp-pill" title="Download this world as a file" @onclick="ExportAsync">Export file</button>
-                        <button type="button" class="sp-pill" title="Load a world file" @onclick="ImportAsync">Import file</button>
+                        <PoButton class="sp-pill" title="Download this world as a file" Click="ExportAsync">Export file</PoButton>
+                        <PoButton class="sp-pill" title="Load a world file" Click="ImportAsync">Import file</PoButton>
                     </div>
                 </section>
 
@@ -187,9 +187,9 @@
                         @for (var v = 0; v < Views.Length; v++)
                         {
                             var view = v;
-                            <button type="button" class="sp-pill @(View == view ? "active" : "")"
+                            <PoButton class="@($"sp-pill {(View == view ? "active" : "")}")"
                                     aria-pressed="@Pressed(View == view)"
-                                    @onclick="() => SetViewAsync(view)">@Views[view]</button>
+                                    Click="() => SetViewAsync(view)">@Views[view]</PoButton>
                         }
                     </div>
                 </section>
@@ -200,18 +200,18 @@
                         <span class="sp-dim">Speed</span>
                         @foreach (var sp in Speeds)
                         {
-                            <button type="button" class="sp-pill @(Speed == sp.Value ? "active" : "")"
+                            <PoButton class="@($"sp-pill {(Speed == sp.Value ? "active" : "")}")"
                                     aria-pressed="@Pressed(Speed == sp.Value)"
-                                    @onclick="() => SetSpeedAsync(sp.Value)">@sp.Label</button>
+                                    Click="() => SetSpeedAsync(sp.Value)">@sp.Label</PoButton>
                         }
                     </div>
                     <div class="sp-row">
                         <span class="sp-dim">Sky</span>
                         @foreach (var sk in Skies)
                         {
-                            <button type="button" class="sp-pill @(Sun == sk ? "active" : "")"
+                            <PoButton class="@($"sp-pill {(Sun == sk ? "active" : "")}")"
                                     aria-pressed="@Pressed(Sun == sk)"
-                                    @onclick="() => SetSunAsync(sk)">@sk</button>
+                                    Click="() => SetSunAsync(sk)">@sk</PoButton>
                         }
                     </div>
                     <label class="sp-row">
@@ -226,28 +226,28 @@
                         <span class="sp-dim">Gravity</span>
                         @foreach (var g in Gravities)
                         {
-                            <button type="button" class="sp-pill @(Gravity == g.Value ? "active" : "")"
+                            <PoButton class="@($"sp-pill {(Gravity == g.Value ? "active" : "")}")"
                                     aria-pressed="@Pressed(Gravity == g.Value)"
-                                    @onclick="() => SetGravityAsync(g.Value)">@g.Label</button>
+                                    Click="() => SetGravityAsync(g.Value)">@g.Label</PoButton>
                         }
                     </div>
                     <div class="sp-row">
-                        <button type="button" class="sp-pill @(DemoOn ? "active" : "")"
+                        <PoButton class="@($"sp-pill {(DemoOn ? "active" : "")}")"
                                 title="Rain a random TNT bomb every second"
-                                aria-pressed="@Pressed(DemoOn)" @onclick="ToggleDemoAsync">💣 Auto-drop</button>
-                        <button type="button" class="sp-pill @(LabHud ? "active" : "")"
+                                aria-pressed="@Pressed(DemoOn)" Click="ToggleDemoAsync">💣 Auto-drop</PoButton>
+                        <PoButton class="@($"sp-pill {(LabHud ? "active" : "")}")"
                                 title="Show live sand/water cell counts and FPS readout"
-                                aria-pressed="@Pressed(LabHud)" @onclick="ToggleLabHudAsync">🧪 Lab readout</button>
-                        <button type="button" class="sp-pill sp-touch-only @(Tilt ? "active" : "")"
+                                aria-pressed="@Pressed(LabHud)" Click="ToggleLabHudAsync">🧪 Lab readout</PoButton>
+                        <PoButton class="@($"sp-pill sp-touch-only {(Tilt ? "active" : "")}")"
                                 title="Tilt the device to set the wind"
-                                aria-pressed="@Pressed(Tilt)" @onclick="ToggleTiltAsync">📱 Tilt = wind</button>
+                                aria-pressed="@Pressed(Tilt)" Click="ToggleTiltAsync">📱 Tilt = wind</PoButton>
                     </div>
                 </section>
 
                 <section>
                     <h2>Share</h2>
                     <div class="sp-row">
-                        <button type="button" class="sp-pill" @onclick="ShotAsync">📷 Screenshot</button>
+                        <PoButton class="sp-pill" Click="ShotAsync">📷 Screenshot</PoButton>
                     </div>
                 </section>
             </div>
@@ -262,7 +262,7 @@
                 @_toast
                 @if (_toastUndo)
                 {
-                    <button type="button" class="sp-pill" @onclick="UndoAsync">Undo</button>
+                    <PoButton class="sp-pill" Click="UndoAsync">Undo</PoButton>
                 }
             </div>
         }

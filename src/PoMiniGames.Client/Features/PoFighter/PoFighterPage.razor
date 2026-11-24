@@ -68,7 +68,7 @@
             <div class="pf-bracket" data-pf-bracket hidden aria-live="polite"></div>
             @if (_failed)
             {
-                <div class="pf-error"><ErrorState Title="The fight could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+                <div class="pf-error"><ErrorState HeadingLevel="2" Title="The fight could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
             @TouchPad("left", "right")
         </div>
@@ -81,7 +81,7 @@
             <div class="pf-bracket" data-pf-bracket hidden aria-live="polite"></div>
             @if (_failed)
             {
-                <div class="pf-error"><ErrorState Title="The tournament could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+                <div class="pf-error"><ErrorState HeadingLevel="2" Title="The tournament could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
         </div>
     }
@@ -92,7 +92,7 @@
                     aria-label="Demo: Kim and Nick, both computer-controlled, fight best of three. Press any key to leave."></canvas>
             @if (_failed)
             {
-                <div class="pf-error"><ErrorState Title="The demo could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+                <div class="pf-error"><ErrorState HeadingLevel="2" Title="The demo could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
         </div>
     }
@@ -114,25 +114,25 @@
 
             @if (_failed)
             {
-                <div class="pf-error"><ErrorState Title="The fighter could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+                <div class="pf-error"><ErrorState HeadingLevel="2" Title="The fighter could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
 
             @* The move cards: the one being played lights up (index.js sets is-active). Cheer and
                Fall are buttons, so a phone can play them too. After a few idle seconds the strip
                folds into a "?" pill (index.js sets is-collapsed); the pill opens it again. *@
             <nav class="pf-moves" data-pf-moves aria-label="Moves and their controls">
-                <button type="button" class="pf-moves-pill" data-pf-moves-toggle aria-label="Show the moves">
+                <PoButton class="pf-moves-pill" data-pf-moves-toggle aria-label="Show the moves">
                     <span class="material-symbols-outlined" aria-hidden="true">sports_martial_arts</span>?
-                </button>
+                </PoButton>
                 <ul>
                     @foreach (var m in Moves)
                     {
                         <li>
                             @if (m.Tappable)
                             {
-                                <button type="button" class="pf-move" data-pf-move="@m.Id" data-pf-btn="@m.Id" title="@m.Name">
+                                <PoButton class="pf-move" data-pf-move="@m.Id" data-pf-btn="@m.Id" title="@m.Name">
                                     @MoveCard(m)
-                                </button>
+                                </PoButton>
                             }
                             else
                             {
@@ -147,7 +147,7 @@
                toggles and the Studio. *@
             <div class="pf-toolbar">
                 <span class="pf-hits" role="status"><small>Hits</small><strong data-pf-hits>0</strong></span>
-                <button type="button" data-spring class="pf-avatar" popovertarget="pf-roster-sheet"
+                <PoButton data-spring class="pf-avatar" popovertarget="pf-roster-sheet"
                         aria-label="@($"Fighter: {CardFor(_fighterId)?.Name ?? "Nick"}. Change fighter")">
                     @if (CardFor(_fighterId) is { Portrait.Length: > 0 } card)
                     {
@@ -159,28 +159,28 @@
                     }
                     <span class="pf-avatar-name">@(CardFor(_fighterId)?.Name ?? "Nick")</span>
                     <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
-                </button>
+                </PoButton>
                 <div class="pf-seg" role="group" aria-label="Room">
-                    <button type="button" data-pf-action="reset" title="Reset the room (R)" aria-label="Reset the room">
+                    <PoButton data-pf-action="reset" title="Reset the room (R)" aria-label="Reset the room">
                         <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
-                    </button>
-                    <button type="button" data-pf-action="slow" aria-pressed="false" aria-label="Slow motion"
+                    </PoButton>
+                    <PoButton data-pf-action="slow" aria-pressed="false" aria-label="Slow motion"
                             title="Quarter speed, to judge a move picture by picture (T)">
                         <span class="material-symbols-outlined" aria-hidden="true">slow_motion_video</span>
-                    </button>
+                    </PoButton>
                 </div>
-                <button type="button" data-spring class="pf-create" @onclick="OpenStudioAsync" title="Film a new fighter from the webcam or a clip">
+                <PoButton data-spring class="pf-create" Click="OpenStudioAsync" title="Film a new fighter from the webcam or a clip">
                     <span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>
                     <span class="pf-create-label">Create fighter</span>
-                </button>
+                </PoButton>
             </div>
 
             <div id="pf-roster-sheet" popover="auto" class="pf-sheet" aria-label="Choose your fighter">
                 <header class="pf-sheet-head">
                     <h2>Choose your fighter</h2>
-                    <button type="button" class="pf-icon-btn" popovertarget="pf-roster-sheet" popovertargetaction="hide" aria-label="Close">
+                    <PoButton class="pf-icon-btn" popovertarget="pf-roster-sheet" popovertargetaction="hide" aria-label="Close">
                         <span class="material-symbols-outlined" aria-hidden="true">close</span>
-                    </button>
+                    </PoButton>
                 </header>
                 <PoFighterRosterGrid Label="Choose your fighter" Compact="true" Selected="@_fighterId" Ratings="@_ratings"
                                      Customs="@_customFighters" OnSelect="PickPracticeFighterAsync" OnCreate="OpenStudioAsync" />
@@ -193,16 +193,16 @@
             <dialog class="pf-studio" @ref="_studioDialog" data-step="@_studioStep" aria-label="PoFighter Studio" @onclose="OnStudioClosedAsync">
                 <header class="pf-studio-head">
                     <h2>Create a fighter</h2>
-                    <button type="button" class="pf-icon-btn" @onclick="CloseStudioAsync" aria-label="Close the Studio">
+                    <PoButton class="pf-icon-btn" Click="CloseStudioAsync" aria-label="Close the Studio">
                         <span class="material-symbols-outlined" aria-hidden="true">close</span>
-                    </button>
+                    </PoButton>
                 </header>
                 <ol class="pf-steps">
                     @foreach (var (n, label) in StudioSteps)
                     {
                         var state = n < _studioStep ? "done" : n == _studioStep ? "current" : "todo";
                         <li class="pf-step pf-step--@state" aria-current="@(n == _studioStep ? "step" : null)">
-                            <button type="button" disabled="@(n > _studioReached || _studioBusy)" @onclick="() => _studioStep = n">
+                            <PoButton Disabled="@(n > _studioReached || _studioBusy)" Click="() => _studioStep = n">
                                 <span class="pf-step-dot">
                                     @if (state == "done")
                                     {
@@ -214,7 +214,7 @@
                                     }
                                 </span>
                                 <span class="pf-step-label">@label</span>
-                            </button>
+                            </PoButton>
                         </li>
                     }
                 </ol>
@@ -229,11 +229,11 @@
                 @if (_studioStep == 1)
                 {
                     <div class="pf-sources">
-                        <button type="button" data-spring class="pf-source" disabled="@_studioBusy" @onclick="StartWebcamAsync">
+                        <PoButton data-spring class="pf-source" Disabled="@_studioBusy" Click="StartWebcamAsync">
                             <span class="material-symbols-outlined" aria-hidden="true">videocam</span>
                             <strong>Use the webcam</strong>
                             <small>Perform each move in front of the camera.</small>
-                        </button>
+                        </PoButton>
                         <label class="pf-source @(_studioBusy ? "is-disabled" : "")">
                             <span class="material-symbols-outlined" aria-hidden="true">movie</span>
                             <strong>Upload a clip</strong>
@@ -246,10 +246,10 @@
                 {
                     <p class="pf-studio-tip">Step out of the frame, then capture the empty room. The cut-out is cleaner with it.</p>
                     <div class="pf-studio-actions">
-                        <button type="button" data-spring class="pf-btn" @onclick="() => GoStudioStep(3)">Skip</button>
-                        <button type="button" data-spring class="pf-btn pf-btn--primary" @onclick="CaptureBgAsync">
+                        <PoButton data-spring class="pf-btn" Click="() => GoStudioStep(3)">Skip</PoButton>
+                        <PoButton data-spring class="pf-btn pf-btn--primary" Click="CaptureBgAsync">
                             <span class="material-symbols-outlined" aria-hidden="true">wallpaper</span> Capture background
-                        </button>
+                        </PoButton>
                     </div>
                 }
                 else if (_studioStep == 3)
@@ -260,8 +260,8 @@
                             var count = _studioCounts.TryGetValue(m.Id, out var c) ? c : 0;
                             var thumb = _studioThumbs.TryGetValue(m.Id, out var t) ? t : null;
                             <li>
-                                <button type="button" class="pf-capture @(count > 0 ? "is-done" : "")" disabled="@_studioBusy"
-                                        @onclick="() => CaptureMoveAsync(m.Id)" aria-label="@($"Record {m.Label}: {m.Hint}. {count} pictures")">
+                                <PoButton class="@($"pf-capture {(count > 0 ? "is-done" : "")}")" Disabled="@_studioBusy"
+                                        Click="() => CaptureMoveAsync(m.Id)" aria-label="@($"Record {m.Label}: {m.Hint}. {count} pictures")">
                                     <span class="pf-capture-ring" style="--p: @(Math.Min(100, count * 100 / StudioFramesPerMove))">
                                         @if (thumb is not null)
                                         {
@@ -278,27 +278,27 @@
                                     {
                                         <span class="pf-capture-check material-symbols-outlined" aria-hidden="true">check_circle</span>
                                     }
-                                </button>
+                                </PoButton>
                             </li>
                         }
                     </ul>
                     <div class="pf-studio-actions">
-                        <button type="button" data-spring class="pf-btn pf-btn--primary" disabled="@(_studioTotalFrames == 0 || _studioBusy)" @onclick="() => GoStudioStep(4)">
+                        <PoButton data-spring class="pf-btn pf-btn--primary" Disabled="@(_studioTotalFrames == 0 || _studioBusy)" Click="() => GoStudioStep(4)">
                             Next <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-                        </button>
+                        </PoButton>
                     </div>
                 }
                 else
                 {
                     <label class="pf-studio-name">
                         <span>Fighter name</span>
-                        <input type="text" maxlength="24" @bind="_studioFighterName" placeholder="My Fighter" />
+                        <PoTextBox MaxLength="24" @bind-Value="_studioFighterName" Placeholder="My Fighter" />
                     </label>
                     <p class="pf-studio-tip">@_studioCounts.Count(kv => kv.Value > 0) of @StudioMoves.Length moves, @_studioTotalFrames pictures. Saved in this browser only.</p>
                     <div class="pf-studio-actions">
-                        <button type="button" data-spring class="pf-btn pf-btn--primary" disabled="@(_studioTotalFrames == 0 || _studioBusy)" @onclick="SaveStudioFighterAsync">
+                        <PoButton data-spring class="pf-btn pf-btn--primary" Disabled="@(_studioTotalFrames == 0 || _studioBusy)" Click="SaveStudioFighterAsync">
                             <span class="material-symbols-outlined" aria-hidden="true">sports_mma</span> Save and fight
-                        </button>
+                        </PoButton>
                     </div>
                 }
             </dialog>
@@ -345,16 +345,16 @@
     // differ: the practice fighter always faces the bag, the arcade one faces the foe.
     private static RenderFragment TouchPad(string leftName, string rightName) => @<text>
         <div class="pf-touch pf-touch-move" aria-label="Movement">
-            <button type="button" data-pf-btn="left" aria-label="@($"Walk {leftName}")"><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+            <PoButton data-pf-btn="left" aria-label="@($"Walk {leftName}")"><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></PoButton>
             <div class="pf-touch-stack">
-                <button type="button" data-pf-btn="up" aria-label="Jump"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button>
-                <button type="button" data-pf-btn="down" aria-label="Crouch"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_down</span></button>
+                <PoButton data-pf-btn="up" aria-label="Jump"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></PoButton>
+                <PoButton data-pf-btn="down" aria-label="Crouch"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_down</span></PoButton>
             </div>
-            <button type="button" data-pf-btn="right" aria-label="@($"Walk {rightName}")"><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+            <PoButton data-pf-btn="right" aria-label="@($"Walk {rightName}")"><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></PoButton>
         </div>
         <div class="pf-touch pf-touch-attack" aria-label="Attacks">
-            <button type="button" class="pf-touch-punch" data-pf-btn="punchMid">Punch</button>
-            <button type="button" class="pf-touch-kick" data-pf-btn="kick">Kick</button>
+            <PoButton class="pf-touch-punch" data-pf-btn="punchMid">Punch</PoButton>
+            <PoButton class="pf-touch-kick" data-pf-btn="kick">Kick</PoButton>
         </div>
     </text>;
 

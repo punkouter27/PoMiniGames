@@ -70,19 +70,19 @@
             </ol>
         }
     </div>
-    <button type="button" class="race-pause" aria-label="Pause" title="Pause (Esc)" @onclick="OnPause">❚❚</button>
+    <PoButton class="race-pause" aria-label="Pause" title="Pause (Esc)" Click="OnPause">❚❚</PoButton>
 </div>
 @if (!IsDemo)
 {
     <div class="race-touch" aria-label="Driving controls">
         <div>
-            <button type="button" data-po-input="left" aria-label="Steer left">◀</button>
-            <button type="button" data-po-input="right" aria-label="Steer right">▶</button>
+            <PoButton data-po-input="left" aria-label="Steer left">◀</PoButton>
+            <PoButton data-po-input="right" aria-label="Steer right">▶</PoButton>
         </div>
         <div>
-            <button type="button" data-po-input="space">Drift</button>
-            <button type="button" data-po-input="down">Brake</button>
-            <button type="button" data-po-input="up">Gas</button>
+            <PoButton data-po-input="space">Drift</PoButton>
+            <PoButton data-po-input="down">Brake</PoButton>
+            <PoButton data-po-input="up">Gas</PoButton>
         </div>
     </div>
 }

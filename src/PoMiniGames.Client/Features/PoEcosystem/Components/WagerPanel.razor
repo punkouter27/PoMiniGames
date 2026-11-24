@@ -16,8 +16,8 @@
                 {
                     var option = k;
                     var state = outcome == option ? "poeco-wager--right" : picked && pick == option && outcome is not null ? "poeco-wager--wrong" : "";
-                    <button type="button" class="poeco-pill @(picked && pick == option ? "poeco-pill--on" : "") @state"
-                            aria-pressed="@(picked && pick == option ? "true" : "false")" @onclick="() => PickAsync(q.Id, option)">@q.Options[option]</button>
+                    <PoButton class="@($"poeco-pill {(picked && pick == option ? "poeco-pill--on" : "")} {(state)}")"
+                            aria-pressed="@(picked && pick == option ? "true" : "false")" Click="() => PickAsync(q.Id, option)">@q.Options[option]</PoButton>
                 }
             </div>
             @if (outcome is { } o)

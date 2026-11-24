@@ -78,10 +78,10 @@
             <SectionOutlet SectionName="game-elo" />
             @* The only player setting left: the initials shown on the leaderboards. Everything
                else runs on fixed defaults (graphics high, rich audio on). *@
-            <button type="button" class="po-header__initials" data-no-press-sound
-                    aria-label="Change initials" title="Change initials" @onclick="OpenInitials">
+            <PoButton class="po-header__initials" data-no-press-sound
+                    aria-label="Change initials" title="Change initials" Click="OpenInitials">
                 @InitialsLabel
-            </button>
+            </PoButton>
         </div>
     </header>
 
@@ -105,9 +105,9 @@
                     <span class="toast-msg">@toast.Message</span>
                     @if (toast.Action is not null)
                     {
-                        <button class="toast-action" @onclick="() => RunToastAction(toast)">@toast.ActionLabel</button>
+                        <PoButton class="toast-action" Click="() => RunToastAction(toast)">@toast.ActionLabel</PoButton>
                     }
-                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                    <PoButton class="toast-close" Click="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
                 </div>
             }
         </div>

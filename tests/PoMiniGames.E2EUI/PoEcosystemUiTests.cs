@@ -19,10 +19,13 @@ public class PoEcosystemUiTests
     public async Task Demo_TheIslandIsAlive()
     {
         using var playwright = await Playwright.CreateAsync();
-        // SwiftShader for the same reason as PoVoxelStrikeUiTests: this Playwright build's
-        // headless launch has no WebGL, and GameShell would correctly show its fallback.
+        // Windows: the real GPU (BrowserLaunch). Under SwiftShader the island's engine never reported ready within
+        // 180 s on either host (AGENTS.md, 2026-11-22 and the v4 audit), so the test measured the rasteriser, not
+        // the game. Elsewhere SwiftShader, because this Playwright build's headless launch has no WebGL there and
+        // GameShell would correctly show its fallback.
         var options = BrowserLaunch.Options();
-        options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        if (!OperatingSystem.IsWindows())
+            options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions { ViewportSize = MobileViewport.Portrait });
 
@@ -34,7 +37,7 @@ public class PoEcosystemUiTests
 
         await page.GotoAsync($"{origin}/poecosystem/demo", new PageGotoOptions
         {
-            WaitUntil = WaitUntilState.NetworkIdle,
+            WaitUntil = WaitUntilState.Load,
             Timeout = 120_000,
         });
 

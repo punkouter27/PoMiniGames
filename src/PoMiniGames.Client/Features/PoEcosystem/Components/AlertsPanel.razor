@@ -12,7 +12,7 @@
             {
                 <li>
                     <span class="poeco-alert-rule @(Stats is not null && rule.Holds(Stats) ? "poeco-alert-rule--on" : "")">@rule.Describe()</span>
-                    <button type="button" class="poeco-icon-btn" aria-label="Remove the alert: @rule.Describe()" title="Remove" @onclick="() => Remove(rule)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                    <PoButton class="poeco-icon-btn" aria-label="@($"Remove the alert: {(rule.Describe())}")" title="Remove" Click="() => Remove(rule)"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
                 </li>
             }
         </ul>
@@ -33,7 +33,7 @@
             <option value="above">rise above</option>
         </InputSelect>
         <InputNumber @bind-Value="_input.Value" min="0" max="@EcoAlertInput.MaxValue" aria-label="How many" />
-        <button type="submit" class="poeco-pill poeco-pill--on" disabled="@(_submitting || Book.Rules.Count >= EcoAlertBook.MaxRules)">Alert me</button>
+        <PoButton ButtonType="ButtonType.Submit" class="poeco-pill poeco-pill--on" Disabled="@(_submitting || Book.Rules.Count >= EcoAlertBook.MaxRules)">Alert me</PoButton>
         <div class="poeco-field-error" aria-live="polite">
             <ValidationMessage For="() => _input.Species" />
             <ValidationMessage For="() => _input.Op" />

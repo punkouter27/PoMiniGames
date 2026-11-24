@@ -46,7 +46,7 @@
 
 .pocabinet-drawer__head h2 { margin: 0; font-size: 1.15rem; }
 
-.pocabinet-drawer__close { min-width: 2.75rem; min-height: 2.75rem; padding: 0; font-size: 1.1rem; }
+::deep .pocabinet-drawer__close { min-width: 2.75rem; min-height: 2.75rem; padding: 0; font-size: 1.1rem; }
 
 .pocabinet-drawer__body {
     flex: 1 1 auto;

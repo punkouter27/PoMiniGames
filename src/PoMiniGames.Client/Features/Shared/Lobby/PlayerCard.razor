@@ -108,26 +108,26 @@ else if (Card is not null)
                    ("Copy card", "Download card") were the widest thing on a card whose job
                    is to be looked at, and neither is an everyday action. *@
                 <div class="card-actions">
-                    <button type="button" class="app-btn app-btn--secondary app-btn--sm"
+                    <PoButton class="app-btn app-btn--secondary app-btn--sm"
                             popovertarget="player-card-export" aria-haspopup="menu"
                             aria-label="Export this licence card">
                         <span class="material-symbols-outlined" aria-hidden="true">ios_share</span>
                         <span>Export</span>
-                    </button>
+                    </PoButton>
                     <div id="player-card-export" popover="auto" class="card-export-panel"
                          role="menu" aria-label="Export licence card">
-                        <button type="button" role="menuitem" class="card-export-item"
+                        <PoButton role="menuitem" class="card-export-item"
                                 popovertarget="player-card-export" popovertargetaction="hide"
-                                @onclick="CopySvgAsync">
+                                Click="CopySvgAsync">
                             <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
                             <span>Copy as SVG</span>
-                        </button>
-                        <button type="button" role="menuitem" class="card-export-item"
+                        </PoButton>
+                        <PoButton role="menuitem" class="card-export-item"
                                 popovertarget="player-card-export" popovertargetaction="hide"
-                                @onclick="DownloadSvgAsync">
+                                Click="DownloadSvgAsync">
                             <span class="material-symbols-outlined" aria-hidden="true">download</span>
                             <span>Download SVG</span>
-                        </button>
+                        </PoButton>
                     </div>
                 </div>
             }

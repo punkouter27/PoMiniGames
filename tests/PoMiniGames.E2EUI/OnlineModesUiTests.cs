@@ -179,9 +179,12 @@ public class OnlineModesUiTests
     private static async Task<IBrowser> LaunchAsync(IPlaywright playwright)
     {
         var options = BrowserLaunch.Options();
-        // Same SwiftShader allowance as the PoVoxelStrike smoke: the three.js games need a GL
-        // context to get past GameShell's "needs 3D graphics" gate. Harmless for the 2D boards.
-        options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        // Windows: the real GPU (BrowserLaunch). Two SwiftShader-rendered three.js pages in one browser starved
+        // the host page's main thread long enough for its hub connection to time out, so the guest saw "has left"
+        // before the first streamed frame (v4 audit 2026-11-24). Elsewhere the SwiftShader allowance stands: the
+        // three.js games need a GL context to get past GameShell's "needs 3D graphics" gate.
+        if (!OperatingSystem.IsWindows())
+            options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         return await playwright.Chromium.LaunchAsync(options);
     }
 

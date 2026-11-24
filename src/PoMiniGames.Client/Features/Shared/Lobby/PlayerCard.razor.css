@@ -267,13 +267,13 @@
 
 /* The shared .app-btn, on this always-dark card: its text token follows the page's
    theme (dark ink in the light scheme), which is unreadable here. */
-.card-actions .app-btn {
+.card-actions ::deep .app-btn {
     color: #e2e8f0;
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.2);
 }
 
-.card-actions .app-btn:hover {
+.card-actions ::deep .app-btn:hover {
     background: rgba(255, 255, 255, 0.12);
     border-color: var(--tier-color, rgba(255, 255, 255, 0.3));
 }
@@ -301,7 +301,7 @@
     background: rgba(0, 0, 0, 0.35);
 }
 
-.card-export-item {
+::deep .card-export-item {
     display: grid;
     grid-template-columns: 1.25rem minmax(0, 1fr);
     align-items: center;
@@ -318,8 +318,8 @@
     cursor: pointer;
 }
 
-.card-export-item:hover,
-.card-export-item:focus-visible {
+::deep .card-export-item:hover,
+::deep .card-export-item:focus-visible {
     background: rgba(255, 255, 255, 0.1);
 }
 

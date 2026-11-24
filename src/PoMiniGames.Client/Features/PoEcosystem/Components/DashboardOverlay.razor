@@ -16,11 +16,11 @@
         <nav class="poeco-tabs" role="tablist" aria-label="Dashboard sections">
             @foreach (var (id, label) in Tabs)
             {
-                <button type="button" role="tab" class="poeco-tab @(_tab == id ? "poeco-tab--on" : "")" aria-selected="@(_tab == id ? "true" : "false")"
-                        aria-label="@(id == "settings" ? "Settings" : label)" title="@(id == "settings" ? "Settings" : null)" @onclick="() => SelectTab(id)">@label</button>
+                <PoButton role="tab" class="@($"poeco-tab {(_tab == id ? "poeco-tab--on" : "")}")" aria-selected="@(_tab == id ? "true" : "false")"
+                        aria-label="@(id == "settings" ? "Settings" : label)" title="@(id == "settings" ? "Settings" : null)" Click="() => SelectTab(id)">@label</PoButton>
             }
             <span class="poeco-spacer"></span>
-            <button type="button" class="poeco-pill" @onclick="OnClose" aria-label="Close the dashboard">Close <kbd>Esc</kbd></button>
+            <PoButton class="poeco-pill" Click="OnClose" aria-label="Close the dashboard">Close <kbd>Esc</kbd></PoButton>
         </nav>
 
         @if (_tab == "island")
@@ -92,7 +92,7 @@
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--settings">
                     <h3>Getting started</h3>
-                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnReplayTour">Show the getting-started tour again</button>
+                    <PoButton class="poeco-btn poeco-btn--sm" Click="OnReplayTour">Show the getting-started tour again</PoButton>
                 </section>
                 <section class="poeco-panel poeco-panel--chart">
                     <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing"

@@ -100,8 +100,8 @@
                                 }
                             </div>
                         </div>
-                        <button class="pvs-hud-btn" type="button" title="Fullscreen"
-                                aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
+                        <PoButton class="pvs-hud-btn" title="Fullscreen"
+                                aria-label="Toggle fullscreen" Click="ToggleFullscreenAsync">⛶</PoButton>
                     </div>
 
                     @if (_down)
@@ -127,10 +127,10 @@
                         </div>
                         @ControlsContent
                         <div class="pvs-pause-actions">
-                            <button class="pvs-btn pvs-btn-primary" @ref="_resumeButton" @onclick="ResumeAsync">Resume</button>
-                            <button class="pvs-btn" @onclick="RestartAsync">Restart</button>
-                            <button class="pvs-btn" @onclick="ToggleFullscreenAsync">Fullscreen</button>
-                            <button class="pvs-btn" @onclick="@(() => Navigation.NavigateTo("/"))">Quit</button>
+                            <PoButton class="pvs-btn pvs-btn-primary" @ref="_resumeButton" Click="ResumeAsync">Resume</PoButton>
+                            <PoButton class="pvs-btn" Click="RestartAsync">Restart</PoButton>
+                            <PoButton class="pvs-btn" Click="ToggleFullscreenAsync">Fullscreen</PoButton>
+                            <PoButton class="pvs-btn" Click="@(() => Navigation.NavigateTo("/"))">Quit</PoButton>
                         </div>
                     </GamePauseDialog>
                 </div>
@@ -182,7 +182,7 @@
     private bool _autoEnter;         // Restart: go straight in when the arena is ready
     private string? _fatalError;
     private DotNetObjectReference<PoVoxelStrikePage>? _ref;
-    private ElementReference _resumeButton;
+    private PoButton? _resumeButton;
     private bool _focusResume;
 
     // ── Online ──
@@ -350,7 +350,7 @@
         if (_focusResume)
         {
             _focusResume = false;
-            try { await _resumeButton.FocusAsync(); } catch { /* dialog already gone */ }
+            try { if (_resumeButton is not null) await _resumeButton.Element.FocusAsync(); } catch { /* dialog already gone */ }
         }
         if (!_routeDirty) return;
         _routeDirty = false;

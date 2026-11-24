@@ -8,9 +8,9 @@
    mode, the key legend). The menus are plain component state — no popover API, because a
    top-layer element escapes .poeco-hud's idle fade and would hang over a hidden HUD. *@
 <div class="poeco-hudbar">
-    <button type="button" class="poeco-chip" title="Island status — click for the dashboard (Tab)"
-            aria-label="Island status: year @(Stats?.Year ?? 0), day @(Stats?.Day ?? 1), @(Stats?.Alive ?? 0) creatures alive@(Stats?.Tech is { } t ? $", {t.Tribe} tribe at {t.Name}" : ""). Open the dashboard."
-            @onclick="OnDashboard">
+    <PoButton class="poeco-chip" title="Island status — click for the dashboard (Tab)"
+            aria-label="@($"Island status: year {(Stats?.Year ?? 0)}, day {(Stats?.Day ?? 1)}, {(Stats?.Alive ?? 0)} creatures alive{(Stats?.Tech is { } t ? $", {t.Tribe} tribe at {t.Name}" : "")}. Open the dashboard.")"
+            Click="OnDashboard">
         @{
             var seasonIcon = (Stats?.Season ?? 0) switch
             {
@@ -30,61 +30,61 @@
             <span class="poeco-chip-sep" aria-hidden="true">·</span>
             <span class="poeco-chip-tech" title="The tribe's ladder: Camp → Fire → Palisade → Farming → Watchtower">@tech.Name</span>
         }
-    </button>
+    </PoButton>
 
     <div class="poeco-speed" role="group" aria-label="Simulation speed">
         @foreach (var s in Speeds)
         {
-            <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" aria-pressed="@(Stats?.Speed == s ? "true" : "false")"
+            <PoButton class="@($"poeco-pill {(Stats?.Speed == s ? "poeco-pill--on" : "")}")" aria-pressed="@(Stats?.Speed == s ? "true" : "false")"
                     title="@(s == 0 ? "Pause (0)" : $"{s}× speed ({(s == 4 ? 3 : s)})")" aria-label="@(s == 0 ? "Pause" : $"{s} times speed")"
-                    @onclick="() => OnSpeed.InvokeAsync(s)">@if (s == 0) { <span class="material-symbols-outlined" aria-hidden="true">pause</span> } else { @($"{s}×") }</button>
+                    Click="() => OnSpeed.InvokeAsync(s)">@if (s == 0) { <span class="material-symbols-outlined" aria-hidden="true">pause</span> } else { @($"{s}×") }</PoButton>
         }
-        <button type="button" class="poeco-pill" title="Fast-forward the island by 1 year" aria-label="Skip 1 year"
-                @onclick="() => OnFastForward.InvokeAsync(1)">+1y</button>
-        <button type="button" class="poeco-pill" title="Fast-forward the island by 5 years" aria-label="Skip 5 years"
-                @onclick="() => OnFastForward.InvokeAsync(5)">+5y</button>
+        <PoButton class="poeco-pill" title="Fast-forward the island by 1 year" aria-label="Skip 1 year"
+                Click="() => OnFastForward.InvokeAsync(1)">+1y</PoButton>
+        <PoButton class="poeco-pill" title="Fast-forward the island by 5 years" aria-label="Skip 5 years"
+                Click="() => OnFastForward.InvokeAsync(5)">+5y</PoButton>
     </div>
 
-    <button type="button" class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"
+    <PoButton class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"
             aria-label="@(Sound ? "Mute ambience" : "Unmute ambience")"
             title="@(Sound ? "Mute ambience" : "Unmute ambience")"
-            @onclick="() => OnSound.InvokeAsync(!Sound)">@if (Sound) { <span class="material-symbols-outlined" aria-hidden="true">volume_up</span> } else { <span class="material-symbols-outlined" aria-hidden="true">volume_off</span> }</button>
+            Click="() => OnSound.InvokeAsync(!Sound)">@if (Sound) { <span class="material-symbols-outlined" aria-hidden="true">volume_up</span> } else { <span class="material-symbols-outlined" aria-hidden="true">volume_off</span> }</PoButton>
 
-    <button type="button" class="poeco-pill @(Director ? "poeco-pill--on" : "")" aria-pressed="@(Director ? "true" : "false")"
+    <PoButton class="@($"poeco-pill {(Director ? "poeco-pill--on" : "")}")" aria-pressed="@(Director ? "true" : "false")"
             title="Cinematic camera — let the director find the drama (C)" aria-label="Cinematic camera"
-            @onclick="OnDirector">🎬</button>
+            Click="OnDirector">🎬</PoButton>
 
-    <button type="button" class="poeco-pill" title="Find a creature or a clan (/)" aria-label="Find a creature or a clan"
-            @onclick="Find">🔍</button>
+    <PoButton class="poeco-pill" title="Find a creature or a clan (/)" aria-label="Find a creature or a clan"
+            Click="Find">🔍</PoButton>
 
     <div class="poeco-menu">
-        <button type="button" class="poeco-pill @(Lens != EcoLens.None ? "poeco-pill--on" : "")" aria-haspopup="true" aria-expanded="@(_menu == "lens" ? "true" : "false")"
-                title="Lens — colour every creature by a trait, hunger, health, heat or kinship (L)" aria-label="Lens: @EcoLens.LabelOf(Lens)"
-                @onclick="@(() => Toggle("lens"))">👁@(Lens != EcoLens.None ? $" {EcoLens.LabelOf(Lens)}" : "")</button>
+        <PoButton class="@($"poeco-pill {(Lens != EcoLens.None ? "poeco-pill--on" : "")}")" aria-haspopup="true" aria-expanded="@(_menu == "lens" ? "true" : "false")"
+                title="Lens — colour every creature by a trait, hunger, health, heat or kinship (L)" aria-label="@($"Lens: {(EcoLens.LabelOf(Lens))}")"
+                Click="@(() => Toggle("lens"))">👁@(Lens != EcoLens.None ? $" {EcoLens.LabelOf(Lens)}" : "")</PoButton>
         @if (_menu == "lens")
         {
             <div class="poeco-menu-panel" role="menu" aria-label="Lens">
                 @foreach (var (id, label, _, _) in EcoLens.All)
                 {
-                    <button type="button" role="menuitemradio" aria-checked="@(Lens == id ? "true" : "false")"
-                            class="poeco-menu-item @(Lens == id ? "poeco-menu-item--on" : "")" @onclick="() => PickLens(id)">@label</button>
+                    <PoButton role="menuitemradio" aria-checked="@(Lens == id ? "true" : "false")"
+                            class="@($"poeco-menu-item {(Lens == id ? "poeco-menu-item--on" : "")}")" Click="() => PickLens(id)">@label</PoButton>
                 }
             </div>
         }
     </div>
 
     <div class="poeco-menu">
-        <button type="button" class="poeco-pill poeco-reel-btn @(Pip || Ambient ? "poeco-pill--on" : "")" aria-haspopup="true" aria-expanded="@(_menu == "more" ? "true" : "false")"
+        <PoButton class="@($"poeco-pill poeco-reel-btn {(Pip || Ambient ? "poeco-pill--on" : "")}")" aria-haspopup="true" aria-expanded="@(_menu == "more" ? "true" : "false")"
                 title="More — pop-out window, photos, ambient mode, keys" aria-label="More views"
-                @onclick="@(() => Toggle("more"))">⋯</button>
+                Click="@(() => Toggle("more"))">⋯</PoButton>
         @if (_menu == "more")
         {
             <div class="poeco-menu-panel" role="menu" aria-label="More views">
-                <button type="button" role="menuitemcheckbox" aria-checked="@(PhotoMode ? "true" : "false")" class="poeco-menu-item @(PhotoMode ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPhotoMode))">📷 Photo mode <span class="poeco-menu-hint">FOV slider · stamped postcard PNG</span></button>
-                <button type="button" role="menuitem" class="poeco-menu-item" @onclick="@(() => Run(OnReel))">📷 Photos <span class="poeco-menu-hint">stills · miniature · long exposure</span></button>
-                <button type="button" role="menuitemcheckbox" aria-checked="@(Pip ? "true" : "false")" class="poeco-menu-item @(Pip ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPip))">⧉ Pop out <kbd>P</kbd> <span class="poeco-menu-hint">a small always-on-top window</span></button>
-                <button type="button" role="menuitemcheckbox" aria-checked="@(Ambient ? "true" : "false")" class="poeco-menu-item @(Ambient ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnAmbient))">🌙 Ambient mode <span class="poeco-menu-hint">director on, HUD off, screen kept awake</span></button>
-                <button type="button" role="menuitemcheckbox" aria-checked="@(Keys ? "true" : "false")" class="poeco-menu-item @(Keys ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnKeys))">⌨ Keys <kbd>H</kbd></button>
+                <PoButton role="menuitemcheckbox" aria-checked="@(PhotoMode ? "true" : "false")" class="@($"poeco-menu-item {(PhotoMode ? "poeco-menu-item--on" : "")}")" Click="@(() => Run(OnPhotoMode))">📷 Photo mode <span class="poeco-menu-hint">FOV slider · stamped postcard PNG</span></PoButton>
+                <PoButton role="menuitem" class="poeco-menu-item" Click="@(() => Run(OnReel))">📷 Photos <span class="poeco-menu-hint">stills · miniature · long exposure</span></PoButton>
+                <PoButton role="menuitemcheckbox" aria-checked="@(Pip ? "true" : "false")" class="@($"poeco-menu-item {(Pip ? "poeco-menu-item--on" : "")}")" Click="@(() => Run(OnPip))">⧉ Pop out <kbd>P</kbd> <span class="poeco-menu-hint">a small always-on-top window</span></PoButton>
+                <PoButton role="menuitemcheckbox" aria-checked="@(Ambient ? "true" : "false")" class="@($"poeco-menu-item {(Ambient ? "poeco-menu-item--on" : "")}")" Click="@(() => Run(OnAmbient))">🌙 Ambient mode <span class="poeco-menu-hint">director on, HUD off, screen kept awake</span></PoButton>
+                <PoButton role="menuitemcheckbox" aria-checked="@(Keys ? "true" : "false")" class="@($"poeco-menu-item {(Keys ? "poeco-menu-item--on" : "")}")" Click="@(() => Run(OnKeys))">⌨ Keys <kbd>H</kbd></PoButton>
             </div>
         }
     </div>

@@ -10,11 +10,11 @@
         @foreach (var t in Thoughts.AsEnumerable().Reverse().Take(60))
         {
             <li>
-                <button type="button" class="poeco-thought-item" title="Inspect @t.Name" @onclick="() => OnSelect.InvokeAsync(t.Handle)">
+                <PoButton class="poeco-thought-item" title="@($"Inspect {(t.Name)}")" Click="() => OnSelect.InvokeAsync(t.Handle)">
                     <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(t.Species)" aria-hidden="true"></i>
                     <span class="poeco-thought-name">@t.Name</span>
                     <span class="poeco-thought-text">“@t.Text”</span>
-                </button>
+                </PoButton>
             </li>
         }
     }

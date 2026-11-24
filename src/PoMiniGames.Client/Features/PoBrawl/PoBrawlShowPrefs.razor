@@ -21,8 +21,8 @@
         <span class="prefs-hint">Full adds replays, balloons, LED boards, TV camera cuts and the belt ceremony.</span>
     </div>
     <div class="app-seg" role="radiogroup" aria-label="Brawl show">
-        <button type="button" role="radio" class="app-seg__btn" aria-checked="@Aria(!_full)" @onclick="() => Set(false)">Simple</button>
-        <button type="button" role="radio" class="app-seg__btn" aria-checked="@Aria(_full)" @onclick="() => Set(true)">Full</button>
+        <PoButton role="radio" class="app-seg__btn" aria-checked="@Aria(!_full)" Click="() => Set(false)">Simple</PoButton>
+        <PoButton role="radio" class="app-seg__btn" aria-checked="@Aria(_full)" Click="() => Set(true)">Full</PoButton>
     </div>
 </div>
 

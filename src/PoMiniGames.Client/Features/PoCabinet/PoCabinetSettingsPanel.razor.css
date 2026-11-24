@@ -1,6 +1,6 @@
 /* PoCabinetSettingsPanel — its own scoped styles (split from PoCabinetPage.razor.css). Shared
    bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
-.pocabinet-secondary {
+::deep .pocabinet-secondary {
     background: transparent;
     color: var(--color-text, inherit);
     border: 1px solid var(--color-border, currentColor);
@@ -12,13 +12,13 @@
 }
 
 /* A button inside a row (the camera's Next view): no gap above it. */
-.pocabinet-secondary.pocabinet-settings__inline { margin-top: 0; }
+::deep .pocabinet-secondary.pocabinet-settings__inline { margin-top: 0; }
 
-.pocabinet-secondary:hover { border-color: var(--color-primary); }
+::deep .pocabinet-secondary:hover { border-color: var(--color-primary); }
 
-.pocabinet-secondary:active { transform: scale(0.97); }
+::deep .pocabinet-secondary:active { transform: scale(0.97); }
 
-.pocabinet-secondary { transition: transform 0.12s ease, border-color 0.15s ease; }
+::deep .pocabinet-secondary { transition: transform 0.12s ease, border-color 0.15s ease; }
 
 .pocabinet-pill span { transition: background-color 0.15s ease, color 0.15s ease; }
 
@@ -29,13 +29,13 @@
 .pocabinet-pill:active span { transform: scale(0.96); }
 
 @media (prefers-reduced-motion: reduce) {
-    .pocabinet-secondary,
+    ::deep .pocabinet-secondary,
     .pocabinet-pill span,
     .pocabinet-switch,
     .pocabinet-switch::after {
         transition: none;
     }
-    .pocabinet-secondary:active,
+    ::deep .pocabinet-secondary:active,
     .pocabinet-pill:active span { transform: none; }
 }
 
@@ -178,7 +178,7 @@
 }
 
 @media (pointer: coarse) {
-    .pocabinet-secondary,
+    ::deep .pocabinet-secondary,
     .pocabinet-pill span,
     .pocabinet-settings__row input[type="range"] {
         min-height: 44px;

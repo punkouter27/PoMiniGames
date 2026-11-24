@@ -146,7 +146,7 @@
 
 .toast-msg { flex: 1; }
 
-.toast-close {
+::deep .toast-close {
     background: transparent;
     border: none;
     color: inherit;
@@ -155,13 +155,13 @@
     line-height: 1;
 }
 
-.toast-close:hover { opacity: 1; }
+::deep .toast-close:hover { opacity: 1; }
 
 /* Action button on an actionable toast (currently the service-worker update
    prompt). Reads as the primary control on the toast — it is the only way to
    actually take the update. currentColor keeps it legible against all four
    toast tints in both schemes without four separate rules. */
-.toast-action {
+::deep .toast-action {
     flex: 0 0 auto;
     background: color-mix(in srgb, currentColor 16%, transparent);
     border: 1px solid currentColor;
@@ -173,7 +173,7 @@
     cursor: pointer;
 }
 
-.toast-action:hover { background: color-mix(in srgb, currentColor 28%, transparent); }
+::deep .toast-action:hover { background: color-mix(in srgb, currentColor 28%, transparent); }
 
 /* (`@keyframes gl-toast-in` removed — replaced by the @starting-style transition
    above, which is its only former consumer.) */

@@ -22,7 +22,7 @@
     width: min(100%, 30rem);
 }
 
-.pfr-tile {
+::deep .pfr-tile {
     position: relative;
     aspect-ratio: 1;
     min-height: 44px;
@@ -42,35 +42,35 @@
     transition: transform 160ms cubic-bezier(.3, 1.4, .5, 1), border-color 160ms ease, box-shadow 160ms ease;
 }
 
-button.pfr-tile {
+::deep button.pfr-tile {
     cursor: pointer;
 }
 
-button.pfr-tile:hover,
-button.pfr-tile:focus-visible {
+::deep button.pfr-tile:hover,
+::deep button.pfr-tile:focus-visible {
     border-color: var(--pf-gold);
     outline: none;
     transform: translateY(-3px);
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
 }
 
-button.pfr-tile:active {
+::deep button.pfr-tile:active {
     transform: translateY(0) scale(0.96);
 }
 
-.pfr-tile.is-selected,
-.pfr-tile.is-selected-2 {
+::deep .pfr-tile.is-selected,
+::deep .pfr-tile.is-selected-2 {
     border-color: transparent;
     box-shadow: 0 0 16px rgba(255, 210, 63, 0.55);
 }
 
-.pfr-tile.is-selected-2 {
+::deep .pfr-tile.is-selected-2 {
     box-shadow: 0 0 16px rgba(79, 195, 255, 0.55);
 }
 
 /* The running light: a conic ring under the tile's content, masked to the border. */
-.pfr-tile.is-selected::before,
-.pfr-tile.is-selected-2::after {
+::deep .pfr-tile.is-selected::before,
+::deep .pfr-tile.is-selected-2::after {
     content: '';
     position: absolute;
     inset: -2px;
@@ -85,12 +85,12 @@ button.pfr-tile:active {
     animation: pfr-spin 2.4s linear infinite;
 }
 
-.pfr-tile.is-selected-2::after {
+::deep .pfr-tile.is-selected-2::after {
     background: conic-gradient(from calc(var(--pfr-spin) + 180deg), var(--pf-p2), rgba(255, 255, 255, 0.95) 12%, var(--pf-p2) 25%, rgba(30, 120, 200, 0.9) 60%, var(--pf-p2));
 }
 
 /* Both players on one fighter: P2's ring sits inside P1's. */
-.pfr-tile.is-selected.is-selected-2::after {
+::deep .pfr-tile.is-selected.is-selected-2::after {
     inset: 3px;
 }
 
@@ -148,7 +148,7 @@ button.pfr-tile:hover .pfr-portrait,
 }
 
 .pfr-tile--empty,
-.pfr-tile--create {
+::deep .pfr-tile--create {
     justify-content: center;
     gap: 0.15rem;
     border-style: dashed;
@@ -156,7 +156,7 @@ button.pfr-tile:hover .pfr-portrait,
     color: rgba(255, 255, 255, 0.45);
 }
 
-.pfr-tile--create {
+::deep .pfr-tile--create {
     border-color: rgba(255, 210, 63, 0.55);
     background: linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
     color: var(--pf-gold);
@@ -211,19 +211,19 @@ button.pfr-tile:hover .pfr-portrait,
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .pfr-tile,
+    ::deep .pfr-tile,
     .pfr-portrait {
         transition: none;
     }
 
-    .pfr-tile.is-selected::before,
-    .pfr-tile.is-selected-2::after {
+    ::deep .pfr-tile.is-selected::before,
+    ::deep .pfr-tile.is-selected-2::after {
         animation: none;
     }
 }
 
-:root[data-motion="reduce"] .pfr-tile.is-selected::before,
-:root[data-motion="reduce"] .pfr-tile.is-selected-2::after {
+:root[data-motion="reduce"] ::deep .pfr-tile.is-selected::before,
+:root[data-motion="reduce"] ::deep .pfr-tile.is-selected-2::after {
     animation: none;
 }
 
@@ -258,7 +258,7 @@ button.pfr-tile:hover .pfr-portrait,
     box-shadow: inset 0 0 0 1px rgba(255, 210, 63, 0.25);
 }
 
-.pfr-grid--compact .pfr-tile {
+.pfr-grid--compact ::deep .pfr-tile {
     border-radius: 0.2rem;
     border-width: 3px;
     padding: 0;
@@ -295,18 +295,18 @@ button.pfr-tile:hover .pfr-portrait,
 }
 
 /* The roulette's moving highlight. */
-.pfr-tile.is-rolling {
+::deep .pfr-tile.is-rolling {
     border-color: white;
     box-shadow: 0 0 18px rgba(255, 255, 255, 0.7);
 }
 
-.pfr-tile--random {
+::deep .pfr-tile--random {
     justify-content: center;
     background: linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
     color: var(--pf-gold);
 }
 
-.pfr-tile--random[disabled] {
+::deep .pfr-tile--random[disabled] {
     cursor: progress;
 }
 

@@ -7,19 +7,19 @@
         <span class="poeco-tour-step">@(Step + 1) / @Steps.Length</span>
         <strong>@Steps[Step].Title</strong>
         <span class="poeco-spacer"></span>
-        <button type="button" class="poeco-pill" @onclick="OnSkip" aria-label="Skip the tour">Skip</button>
+        <PoButton class="poeco-pill" Click="OnSkip" aria-label="Skip the tour">Skip</PoButton>
     </header>
     <p>@((MarkupString)Steps[Step].Body)</p>
     <div class="poeco-tour-actions">
         @if (Done)
         {
             <span class="poeco-tour-done material-symbols-outlined" aria-hidden="true">check</span>
-            <button type="button" class="poeco-btn poeco-btn--primary poeco-btn--sm" @onclick="OnNext">@(Step == Steps.Length - 1 ? "Finish" : "Next")</button>
+            <PoButton class="poeco-btn poeco-btn--primary poeco-btn--sm" Click="OnNext">@(Step == Steps.Length - 1 ? "Finish" : "Next")</PoButton>
         }
         else
         {
             <span class="poeco-note">Waiting for you to try it…</span>
-            <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnNext">@(Step == Steps.Length - 1 ? "Finish" : "Next")</button>
+            <PoButton class="poeco-btn poeco-btn--sm" Click="OnNext">@(Step == Steps.Length - 1 ? "Finish" : "Next")</PoButton>
         }
     </div>
 </aside>

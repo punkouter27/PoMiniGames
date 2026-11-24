@@ -82,12 +82,12 @@
                         <ValidationMessage For="() => _model.Answer" class="arcade-field-error" />
                     </div>
                     <div class="cq-actions">
-                        <button type="submit"
+                        <PoButton ButtonType="ButtonType.Submit"
                                 class="app-btn app-btn--primary"
-                                disabled="@(_submitted || string.IsNullOrWhiteSpace(_model.Answer))"
+                                Disabled="@(_submitted || string.IsNullOrWhiteSpace(_model.Answer))"
                                 aria-busy="@(_submitted ? "true" : "false")">
                             @(_submitted ? "Submitted" : "Submit")@if (_submitted) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }
-                        </button>
+                        </PoButton>
                     </div>
                 </EditForm>
                 @if (_submitted)

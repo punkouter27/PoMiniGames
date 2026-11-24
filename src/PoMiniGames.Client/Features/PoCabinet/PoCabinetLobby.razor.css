@@ -17,7 +17,7 @@
 }
 
 /* Host-only: free a seat between races. */
-.pocabinet-seat__kick {
+::deep .pocabinet-seat__kick {
     flex: none;
     min-width: 44px;
     min-height: 44px;
@@ -30,12 +30,12 @@
     cursor: pointer;
 }
 
-.pocabinet-seat__kick:hover:not(:disabled) {
+::deep .pocabinet-seat__kick:hover:not(:disabled) {
     color: var(--color-danger, #c0392b);
     border-color: currentColor;
 }
 
-.pocabinet-seat__kick:focus-visible {
+::deep .pocabinet-seat__kick:focus-visible {
     outline: 2px solid var(--color-focus, currentColor);
     outline-offset: 2px;
 }
@@ -70,4 +70,4 @@
     margin: 0;
 }
 
-.pocabinet-lobby__notice .app-btn { min-height: 44px; }
+.pocabinet-lobby__notice ::deep .app-btn { min-height: 44px; }

@@ -148,19 +148,19 @@
                 @foreach (var s in Speeds)
                 {
                     var speed = s;
-                    <button type="button" class="pt-speed-btn"
+                    <PoButton class="pt-speed-btn"
                             aria-pressed="@(speed == _speed ? "true" : "false")"
                             title="@($"Play the bouts at {speed}× speed")"
-                            @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
+                            Click="() => SetSpeedAsync(speed)">@(speed)×</PoButton>
                 }
             </span>
         </div>
         <div class="pt-controls-row">
             <span class="pt-controls-label">Camera</span>
-            <button type="button" class="pb-seg pt-btn"
+            <PoButton class="pb-seg pt-btn"
                     title="@CameraHint"
                     aria-label="@($"Camera: {CameraName}. Press for {NextCameraName}.")"
-                    @onclick="ToggleCameraAsync">🎥 @CameraName</button>
+                    Click="ToggleCameraAsync">🎥 @CameraName</PoButton>
         </div>
     </div>;
 
@@ -180,10 +180,10 @@
             @foreach (var t in DrawerTabs)
             {
                 var tab = t;
-                <button type="button" role="tab" id="pt-tab-@tab" class="pt-tab"
+                <PoButton role="tab" id="@($"pt-tab-{(tab)}")" class="pt-tab"
                         aria-selected="@(tab == _drawerTab ? "true" : "false")" aria-controls="pt-tabpanel"
                         tabindex="@(tab == _drawerTab ? 0 : -1)"
-                        @onclick="() => _drawerTab = tab">@DrawerTabLabel(tab)</button>
+                        Click="() => _drawerTab = tab">@DrawerTabLabel(tab)</PoButton>
             }
         </div>
         <div class="pt-tabpanel" id="pt-tabpanel" role="tabpanel" aria-labelledby="pt-tab-@_drawerTab">

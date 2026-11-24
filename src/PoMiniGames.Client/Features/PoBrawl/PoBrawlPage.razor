@@ -108,7 +108,7 @@
                 <h2>Couldn't connect</h2>
                 <p>@_netConnectError</p>
                 <div class="pb-net-actions">
-                    <button type="button" class="pb-net-btn" @onclick="RetryConnectAsync"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Retry</button>
+                    <PoButton class="pb-net-btn" Click="RetryConnectAsync"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Retry</PoButton>
                     <a class="pb-net-btn pb-net-btn--ghost" href="/pobrawl/multi">Back to the lobby</a>
                 </div>
             </div>
@@ -128,11 +128,11 @@
         @if (_training)
         {
             <div class="pb-trainbar" role="group" aria-label="Training" @onmousedown:preventDefault="true">
-                <button type="button" class="pb-seg" title="Put both fighters back on their marks"
-                        @onclick="ResetTrainingAsync">↺ Reset</button>
-                <button type="button" class="pb-seg pb-seg--ladder"
+                <PoButton class="pb-seg" title="Put both fighters back on their marks"
+                        Click="ResetTrainingAsync">↺ Reset</PoButton>
+                <PoButton class="pb-seg pb-seg--ladder"
                         title="@($"Leave training and fight {CharName(_p2Char)} for the rung")"
-                        @onclick="LeaveTrainingAsync">⬅ Back to the ladder</button>
+                        Click="LeaveTrainingAsync">⬅ Back to the ladder</PoButton>
             </div>
         }
     </div>
@@ -209,10 +209,10 @@
         var locked = side == 1 ? _p1Locked : _p2Locked;
         var fighter = PickableRoster[side == 1 ? _p1Sel : _p2Sel];
         var pick = fighter.Name;
-        return @<button type="button" class="pb-select-side pb-select-side--p@(side) @(locked ? "pb-select-side--locked" : "")"
+        return @<PoButton class="@($"pb-select-side pb-select-side--p{(side)} {(locked ? "pb-select-side--locked" : "")}")"
                         aria-pressed="@(locked ? "true" : "false")"
-                        aria-label="Player @side: @pick, @(locked ? "locked in — press to change" : "press to lock in")"
-                        @onclick="() => ToggleLock(side)">
+                        aria-label="@($"Player {(side)}: {(pick)}, {(locked ? "locked in — press to change" : "press to lock in")}")"
+                        Click="() => ToggleLock(side)">
             <span class="pb-select-hero" aria-hidden="true" data-fighter="@fighter.Id" data-side="@side"></span>
             <span class="pb-select-who">Player @side</span>
             <span class="pb-select-plate">
@@ -224,7 +224,7 @@
                 @* The presidential seal stamps down on lock-in (CSS animation on insert). *@
                 <span class="pb-select-seal" aria-hidden="true">@SealSvg</span>
             }
-        </button>;
+        </PoButton>;
     }
 
     // ── Under the HUD clock (PoBrawlHud.Below) ──────────────────────────────
@@ -304,10 +304,10 @@
                 @foreach (var t in ResultTabs())
                 {
                     var tab = t;
-                    <button type="button" role="tab" id="pb-tab-@tab" class="pb-tab"
+                    <PoButton role="tab" id="@($"pb-tab-{(tab)}")" class="pb-tab"
                             aria-selected="@(tab == ActiveTab ? "true" : "false")" aria-controls="pb-tabpanel"
                             tabindex="@(tab == ActiveTab ? 0 : -1)"
-                            @onclick="() => _resultTab = tab">@TabLabel(tab)</button>
+                            Click="() => _resultTab = tab">@TabLabel(tab)</PoButton>
                 }
             </div>
         }

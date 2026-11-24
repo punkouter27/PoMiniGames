@@ -89,7 +89,7 @@
                                     </span>
                                     <strong>@_selectedTelemetry.name</strong>
                                 </div>
-                                <button type="button" class="pc-debug-close" @onclick="ClearInspectAsync" aria-label="Close inspector"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                                <PoButton class="pc-debug-close" Click="ClearInspectAsync" aria-label="Close inspector"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
                             </div>
                             <div class="pc-inspector-role">@_selectedTelemetry.role · <b>@_selectedTelemetry.status</b></div>
                             <div class="pc-inspector-metrics">
@@ -126,11 +126,11 @@
                                 }
                             </div>
                             <div class="pc-inspector-actions">
-                                <button type="button" class="app-btn app-btn--primary" @onclick="ToggleLatchAsync">
+                                <PoButton class="app-btn app-btn--primary" Click="ToggleLatchAsync">
                                     <span class="material-symbols-outlined" aria-hidden="true">@(_selectedTelemetry.latched ? "videocam_off" : "videocam")</span>
                                     @(_selectedTelemetry.latched ? "Unlatch camera" : "Latch camera")
-                                </button>
-                                <button type="button" class="app-btn" @onclick="ClearInspectAsync">Deselect</button>
+                                </PoButton>
+                                <PoButton class="app-btn" Click="ClearInspectAsync">Deselect</PoButton>
                             </div>
                         </div>
                     }
@@ -161,8 +161,8 @@
                                         var tired = line < strain.Length ? strain[line] : 0;
                                         var isBraced = line < braced.Length && braced[line] == 1;
                                         <li>
-                                            <button type="button" class="pc-command-line @(on ? "pc-command-line--on" : null) @(value < 0 ? "pc-command-line--fallen" : null) @(isBraced ? "pc-command-line--braced" : null)"
-                                                    aria-pressed="@(on ? "true" : "false")" disabled="@(value < 0)" @onclick="@(() => OrderAsync("select", line))"
+                                            <PoButton class="@($"pc-command-line {(on ? "pc-command-line--on" : null)} {(value < 0 ? "pc-command-line--fallen" : null)} {(isBraced ? "pc-command-line--braced" : null)}")"
+                                                    aria-pressed="@(on ? "true" : "false")" Disabled="@(value < 0)" Click="@(() => OrderAsync("select", line))"
                                                     aria-label="@($"{LineNames[line]}: {(value < 0 ? "fallen back" : $"{value}% holding, {(line < officers.Length ? officers[line] : 0)} officers, {tired}% tired{(isBraced ? ", braced" : "")}")}")">
                                                 <span class="pc-ring pc-ring--sm @(Tone(Math.Max(0, value)))" style="--v: @Math.Max(0, value); --g: @Math.Max(0, value)" aria-hidden="true">
                                                     <span class="pc-hud-num">@(value < 0 ? "—" : value.ToString(CultureInfo.InvariantCulture))</span>
@@ -185,7 +185,7 @@
                                                     </span>
                                                     <span class="pc-command-tired" aria-hidden="true" title="Front rank fatigue"><i style="width: @tired%"></i></span>
                                                 </span>
-                                            </button>
+                                            </PoButton>
                                         </li>
                                     }
                                 </ol>
@@ -195,14 +195,14 @@
                                         var wait = OrderWait(order);
                                         var name = order;
                                         var sweep = OrderSweep(order);
-                                        <button type="button" class="pc-order @(wait > 0 ? "pc-order--cooling" : null)" style="--cd: @sweep"
-                                                disabled="@(wait > 0 || (name == "gas" && board.gas == 0) || _orderBusy)"
+                                        <PoButton class="@($"pc-order {(wait > 0 ? "pc-order--cooling" : null)}")" style="@($"--cd: {(sweep)}")"
+                                                Disabled="@(wait > 0 || (name == "gas" && board.gas == 0) || _orderBusy)"
                                                 aria-label="@($"{label} ({key}){(wait > 0 ? $", ready in {wait} seconds" : "")}")"
                                                 @onclick="() => OrderAsync(name, board.selected)">
                                             <span class="material-symbols-outlined" aria-hidden="true">@icon</span>
                                             <span class="pc-order-label">@label</span>
                                             <kbd aria-hidden="true">@(wait > 0 ? $"{wait}s" : key)</kbd>
-                                        </button>
+                                        </PoButton>
                                     }
                                 </div>
                                 <p class="pc-command-reply" role="status">@board.reply</p>
@@ -234,10 +234,10 @@
                         {
                             <div class="pc-touch" aria-label="Touch controls">
                                 <div class="pc-dpad">
-                                    <button type="button" data-capitol-action="forward" aria-label="Move forward">↑</button>
-                                    <button type="button" data-capitol-action="left" aria-label="Move left">←</button>
-                                    <button type="button" data-capitol-action="back" aria-label="Move backward">↓</button>
-                                    <button type="button" data-capitol-action="right" aria-label="Move right">→</button>
+                                    <PoButton data-capitol-action="forward" aria-label="Move forward">↑</PoButton>
+                                    <PoButton data-capitol-action="left" aria-label="Move left">←</PoButton>
+                                    <PoButton data-capitol-action="back" aria-label="Move backward">↓</PoButton>
+                                    <PoButton data-capitol-action="right" aria-label="Move right">→</PoButton>
                                 </div>
                                 @if (Playing)
                                 {
@@ -245,13 +245,13 @@
                                         @if (Armed)
                                         {
                                             @* The same grenades as G and H, with what is left on the button. *@
-                                            <button type="button" class="pc-throw" data-capitol-throw="concussion" disabled="@(_grenades == 0)"
-                                                    aria-label="@($"Throw a concussion grenade, {_grenades} left")">GREN<small>@_grenades</small></button>
-                                            <button type="button" class="pc-throw" data-capitol-throw="smoke" disabled="@(_smoke == 0)"
-                                                    aria-label="@($"Throw a smoke grenade, {_smoke} left")">SMOKE<small>@_smoke</small></button>
+                                            <PoButton class="pc-throw" data-capitol-throw="concussion" Disabled="@(_grenades == 0)"
+                                                    aria-label="@($"Throw a concussion grenade, {_grenades} left")">GREN<small>@_grenades</small></PoButton>
+                                            <PoButton class="pc-throw" data-capitol-throw="smoke" Disabled="@(_smoke == 0)"
+                                                    aria-label="@($"Throw a smoke grenade, {_smoke} left")">SMOKE<small>@_smoke</small></PoButton>
                                         }
-                                        <button type="button" class="pc-fire" data-capitol-action="push"
-                                                aria-label="@(Armed ? "Fire" : "Push")">@(Armed ? "FIRE" : "PUSH")</button>
+                                        <PoButton class="pc-fire" data-capitol-action="push"
+                                                aria-label="@(Armed ? "Fire" : "Push")">@(Armed ? "FIRE" : "PUSH")</PoButton>
                                     </div>
                                 }
                             </div>
@@ -266,11 +266,11 @@
                             <label class="pc-small" for="pc-graphics-paused">Graphics · now @_graphicsLabel</label>
                             @GraphicsPicker("pc-graphics-paused")
                             <div class="pc-actions">
-                                <button type="button" class="app-btn app-btn--primary" @onclick="() => PauseAsync(false)">Resume</button>
+                                <PoButton class="app-btn app-btn--primary" Click="() => PauseAsync(false)">Resume</PoButton>
                                 @* Held, not clicked: ui.js fills a ring and only then lets the click through. *@
-                                <button type="button" class="app-btn pc-hold" data-hold @onclick="StartAsync" aria-describedby="pc-hold-hint">
+                                <PoButton class="app-btn pc-hold" data-hold Click="StartAsync" aria-describedby="pc-hold-hint">
                                     <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span> Hold to restart
-                                </button>
+                                </PoButton>
                                 <span id="pc-hold-hint" class="pc-visually-hidden">Press and hold to restart the attempt.</span>
                             </div>
                             <details><summary>Historical context</summary>@ContextContent</details>
@@ -509,11 +509,11 @@
         </div>
 
         <div class="pc-tab-radar">
-            <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" aria-expanded="@(_radarExpanded ? "true" : "false")">
+            <PoButton class="pc-radar-toggle" Click="ToggleRadar" aria-expanded="@(_radarExpanded ? "true" : "false")">
                 <span class="material-symbols-outlined" aria-hidden="true">radar</span>
                 <span>RADAR</span>
                 <span class="material-symbols-outlined" aria-hidden="true">@(_radarExpanded ? "expand_less" : "expand_more")</span>
-            </button>
+            </PoButton>
             @if (_radarExpanded)
             {
                 <div class="pc-radar-body">
@@ -527,7 +527,7 @@
             }
         </div>
 
-        <button type="button" class="app-btn app-btn--sm" @onclick="CopyDiagnosticsAsync">Copy diagnostics</button>
+        <PoButton class="app-btn app-btn--sm" Click="CopyDiagnosticsAsync">Copy diagnostics</PoButton>
     </div>;
 
     /// <summary>
@@ -693,10 +693,10 @@
                         <p class="pc-small">Uses a model running on this computer through Ollama (localhost:11434). Nothing is sent to the internet and nothing costs money. If it does not answer, the built-in writer takes over after one retry.</p>
                         <div class="pc-key-row">
                             <label for="pc-opt-debrief-model">Model</label>
-                            <input id="pc-opt-debrief-model" class="pc-key-select pc-model-input" type="text" maxlength="60" spellcheck="false"
-                                   value="@_prefs.debriefModel" @onchange="OnDebriefModelChanged" />
+                            <PoTextBox id="pc-opt-debrief-model" class="pc-key-select pc-model-input" MaxLength="60" spellcheck="false"
+                                       Value="@_prefs.debriefModel" ValueChanged="@((string v) => OnDebriefModelChanged(new ChangeEventArgs { Value = v }))" />
                         </div>
-                        <button type="button" class="app-btn pc-opt-button" @onclick="ProbeDebriefAsync">Check connection</button>
+                        <PoButton class="app-btn pc-opt-button" Click="ProbeDebriefAsync">Check connection</PoButton>
                         <p class="pc-small pc-probe" role="status">@_probeStatus</p>
                     }
                     else if (_prefs.debrief == "browser")
@@ -742,12 +742,12 @@
                 var index = i;
                 var (value, label, icon) = Roles[i];
                 var on = _role == value;
-                <button type="button" role="radio" aria-checked="@(on ? "true" : "false")" tabindex="@(on ? 0 : -1)"
-                        class="pc-role @(on ? "pc-role--on" : null)" @ref="_roleRefs[index]"
-                        @onclick="() => _role = value" @onkeydown="e => RoleKeyAsync(index, e)">
+                <PoButton role="radio" aria-checked="@(on ? "true" : "false")" TabIndex="@(on ? 0 : -1)"
+                        class="@(on ? "pc-role pc-role--on" : "pc-role")" @ref="_roleRefs[index]"
+                        Click="() => _role = value" @onkeydown="e => RoleKeyAsync(index, e)">
                     <span class="material-symbols-outlined" aria-hidden="true">@icon</span>
                     <span class="pc-role-name">@label</span>
-                </button>
+                </PoButton>
             }
         </div>
         <p class="pc-small pc-role-brief">@RoleBrief</p>

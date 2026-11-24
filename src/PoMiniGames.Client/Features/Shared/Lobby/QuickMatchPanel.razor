@@ -18,15 +18,15 @@
             <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Looking for an opponent…</span></div>
             <p class="qm__note">@SearchingHint</p>
             <div class="qm__actions">
-                <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Cancel</button>
+                <PoButton class="app-btn app-btn--secondary" Click="OnCancel">Cancel</PoButton>
             </div>
         }
         else if (Phase == QuickMatchPhase.Error)
         {
             <p>Lost the connection to the game server.</p>
             <div class="qm__actions">
-                <button type="button" class="app-btn app-btn--primary" @onclick="OnRetry">Try again</button>
-                <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Back</button>
+                <PoButton class="app-btn app-btn--primary" Click="OnRetry">Try again</PoButton>
+                <PoButton class="app-btn app-btn--secondary" Click="OnCancel">Back</PoButton>
             </div>
         }
         else if (Phase == QuickMatchPhase.Playing)
@@ -37,8 +37,8 @@
         {
             <p>@OpponentName has left.</p>
             <div class="qm__actions">
-                <button type="button" class="app-btn app-btn--primary" @onclick="OnFindAnother">Find another opponent</button>
-                <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Back</button>
+                <PoButton class="app-btn app-btn--primary" Click="OnFindAnother">Find another opponent</PoButton>
+                <PoButton class="app-btn app-btn--secondary" Click="OnCancel">Back</PoButton>
             </div>
         }
     </div>

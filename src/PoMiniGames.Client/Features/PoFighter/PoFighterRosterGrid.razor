@@ -38,11 +38,11 @@
             int? elo = !f.IsCustom && Ratings is not null && Ratings.TryGetValue(f.Id, out var rated) ? rated : null;
             @if (OnSelect.HasDelegate)
             {
-                <button type="button" class="@css" role="radio" data-spring="0.96" data-sonify
+                <PoButton class="@css" role="radio" data-spring="0.96" data-sonify
                         aria-checked="@(p1 || p2 ? "true" : "false")" aria-label="@TileLabel(f, elo)"
-                        @onclick="() => OnSelect.InvokeAsync(f.Id)">
+                        Click="() => OnSelect.InvokeAsync(f.Id)">
                     @Tile(f, elo, p1 && (Selected2 is not null || Compact), p2)
-                </button>
+                </PoButton>
             }
             else
             {
@@ -54,18 +54,18 @@
     }
     @if (Compact && ShowRandom && OnSelect.HasDelegate && entries.Count > 1)
     {
-        <button type="button" class="pfr-tile pfr-tile--random @(_rolling is not null ? "is-rolling" : "")" data-spring="0.96" data-sonify
-                disabled="@(_rolling is not null)" @onclick="RollAsync" aria-label="Random fighter">
+        <PoButton class="@($"pfr-tile pfr-tile--random {(_rolling is not null ? "is-rolling" : "")}")" data-spring="0.96" data-sonify
+                Disabled="@(_rolling is not null)" Click="RollAsync" aria-label="Random fighter">
             <span class="pfr-random-mark" aria-hidden="true">?</span>
             <span class="pfr-name">Random</span>
-        </button>
+        </PoButton>
     }
     @if (Compact && OnCreate.HasDelegate)
     {
-        <button type="button" class="pfr-tile pfr-tile--create" data-spring="0.96" data-sonify @onclick="OnCreate" aria-label="Create a fighter in the Studio">
+        <PoButton class="pfr-tile pfr-tile--create" data-spring="0.96" data-sonify Click="OnCreate" aria-label="Create a fighter in the Studio">
             <span class="pfr-empty-mark material-symbols-outlined" aria-hidden="true">add_a_photo</span>
             <span class="pfr-name">Create</span>
-        </button>
+        </PoButton>
     }
 </div>
 

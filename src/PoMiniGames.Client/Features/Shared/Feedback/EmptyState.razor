@@ -32,7 +32,14 @@
     }
     @if (!string.IsNullOrEmpty(Title))
     {
-        <h3 id="@_titleId" class="app-empty-state__title">@Title</h3>
+        @if (HeadingLevel == 2)
+        {
+            <h2 id="@_titleId" class="app-empty-state__title">@Title</h2>
+        }
+        else
+        {
+            <h3 id="@_titleId" class="app-empty-state__title">@Title</h3>
+        }
     }
     @if (ChildContent != null)
     {
@@ -56,6 +63,9 @@
 
     /// <summary>Headline (rendered as h3). Leave null to skip.</summary>
     [Parameter] public string? Title { get; set; }
+
+    /// <summary>The title's heading level: 3 (default, under a section's h2) or 2 (straight under the page's h1).</summary>
+    [Parameter] public int HeadingLevel { get; set; } = 3;
 
     /// <summary>Body sentence or list explaining the state.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }

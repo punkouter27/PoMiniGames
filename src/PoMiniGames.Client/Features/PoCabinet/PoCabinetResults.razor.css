@@ -271,15 +271,15 @@
     margin-top: 0.85rem;
 }
 
-.pocabinet-results__again { min-width: 9rem; }
+::deep .pocabinet-results__again { min-width: 9rem; }
 
-.pocabinet-results__actions .app-btn {
+.pocabinet-results__actions ::deep .app-btn {
     transition: transform 0.12s ease;
 }
 
-.pocabinet-results__actions .app-btn:active { transform: scale(0.97); }
+.pocabinet-results__actions ::deep .app-btn:active { transform: scale(0.97); }
 
-.pocabinet-results__more-toggle { margin-left: auto; }
+::deep .pocabinet-results__more-toggle { margin-left: auto; }
 
 /* Shut by height, not display: the telemetry canvas keeps its width for race.js's chart. */
 .pocabinet-results__details {
@@ -297,8 +297,8 @@
 
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-results__details--open { animation: none; }
-    .pocabinet-results__actions .app-btn { transition: none; }
-    .pocabinet-results__actions .app-btn:active { transform: none; }
+    .pocabinet-results__actions ::deep .app-btn { transition: none; }
+    .pocabinet-results__actions ::deep .app-btn:active { transform: none; }
 }
 
 @keyframes pocabinet-results-open {

@@ -10,7 +10,7 @@
     grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr));
 }
 
-.pb-select-grid--faces .pb-select-tile {
+.pb-select-grid--faces ::deep .pb-select-tile {
     align-items: center;
     gap: 0.25rem;
     padding: 0.4rem 0.2rem 0.3rem;
@@ -47,7 +47,7 @@
     object-position: 50% 20%;
 }
 
-.pb-select-tile:disabled {
+::deep .pb-select-tile:disabled {
     cursor: default;
     opacity: 0.6;
 }
@@ -75,6 +75,6 @@
     box-shadow: none;
 }
 
-.pb-select-tile:disabled {
+::deep .pb-select-tile:disabled {
     cursor: default;
 }

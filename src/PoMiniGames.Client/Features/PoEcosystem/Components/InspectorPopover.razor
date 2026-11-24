@@ -20,8 +20,8 @@
                     <InputTextLive @ref="_renameInput" @bind-Value="_rename.Name" maxlength="@CreatureRenameInput.MaxLength"
                                placeholder="@($"A name for {Detail.Name}")" aria-label="New name"
                                @onkeydown="RenameKey" aria-describedby="poeco-rename-error" />
-                    <button type="submit" class="poeco-pill poeco-pill--on" disabled="@_renameSubmitting">Name</button>
-                    <button type="button" class="poeco-pill" disabled="@_renameSubmitting" @onclick="() => _renaming = false">Cancel</button>
+                    <PoButton ButtonType="ButtonType.Submit" class="poeco-pill poeco-pill--on" Disabled="@_renameSubmitting">Name</PoButton>
+                    <PoButton class="poeco-pill" Disabled="@_renameSubmitting" Click="() => _renaming = false">Cancel</PoButton>
                     <div id="poeco-rename-error" class="poeco-field-error" aria-live="polite">
                         <ValidationMessage For="() => _rename.Name" />
                     </div>
@@ -33,20 +33,20 @@
             }
             <p>@Detail.SpeciesName · @Detail.AgeYears.ToString("0.0") y · @Stage @Sex@if (Detail.Sick) { <span class="poeco-badge poeco-badge--sick" title="Sick: losing health while it lasts, then immune for a while">sick</span> }</p>
         </div>
-        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close" title="Close (Esc)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+        <PoButton class="poeco-icon-btn" Click="OnClose" aria-label="Close" title="Close (Esc)"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
     </header>
 
     <div class="poeco-inspector-actions">
-        <button type="button" class="poeco-pill" @onclick="OnFollow" title="The camera stays behind this creature">Follow <kbd>T</kbd></button>
-        <button type="button" class="poeco-pill @(Detail.Watched ? "poeco-pill--on" : "")" aria-pressed="@(Detail.Watched ? "true" : "false")"
-                title="Get a toast when this creature dies or has young" @onclick="OnWatch">
+        <PoButton class="poeco-pill" Click="OnFollow" title="The camera stays behind this creature">Follow <kbd>T</kbd></PoButton>
+        <PoButton class="@($"poeco-pill {(Detail.Watched ? "poeco-pill--on" : "")}")" aria-pressed="@(Detail.Watched ? "true" : "false")"
+                title="Get a toast when this creature dies or has young" Click="OnWatch">
             @(Detail.Watched ? "★ Watching" : "☆ Watch")
-        </button>
-        <button type="button" class="poeco-pill @(FamilyOpen ? "poeco-pill--on" : "")" aria-expanded="@(FamilyOpen ? "true" : "false")"
-                title="Parents, grandparents and young — @Detail.Children young, @Detail.Descendants descendants" @onclick="OnFamily">
+        </PoButton>
+        <PoButton class="@($"poeco-pill {(FamilyOpen ? "poeco-pill--on" : "")}")" aria-expanded="@(FamilyOpen ? "true" : "false")"
+                title="@($"Parents, grandparents and young — {(Detail.Children)} young, {(Detail.Descendants)} descendants")" Click="OnFamily">
             Family · gen @Detail.Generation
-        </button>
-        <button type="button" class="poeco-pill" title="Give this creature a name" aria-label="Rename" @onclick="BeginRename">✎</button>
+        </PoButton>
+        <PoButton class="poeco-pill" title="Give this creature a name" aria-label="Rename" Click="BeginRename">✎</PoButton>
     </div>
 
     @if (FamilyOpen && Family is { } tree && tree.Self.Handle == Detail.Handle)
@@ -218,10 +218,10 @@
         }
         else
         {
-            <button type="button" class="poeco-kin-name" disabled="@(!kin.Alive)" title="@(kin.Alive ? $"Inspect {kin.Name}" : $"{kin.Name} died: {kin.Cause.Replace('_', ' ')}")" @onclick="() => OnSelectKin.InvokeAsync(kin.Handle)">
+            <PoButton class="poeco-kin-name" Disabled="@(!kin.Alive)" title="@(kin.Alive ? $"Inspect {kin.Name}" : $"{kin.Name} died: {kin.Cause.Replace('_', ' ')}")" Click="() => OnSelectKin.InvokeAsync(kin.Handle)">
                 <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(kin.Species)" aria-hidden="true"></i>
                 @kin.Name @(kin.Sex == 1 ? "♀" : "♂")
-            </button>
+            </PoButton>
             @if (!kin.Alive)
             {
                 <span class="poeco-kin-fate">† @kin.Cause.Replace('_', ' ')</span>

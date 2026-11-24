@@ -85,7 +85,7 @@
                 <p class="pffa-foot">Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds<br />@(IsHuman ? "17-player local ratings · separate from CPU seasons" : "Local FFA ratings · separate from 1v1 Elo")</p>
             </aside>
             <div class="pffa-tools">
-                <button type="button" @onclick="ToggleMuteAsync" aria-pressed="@Settings.Muted" aria-label="@(Settings.Muted ? "Unmute FFA audio" : "Mute FFA audio")">@(Settings.Muted ? "Sound off" : "Sound on")</button>
+                <PoButton Click="ToggleMuteAsync" aria-pressed="@Settings.Muted" aria-label="@(Settings.Muted ? "Unmute FFA audio" : "Mute FFA audio")">@(Settings.Muted ? "Sound off" : "Sound on")</PoButton>
             </div>
             <aside class="pffa-broadcast" aria-label="Broadcast coverage">
                 <strong>@(_replaying ? "FINAL KO REPLAY" : _broadcast.FinalDuel ? "FINAL DUEL" : _champion is not null ? "CHAMPION" : IsHuman ? "BOB · YOU" : "DANGER CAM")</strong>

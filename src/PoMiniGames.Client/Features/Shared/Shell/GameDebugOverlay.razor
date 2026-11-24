@@ -22,9 +22,9 @@
 
 @if (Enabled)
 {
-    <button type="button" class="gps-stats-toggle app-btn app-btn--secondary app-btn--sm"
+    <PoButton class="gps-stats-toggle app-btn app-btn--secondary app-btn--sm"
             aria-expanded="@(_open ? "true" : "false")" aria-controls="game-diagnostics"
-            @onclick="ToggleAsync">Stats <kbd class="gps-kbd">Tab</kbd></button>
+            Click="ToggleAsync">Stats <kbd class="gps-kbd">Tab</kbd></PoButton>
 }
 @if (_open)
 {
@@ -33,14 +33,14 @@
             <span class="gps-debug-title">Diagnostics</span>
             @* The separate developer window (debug-window.html): the same numbers, live, in a
                window of its own that stays up while you play. *@
-            <button type="button" class="gps-debug-close" aria-label="Open diagnostics in a separate window"
-                    title="Pop out" @onclick="PopOutAsync">
+            <PoButton class="gps-debug-close" aria-label="Open diagnostics in a separate window"
+                    title="Pop out" Click="PopOutAsync">
                 <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
-            </button>
-            <button type="button" class="gps-debug-close" aria-label="Close diagnostics"
-                    title="Close (Esc)" @onclick="ToggleAsync">
+            </PoButton>
+            <PoButton class="gps-debug-close" aria-label="Close diagnostics"
+                    title="Close (Esc)" Click="ToggleAsync">
                 <span class="material-symbols-outlined" aria-hidden="true">close</span>
-            </button>
+            </PoButton>
         </header>
 
         <dl class="gps-debug-grid">

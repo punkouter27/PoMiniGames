@@ -58,12 +58,12 @@
                 <canvas id="poeco-minimap" class="poeco-minimap" width="200" height="200"
                         aria-label="Map of the island — click near a tribe to fly there, or use the overview button"
                         title="Click near a tribe's camp to fly to it" @onclick="MinimapClickAsync"></canvas>
-                <button type="button" class="poeco-minimap-overview" title="Island overview"
+                <PoButton class="poeco-minimap-overview" title="Island overview"
                         aria-label="Fly to the island overview"
-                        @onclick="() => SetCameraPresetAsync(CameraPreset.IslandOverview)">⤢</button>
-                <button type="button" class="poeco-minimap-layer @(_layer != "none" ? "poeco-minimap-layer--on" : "")"
-                        title="@LayerInfo.What — click for the next data layer" aria-label="Map layer: @LayerInfo.Label. Click for the next."
-                        @onclick="CycleLayerAsync">@LayerInfo.Label</button>
+                        Click="() => SetCameraPresetAsync(CameraPreset.IslandOverview)">⤢</PoButton>
+                <PoButton class="@($"poeco-minimap-layer {(_layer != "none" ? "poeco-minimap-layer--on" : "")}")"
+                        title="@($"{(LayerInfo.What)} — click for the next data layer")" aria-label="@($"Map layer: {(LayerInfo.Label)}. Click for the next.")"
+                        Click="CycleLayerAsync">@LayerInfo.Label</PoButton>
             </div>
 
             @if (_showKeys)
@@ -81,8 +81,8 @@
                 <div class="poeco-touch">
                     <div class="poeco-pad" @ontouchstart="TouchStart" @ontouchmove="TouchMove" @ontouchend="TouchEnd" aria-label="Move"></div>
                     <div class="poeco-touch-buttons">
-                        <button class="poeco-btn poeco-btn--round" @onclick="() => Interop.ToggleFlyAsync()" aria-label="Toggle flying">F</button>
-                        <button class="poeco-btn poeco-btn--round" @onclick="InspectAsync" aria-label="Inspect what is ahead">E</button>
+                        <PoButton class="poeco-btn poeco-btn--round" Click="() => Interop.ToggleFlyAsync()" aria-label="Toggle flying">F</PoButton>
+                        <PoButton class="poeco-btn poeco-btn--round" Click="InspectAsync" aria-label="Inspect what is ahead">E</PoButton>
                     </div>
                 </div>
             }
@@ -121,12 +121,12 @@
         @if (_photoMode && !_dashboardOpen)
         {
             <div class="poeco-photo-bar" role="toolbar" aria-label="Naturalist photo mode">
-                <button type="button" class="poeco-btn poeco-btn--primary" @onclick="CapturePostcardAsync">📷 Capture Postcard</button>
+                <PoButton class="poeco-btn poeco-btn--primary" Click="CapturePostcardAsync">📷 Capture Postcard</PoButton>
                 <label class="poeco-photo-fov">
                     <span>FOV @((int)_photoFov)°</span>
                     <input type="range" min="30" max="95" step="1" value="@_photoFov" @oninput="OnPhotoFovInputAsync" aria-label="Camera field of view" />
                 </label>
-                <button type="button" class="poeco-pill" @onclick="TogglePhotoModeAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span> Exit</button>
+                <PoButton class="poeco-pill" Click="TogglePhotoModeAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span> Exit</PoButton>
             </div>
         }
 

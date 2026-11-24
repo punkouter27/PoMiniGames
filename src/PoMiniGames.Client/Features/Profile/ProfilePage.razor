@@ -76,13 +76,13 @@ else
         var online = ShowOnline;
         <section class="prf-band" aria-label="Headline stats">
             <div class="app-seg app-seg--quiet prf-band-seg" role="tablist" aria-label="Which record">
-                <button type="button" role="tab" class="app-seg__btn" id="prf-band-1p"
+                <PoButton role="tab" class="app-seg__btn" id="prf-band-1p"
                         aria-selected="@(online ? "false" : "true")" aria-controls="prf-band-panel"
-                        @onclick="() => _bandOnline = false">1P</button>
-                <button type="button" role="tab" class="app-seg__btn" id="prf-band-online"
+                        Click="() => _bandOnline = false">1P</PoButton>
+                <PoButton role="tab" class="app-seg__btn" id="prf-band-online"
                         aria-selected="@(online ? "true" : "false")" aria-controls="prf-band-panel"
-                        disabled="@(_card is null)"
-                        @onclick="() => _bandOnline = true">Online</button>
+                        Disabled="@(_card is null)"
+                        Click="() => _bandOnline = true">Online</PoButton>
             </div>
             <div class="prf-chips" id="prf-band-panel" role="tabpanel"
                  aria-labelledby="@(online ? "prf-band-online" : "prf-band-1p")">

@@ -33,6 +33,6 @@
     font-weight: 600;
 }
 
-.invite__share {
+::deep .invite__share {
     width: 100%;
 }

@@ -31,11 +31,11 @@
             }
             @if (!_loading && !_error && _topGameKey is not null)
             {
-                <button type="button" class="lb-me-chip" data-spring @onclick="() => SelectAsync(_topGameKey)">
+                <PoButton class="lb-me-chip" data-spring Click="() => SelectAsync(_topGameKey)">
                     <span class="lb-me-chip-k">@(_weekly ? "Your best this week" : "Your best")</span>
                     <span class="lb-me-chip-v">@_topGameTitle #@_topRank</span>
                     <span class="lb-sr-only">, @_topValue. Show that board.</span>
-                </button>
+                </PoButton>
             }
         </Meta>
         <Actions>
@@ -75,11 +75,11 @@
                        next to the picker was the widest thing on the page for the
                        least-used control on it. *@
                     <div class="lb-search @(_searchOpen || _search.Length > 0 ? "lb-search--open" : null)">
-                        <button type="button" class="lb-search__toggle" data-spring aria-label="Find a player"
+                        <PoButton class="lb-search__toggle" data-spring aria-label="Find a player"
                                 aria-expanded="@Aria(_searchOpen || _search.Length > 0)"
-                                @onclick="ToggleSearch">
+                                Click="ToggleSearch">
                             <span class="material-symbols-outlined" aria-hidden="true">search</span>
-                        </button>
+                        </PoButton>
                         @if (_searchOpen || _search.Length > 0)
                         {
                             <RadzenTextBox Value="@_search" Change="@(v => SearchAsync(v))" Immediate="true"

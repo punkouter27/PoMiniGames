@@ -1,11 +1,11 @@
-<button type="button" class="fq-option @Class" disabled="@Disabled" @onclick="() => OnSelect.InvokeAsync(Index)">
+<PoButton class="@($"fq-option {(Class)}")" Disabled="@Disabled" Click="() => OnSelect.InvokeAsync(Index)">
     <span class="fq-option__key" aria-hidden="true">@(Index + 1)</span>
     <span class="fq-option__label">@Label</span>
     @if (Correct)
     {
         <span class="fq-option__badge" aria-hidden="true"><span class="material-symbols-outlined">check</span></span>
     }
-</button>
+</PoButton>
 
 @code {
     [Parameter] public int Index { get; set; }

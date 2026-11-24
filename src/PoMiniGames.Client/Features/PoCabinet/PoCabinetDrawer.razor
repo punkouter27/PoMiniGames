@@ -17,7 +17,7 @@
     <div class="pocabinet-drawer__panel" @onclick:stopPropagation="true">
         <header class="pocabinet-drawer__head">
             <h2 id="pocabinet-drawer-title">Car &amp; settings</h2>
-            <button type="button" class="app-btn app-btn--ghost pocabinet-drawer__close" aria-label="Close settings" @onclick="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+            <PoButton class="app-btn app-btn--ghost pocabinet-drawer__close" aria-label="Close settings" Click="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
         </header>
         <div class="pocabinet-drawer__body">
             @if (_open)
