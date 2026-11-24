@@ -71,9 +71,10 @@ public class PoVoxelStrikeUiTests
         }
 
         // A live world: structures placed (imported or procedural fallback — either way
-        // non-zero) and the render loop running.
+        // non-zero) and the render loop running. The engine object exists before its world does,
+        // so every step is optional: a throwing predicate surfaced as a page error and failed the run.
         await page.WaitForFunctionAsync(
-            "() => window.__pvs && window.__pvs() && window.__pvs().structures.length > 0 && window.__pvs().running",
+            "() => { const g = window.__pvs?.(); return !!g && (g.structures?.length ?? 0) > 0 && !!g.running; }",
             null,
             new PageWaitForFunctionOptions { Timeout = 30_000 });
     }

@@ -105,6 +105,9 @@ Every command here was run on 2026-11-22 (Windows, PowerShell or Git Bash, from 
 date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) and, on the trimmed Release publish,
 `PoMuleUiTests.OnePlayer_PlaysAMonth…` (passes on the in-process host) and `PoEcosystemUiTests.Demo_TheIslandIsAlive`
 (the engine never reports ready under SwiftShader within 180 s, on both hosts).
+2026-11-24 (v4 audit, a machine at 100% CPU from parallel agents): Unit 468, Integration 17, E2E API 16 green; E2E UI on
+the trimmed publish 27/32 (red: Ecosystem demo ready-timeout, LinkAudit 60 s timeout, MarbleRace two-browser stream,
+Racer desertdustway score POST 503 from the busy Azurite, Voxel Strike demo whose throwing readiness predicate is now fixed).
 
 | What | Command | Needs / skips |
 |---|---|---|
