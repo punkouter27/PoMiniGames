@@ -7,11 +7,10 @@ namespace PoMiniGames.Unit.Features.PoRacer;
 public class PoRacerTrackRegistryTests
 {
     [Theory]
-    [InlineData("circuit", 230.0, false)]
-    [InlineData("neonskyline", 210.0, false)]
-    [InlineData("desertdustway", 255.0, true)]
-    [InlineData("crossfire", 180.0, false)]
-    [InlineData("unknown_fallback", 230.0, false)]
+    // One consolidated circuit (owner 5bc1f7f7): tarmac plus the desert sand run-off at the east hairpin; any
+    // other id falls back to it.
+    [InlineData("circuit", 230.0, true)]
+    [InlineData("unknown_fallback", 230.0, true)]
     public void TrackRegistry_ProvidesValidTrackGeometryAndFallbacks(string trackId, double expectedWidth, bool expectSand)
     {
         var track = PoRacerTrackRegistry.GetTrack(trackId);
@@ -36,17 +35,9 @@ public class PoRacerTrackRegistryTests
         // The knots come from the shared catalog (the client draws its track cards from them).
         track.Centerline[0].Should().Be(new Vec2(PoMiniGames.Shared.Games.PoRacerCatalog.GetTrack(track.Id).Knots[0].X, PoMiniGames.Shared.Games.PoRacerCatalog.GetTrack(track.Id).Knots[0].Y));
 
-        // The day's weather is the one js/platform/weather.js draws for the same track and day (these four
-        // were computed with its hash), and only rain and snow cost grip.
-        var day = new DateOnly(2026, 11, 14);
-        PoMiniGames.Shared.Games.PoRacerWeather.For(track.Id, day).Should().Be(track.Id switch
-        {
-            "circuit" => "clear",
-            "neonskyline" => "rain",
-            "desertdustway" => "snow",
-            _ => "rain",
-        });
-        PoMiniGames.Shared.Games.PoRacerWeather.For("crossfire", new DateOnly(2026, 11, 13)).Should().Be("fog");
+        // Dry weather only (owner 6b150253): every track, every day is clear; only rain and snow cost grip.
+        PoMiniGames.Shared.Games.PoRacerWeather.For(track.Id, new DateOnly(2026, 11, 14)).Should().Be("clear");
+        PoMiniGames.Shared.Games.PoRacerWeather.For(track.Id, new DateOnly(2026, 11, 13)).Should().Be("clear");
         PoMiniGames.Shared.Games.PoRacerWeather.Grip("fog").Should().Be(1.0);
         PoMiniGames.Shared.Games.PoRacerWeather.Grip("snow").Should().BeLessThan(PoMiniGames.Shared.Games.PoRacerWeather.Grip("rain")).And.BeGreaterThan(0.5);
 

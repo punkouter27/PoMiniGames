@@ -8,8 +8,8 @@ using Xunit.Abstractions;
 namespace PoMiniGames.Unit.Features.PoRacer;
 
 /// <summary>
-/// Headless multi-track simulation tests. Verifies all 4 tracks (circuit, neonskyline, desertdustway,
-/// crossfire), surface physics detection (sand grip reduction), boost pad triggering, AI lap
+/// Headless simulation tests on the one circuit (owner 5bc1f7f7 retired neonskyline, desertdustway and
+/// crossfire): surface physics detection (sand grip reduction), boost pad triggering, AI lap
 /// completion, and that the field still gets round in rain and snow.
 /// </summary>
 public class PoRacerSimAiTests
@@ -172,13 +172,10 @@ public class PoRacerSimAiTests
 
     [Theory]
     [InlineData("circuit")]
-    [InlineData("neonskyline")]
-    [InlineData("desertdustway")]
-    [InlineData("crossfire")]
     [InlineData("circuit", true)]
-    // Weather: every bot must still get round with less grip, including the tightest track in snow.
-    [InlineData("neonskyline", false, "rain")]
-    [InlineData("crossfire", false, "snow")]
+    // Weather: every bot must still get round with less grip (the sim keeps rain and snow; the catalog is dry).
+    [InlineData("circuit", false, "rain")]
+    [InlineData("circuit", false, "snow")]
     public void RaceCompletion_FinishesBotsOrSerializesDnf(string trackId, bool expireRace = false, string weather = "clear")
     {
         PrecomputedUpcomingBend_MatchesCenterlineCalculation(trackId);
@@ -274,11 +271,9 @@ public class PoRacerSimAiTests
         anyCarBoosted.Should().BeTrue("at least one car should drive over the track's boost pads");
         fastest.Should().BeGreaterThan(335, "a boost pad raises top speed");
 
-        // Verify desert sand surface interaction
-        if (trackId == "desertdustway")
-        {
-            anyCarHitSand.Should().BeTrue("desert dustway must trigger sand surface physics during cornering");
-        }
+        // The circuit's dune run-off (owner 5bc1f7f7) sits off the racing line: the bots are not required to touch
+        // it; that the zone exists is pinned in PoRacerTrackRegistryTests (HasSandZones).
+        _ = anyCarHitSand;
     }
 
     /// <summary>The same seeded race on a dry track: what a wet one is measured against.</summary>
@@ -534,8 +529,9 @@ public class PoRacerSimAiTests
         // In the bend the defence is released.
         SetField(bot, "LastCheckpoint", straight + line.NextBendDistance[straight]);
         Defend(attacker).Should().BeNull();
-        // The next straight is a new decision.
-        int other = Enumerable.Range(0, n).First(i => line.NextBendDistance[i] is >= 12 and <= 30
+        // The next straight is a new decision. The one circuit (owner 5bc1f7f7) has a single long straight; the
+        // next one is the 9-node run between the infield bends.
+        int other = Enumerable.Range(0, n).First(i => line.NextBendDistance[i] is >= 8 and <= 30
             && i + line.NextBendDistance[i] != straight + line.NextBendDistance[straight]);
         SetField(bot, "LastCheckpoint", other);
         Defend(attacker).Should().Be(0.65 * line.NextBendSign[other]);

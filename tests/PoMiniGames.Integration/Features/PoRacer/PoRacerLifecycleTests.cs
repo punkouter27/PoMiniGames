@@ -30,10 +30,11 @@ public sealed class PoRacerLifecycleTests
         var player = new PoRacerLobbyPlayer("lobby-a", "Same name", false, true, "user-a");
         var attempts = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => Task.Run(() => registry.Join("solo-a", true, player, "circuit"))));
         attempts.Should().OnlyContain(r => ReferenceEquals(r, attempts[0]));
+        // A retired track id (owner 5bc1f7f7 kept one circuit) still opens its own race, on the circuit.
         var other = registry.Join("solo-b", true, player with { UserId = "user-b" }, "neonskyline");
         other.Should().NotBeSameAs(attempts[0]);
         registry.GetByCode("solo-a").Should().BeSameAs(attempts[0]);
-        other.GetStaticWorld().TrackId.Should().Be("neonskyline");
+        other.GetStaticWorld().TrackId.Should().Be("circuit");
         registry.RegisterConnection("solo-a", "race-a");
         attempts[0].HasExpired(DateTimeOffset.UtcNow.AddMinutes(1)).Should().BeFalse();
         registry.RemoveConnection("race-a");
@@ -76,8 +77,6 @@ public sealed class PoRacerLifecycleTests
 
     [DockerTheory]
     [InlineData("circuit")]
-    [InlineData("neonskyline")]
-    [InlineData("desertdustway")]
     public void BestLapPayload_PreservesLegacyJson_AndCatalogMatchesGeometry(string trackId)
     {
         var dto = System.Text.Json.JsonSerializer.Deserialize<PoRacerScoreDto>("{\"totalTimeSeconds\":42.5}");

@@ -8,9 +8,6 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     private static readonly int[] ZeroAllocations = [0, 0, 0];
     [UiTheory]
     [InlineData("circuit")]
-    [InlineData("neonskyline")]
-    [InlineData("desertdustway")]
-    [InlineData("crossfire")]
     public async Task SoloTimeTrial_CompletesSavesAndShowsTheLapOnTheNextVisit(string track)
     {
         using var playwright = await Playwright.CreateAsync();
