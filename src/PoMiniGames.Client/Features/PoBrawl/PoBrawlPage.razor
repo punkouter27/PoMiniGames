@@ -281,7 +281,7 @@
     </span>;
 
     // The result: one headline, the numbers that changed, then the detail behind tabs
-    // (recap, the damage map, the press conference, the ladder ending) so the shared modal stays short.
+    // (recap, the ladder ending) so the shared modal stays short.
     // GameOverModal renders the board (1P: "pobrawlko", top 3 by fastest KO) below this.
     // No stats grid in any mode: 1P's Elo and record ride the facts line (the rest is Brawl HQ),
     // and 2P and online keep no record of their own — the 1P numbers would be someone else's.
@@ -348,14 +348,6 @@
                 {
                     @RecapBars(rc)
                 }
-                else if (ActiveTab == "damage" && _recap is { } dm)
-                {
-                    @DamageMaps(dm)
-                }
-                else if (_presser is { } pp)
-                {
-                    @PressLine(pp)
-                }
             </div>
         }
 
@@ -376,17 +368,13 @@
         var tabs = new List<string>(4);
         if (_mode == "1p" && _champion) tabs.Add("ending");
         if (_recap is not null) tabs.Add("recap");
-        if (_recap is { } r && Total(r.P1Taken) + Total(r.P2Taken) > 0) tabs.Add("damage");
-        if (_presser is not null) tabs.Add("press");
         return tabs;
     }
 
     private static string TabLabel(string tab) => tab switch
     {
         "ending" => "🏆 Ending",
-        "recap" => "📊 Recap",
-        "damage" => "🩹 Damage",
-        _ => "🎤 Press",
+        _ => "📊 Recap",
     };
 
     // The scorecard as mirrored bars: each stat's two values share one track, so who won the
@@ -422,42 +410,8 @@
         </ul>
     </div>;
 
-    // Where each corner was hurt: health lost by body part. The shading is the share of that
-    // fighter's own damage; the numbers beside it are the health itself.
-    private RenderFragment DamageMaps(PoBrawlMatchRecap r) => @<div class="pb-dm" role="group" aria-label="Damage taken, by body part">
-        @DamageMap(HudName(1), r.P1Taken, "pb-dm-fig--p1")
-        @DamageMap(_mode == "1p" ? "Presidents" : HudName(2), r.P2Taken, "pb-dm-fig--p2")
-    </div>;
-
     private static int Accuracy(int hits, int thrown) =>
         thrown <= 0 ? 0 : Math.Clamp((int)Math.Round(100.0 * hits / thrown), 0, 100);
-
-    private static int Total(int[]? regions) => regions is { Length: 4 } ? regions.Sum() : 0;
-
-    // One fighter's damage map: the HUD's body outline (PoBrawlHud.BodyDiagram), each part
-    // shaded by its share of the damage that fighter took, with the health lost written out.
-    private static RenderFragment DamageMap(string who, int[]? taken, string side)
-    {
-        var t = taken is { Length: 4 } ? taken : new int[4];
-        var total = t.Sum();
-        int Share(int i) => total == 0 ? 0 : (int)Math.Round(100.0 * t[i] / total);
-        return @<figure class="pb-dm-fig @side">
-            <svg class="pb-dm-body" viewBox="0 0 40 64" role="img"
-                 aria-label="@who lost @total health: head @t[0], body @t[1], arms @t[2], legs @t[3]">
-                <circle cx="20" cy="8" r="7" style="--share: @Share(0)" />
-                <rect x="12" y="17" width="16" height="20" rx="3" style="--share: @Share(1)" />
-                <rect x="4" y="17" width="6" height="18" rx="3" style="--share: @Share(2)" />
-                <rect x="30" y="17" width="6" height="18" rx="3" style="--share: @Share(2)" />
-                <rect x="13" y="39" width="6" height="22" rx="3" style="--share: @Share(3)" />
-                <rect x="21" y="39" width="6" height="22" rx="3" style="--share: @Share(3)" />
-            </svg>
-            <figcaption aria-hidden="true">
-                <span class="pb-dm-who">@who</span>
-                <span class="pb-dm-nums">Head <b>@t[0]</b> · Body <b>@t[1]</b></span>
-                <span class="pb-dm-nums">Arms <b>@t[2]</b> · Legs <b>@t[3]</b></span>
-            </figcaption>
-        </figure>;
-    }
 
     private RenderFragment RecapRow(string label, int a, int b)
     {
@@ -471,12 +425,6 @@
             <span class="pb-rc-v pb-rc-v--p2 @(b > a ? "pb-rc-v--lead" : "")" aria-hidden="true">@b</span>
         </li>;
     }
-
-    // One line from the podium, read out by the PA. Flavour only — the result above is final.
-    private static RenderFragment PressLine(PoBrawlPressLine p) => @<figure class="pb-presser">
-        <blockquote class="pb-presser-line">“@p.Text”</blockquote>
-        <figcaption class="pb-presser-who">— @p.Speaker, at the post-fight press conference</figcaption>
-    </figure>;
 
     // The ladder ending (full clear): the roll of fifteen KOs, the run's numbers, and the belt
     // going back on the line at rung 1.

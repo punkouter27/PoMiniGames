@@ -117,7 +117,7 @@ public partial class PoBrawlPage
     // the modal is only shown once, at the end of the run. Null until the first
     // OnMatchEnd carries a payload.
     private PoBrawlMatchRecap? _recap;
-    // The most recent round alone — what the press conference talks about.
+    // The most recent round alone: its round score heads the result card.
     private PoBrawlMatchRecap? _lastRecap;
 
     // 1P: the engine is running the training room. Bound straight to the intro card's
@@ -132,8 +132,6 @@ public partial class PoBrawlPage
     // Rungs beaten while the campaign interlude is on screen; null otherwise.
     private int? _campaignBeaten;
 
-    // ── Post-fight press conference (scripted, PoBrawlPressLines) ─────────
-    private PoBrawlPressLine? _presser;
     // Bumped when a fight starts or restarts, training is entered or the page goes away, so a
     // pending ladder roll (the LadderResultHoldMs wait) can tell it has been superseded.
     private int _ladderRollGeneration;
@@ -718,7 +716,6 @@ public partial class PoBrawlPage
         _netResult = null;
         _recap = null;
         _lastRecap = null;
-        _presser = null;
         ++_ladderRollGeneration;
         _winner = 0;
         _phase = "fighting";
@@ -760,7 +757,6 @@ public partial class PoBrawlPage
             // The opponent never arrived: no fight, no rating, nothing to report. The engine may
             // never reach a result of its own from a frozen clock, so the page ends it here.
             _phase = "result";
-            _presser = null;
             _announcement = _isSpectator
                 ? "The fight never started — a corner never showed up."
                 : "Your opponent never showed up. No rating change.";
@@ -853,38 +849,6 @@ public partial class PoBrawlPage
     private async Task ResetTrainingAsync()
     {
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.training", "reset"); } catch { }
-    }
-
-    // ── Post-fight press conference ──────────────────────────────────────
-    // Only called on the paths that SHOW the result modal.
-    private async Task StartPresserAsync()
-    {
-        _presser = null;
-        if (_lastRecap is not { } r) return;
-
-        // 1P: the president at the podium (winner or loser, it is their press conference).
-        // 2P: the winner, or player 1 on a draw.
-        var speakerIsP2 = _mode == "1p" || _winner == 2;
-        var speakerWon = _winner != 0 && (_winner == 2) == speakerIsP2;
-        var outcome = _winner == 0 ? PoMiniGames.Shared.Games.PoBrawlOutcome.Draw
-            : speakerWon ? PoMiniGames.Shared.Games.PoBrawlOutcome.Win
-            : PoMiniGames.Shared.Games.PoBrawlOutcome.Loss;
-        var reply = PoBrawlPressLines.Press(new PoBrawlPressLines.Bout(
-            SpeakerId: speakerIsP2 ? _p2Char : _p1Char,
-            OpponentId: speakerIsP2 ? _p1Char : _p2Char,
-            Outcome: outcome,
-            // The engine only reports a result before the 60 s bell on a knockout.
-            Knockout: _winner != 0 && _lastKo < 59.9,
-            Hits: speakerIsP2 ? r.P2Hits : r.P1Hits,
-            OpponentHits: speakerIsP2 ? r.P1Hits : r.P2Hits,
-            Blocks: speakerIsP2 ? r.P2Blocks : r.P1Blocks,
-            BestCombo: speakerIsP2 ? r.P2BestCombo : r.P1BestCombo,
-            BiggestHit: speakerIsP2 ? r.P2BiggestHit : r.P1BiggestHit,
-            Seconds: (int)Math.Round(_lastKo)));
-        _presser = reply;
-        // The shell's live region reads it.
-        if (reply is not null) _announcement = $"Press conference — {reply.Speaker}: {reply.Text}";
-        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>
@@ -989,7 +953,7 @@ public partial class PoBrawlPage
         {
             if (_phase == "result") return;
             _phase = "result";
-            // Abandoned (nobody fought): OnNetFinishedAsync already said so, and there is no presser.
+            // Abandoned (nobody fought): OnNetFinishedAsync already said so.
             if (_netResult is { Abandoned: true })
             {
                 await InvokeAsync(StateHasChanged);
@@ -999,7 +963,6 @@ public partial class PoBrawlPage
                 ? "The bell — a draw."
                 : $"{(winner == 1 ? _p1Player : _p2Player)} takes it with {CharName(winner == 1 ? _p1Char : _p2Char)}.";
             await InvokeAsync(StateHasChanged);
-            if (!_isSpectator) _ = StartPresserAsync();
             return;
         }
 
@@ -1011,7 +974,6 @@ public partial class PoBrawlPage
                 ? "Round over — a draw at the bell."
                 : $"Round over — {CharName(winner == 1 ? _p1Char : _p2Char)} takes it.";
             await InvokeAsync(StateHasChanged);
-            _ = StartPresserAsync();
             return;
         }
 
@@ -1104,7 +1066,6 @@ public partial class PoBrawlPage
 
         _phase = "result";
         await InvokeAsync(StateHasChanged);
-        _ = StartPresserAsync();
     }
 
     /// <summary>

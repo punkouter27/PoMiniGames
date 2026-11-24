@@ -1183,7 +1183,6 @@ export class BrawlGame {
       this._matchFeats = [new Set(), new Set()];
       this._hideCorner();
     }
-    this._renderRounds();
     this.phase = 'intro';
     this.phaseT = 0;
     this.hitstopT = 0;
@@ -2169,7 +2168,6 @@ export class BrawlGame {
     if (this.banner) this.banner.remove();
     if (this.flash) this.flash.remove();
     if (this.splash) this.splash.remove();
-    if (this._roundsEl) { this._roundsEl.remove(); this._roundsEl = null; }
     if (this._cornerEl) { this._cornerEl.remove(); this._cornerEl = null; }
     // Removing the fx layer takes its damage numbers and combo badges with it;
     // dropping the node list too so a disposed game holds no detached elements.

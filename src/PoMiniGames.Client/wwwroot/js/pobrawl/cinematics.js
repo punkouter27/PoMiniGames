@@ -7,7 +7,7 @@ import * as THREE from 'three-eco/webgpu';
 import { RING_HALF } from './arena.js';
 import { setExpression } from './fighters.js';
 import { REGIONS } from './combat.js';
-import { recordRound, matchVerdict, wouldDecide, firstRoundKo, MAX_ROUNDS } from './rounds.js';
+import { recordRound, matchVerdict, wouldDecide, firstRoundKo } from './rounds.js';
 import { TIME_LIMIT, MAX_HP } from './constants.js';
 import { roundFeats } from './feats.js';
 import { cornerAdvice } from './corner.js';
@@ -177,7 +177,6 @@ class CinematicsMethods {
     if (!m) return false;
     recordRound(m, winner, this.fighters.map((f) => f.stats),
       { ko: this.fighters.some((f) => f.state === 'ko'), secs: this.clock });
-    this._renderRounds(true);
     const verdict = matchVerdict(m);
     if (verdict) {
       this.winner = verdict.winner;
@@ -258,39 +257,6 @@ class CinematicsMethods {
     this.fighters.forEach((f, i) => {
       if (stacks[i] && f.personality) f.personality.koStacks = stacks[i];
     });
-  }
-
-  /**
-   * The round pips under the HUD: two per corner, lit as rounds are won. Engine DOM.
-   * `over` = the round just ended: the label keeps naming it until the next one spawns.
-   */
-  _renderRounds(over = false) {
-    const m = this.match;
-    if (!m) {
-      if (this._roundsEl) this._roundsEl.hidden = true;
-      return;
-    }
-    if (!this._roundsEl) {
-      if (!this.container) return;
-      const el = document.createElement('div');
-      el.className = 'pb-rounds';
-      el.setAttribute('role', 'img');
-      const side = () => `<span class="pb-rounds__side">${'<i class="pb-rounds__pip"></i>'.repeat(MAX_ROUNDS)}</span>`;
-      el.innerHTML = `${side()}<span class="pb-rounds__label"></span>${side()}`;
-      this.container.appendChild(el);
-      this._roundsEl = el;
-    }
-    const el = this._roundsEl;
-    el.hidden = false;
-    const sides = el.querySelectorAll('.pb-rounds__side');
-    sides.forEach((s, i) => {
-      // The right corner fills from the outside in, mirroring the left.
-      const pips = [...s.children];
-      if (i === 1) pips.reverse();
-      pips.forEach((pip, n) => pip.classList.toggle('pb-rounds__pip--on', n < m.wins[i]));
-    });
-    el.querySelector('.pb-rounds__label').textContent = `ROUND ${Math.max(1, over ? m.played : m.played + 1)} / ${MAX_ROUNDS}`;
-    el.setAttribute('aria-label', `Three rounds — rounds won: left corner ${m.wins[0]}, right corner ${m.wins[1]}`);
   }
 
   // Victory hops + entrance gesture replay. Cleared in _startCountdown.
