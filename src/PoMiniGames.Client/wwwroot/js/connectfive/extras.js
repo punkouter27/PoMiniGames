@@ -30,8 +30,8 @@ import * as Dsp from '../platform/dsp.js';
 import { springStep } from '../platform/springUi.js';
 
 const COLS = 9;
-const ROWS = 9;
-const CELLS = 81;
+const ROWS = 7;
+const CELLS = ROWS * COLS;
 const CSS_HREF = 'css/connectfive-extras.css';
 /** C major pentatonic across the nine columns, C4 … G5. */
 const NOTES = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
@@ -60,7 +60,7 @@ function pageMode() {
 }
 
 // ─── Board analysis (pure) ───────────────────────────────────────────────
-/** Every 5-cell window on the 9×9 grid, as index lists. Built once. */
+/** Every 5-cell window on the 9×7 grid, as index lists. Built once. */
 const WINDOWS = (() => {
     const out = [];
     for (let r = 0; r < ROWS; r++) {
@@ -78,7 +78,7 @@ const WINDOWS = (() => {
     return out;
 })();
 
-/** Lowest empty row of each column (-1 when full). Row 8 is the bottom. */
+/** Lowest empty row of each column (-1 when full). Row 6 is the bottom. */
 function landingRows(state) {
     const out = new Int8Array(COLS).fill(-1);
     for (let c = 0; c < COLS; c++) {
@@ -619,7 +619,7 @@ const baton = (() => {
 const SHADER = /* wgsl */ `
 struct U { v: array<vec4f, 10> };
 @group(0) @binding(0) var<uniform> u: U;
-@group(0) @binding(1) var<storage, read> cells: array<vec4f, 81>;
+@group(0) @binding(1) var<storage, read> cells: array<vec4f, 63>;
 
 @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
   let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
@@ -660,7 +660,7 @@ fn band(x: f32, c: f32, w: f32) -> f32 { let d = (x - c) / w; return exp(-d * d)
 
   // Nearest cell.
   let g = (p - o) / st;
-  let ci = clamp(round(g), vec2f(0.0), vec2f(8.0));
+  let ci = clamp(round(g), vec2f(0.0), vec2f(8.0, 6.0));
   let c = o + ci * st;
   let dv = p - c;
   let d = length(dv);

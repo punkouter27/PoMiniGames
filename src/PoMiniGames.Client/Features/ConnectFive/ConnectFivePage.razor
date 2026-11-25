@@ -89,8 +89,8 @@
              @onfocus="BoardFocused"
              @onpointerleave="ClearHover">
             @* role="grid" requires role="row" between it and its gridcells.
-               `display: contents` keeps all 81 cells as
-               direct grid items of .cf-board, so the 9×9 template, the drop
+               `display: contents` keeps all 63 cells as
+               direct grid items of .cf-board, so the 9×7 template, the drop
                animation and the GL overlay alignment are unchanged. *@
             @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
             {
@@ -124,7 +124,7 @@
                            from above the board down to its resting row (row index + 1
                            strides). No emoji + cell-fill double-circle. *@
                         @* --drop-rows is not per-cell. The .cf-layout defines
-                           --cf-drop-rows: 9 (board depth), and every disc drops the
+                           --cf-drop-rows: 7 (board depth), and every disc drops the
                            full distance from above the board, so each disc travels
                            the same drop length regardless of its landing row. *@
                         @if (piece == Piece.Red)

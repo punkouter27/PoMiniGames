@@ -85,12 +85,12 @@ public abstract class GridGameRules
     }
 }
 
-/// <summary>Connect Five: 9×9, five in a row, discs fall to the lowest empty row of their column.</summary>
+/// <summary>Connect Five: 9×7, five in a row, discs fall to the lowest empty row of their column.</summary>
 public sealed class ConnectFiveRules : GridGameRules
 {
     public static readonly ConnectFiveRules Instance = new();
 
-    public const int BoardRows = 9;
+    public const int BoardRows = 7;
     public const int BoardCols = 9;
     public const int BoardWinLength = 5;
 

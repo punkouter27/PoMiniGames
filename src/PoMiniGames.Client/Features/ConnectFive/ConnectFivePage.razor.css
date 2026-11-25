@@ -1,24 +1,24 @@
 /* ── Connect Five — scoped board styles ──
-   Scoped so the 81-cell board's selectors do not participate in every other
+   Scoped so the 63-cell board's selectors do not participate in every other
    game's style-matching. Colours, radii and
    elevation come from the central design tokens (:root in app.css) — no raw hex
    drift here. The shared status/result badges (.cf-status--*, .cf-result--*) stay
    global: they're a cross-game vocabulary TicTacToe et al. alias to.
 
-   Cell size respects 100dvh + 100dvw so the 9x9 board scales to fit portrait
+   Cell size respects 100dvh + 100dvw so the 9x7 board scales to fit portrait
    phones instead of overflowing. */
 .cf-layout {
   /* Cell size. The 84px ceiling lets the height term decide on a desktop (at
-     900px of viewport height it allows ~73px); a lower ceiling would pin the
+     900px of viewport height it allows ~84px); a lower ceiling would pin the
      board to a small square in a large empty page. The 310px height reserve pays
      for the status bar above the board plus the app header. */
-  --cf-cell: clamp(28px, min(calc((100dvh - 310px) / 9), calc((100dvw - 100px) / 9)), 84px);
+  --cf-cell: clamp(28px, min(calc((100dvh - 310px) / 7), calc((100dvw - 100px) / 9)), 84px);
   --cf-cell-stride: calc(var(--cf-cell) + 3px);
   /* Every disc drops the full board depth (Rows), not (row + 1). Otherwise a
-     piece in row 0 only travels 1 cell (~50px) while a piece in row 8 travels
-     9 cells (~450px), and the inconsistent drop lengths read as "pieces going
+     piece in row 0 only travels 1 cell (~50px) while a piece in row 6 travels
+     7 cells (~350px), and the inconsistent drop lengths read as "pieces going
      through others." */
-  --cf-drop-rows: 9;
+  --cf-drop-rows: 7;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -56,7 +56,7 @@
 .cf-board {
   display: grid;
   grid-template-columns: repeat(9, var(--cf-cell));
-  grid-template-rows: repeat(9, var(--cf-cell));
+  grid-template-rows: repeat(7, var(--cf-cell));
   gap: 3px;
   margin: 1rem auto;
   /* One 10px frame; width tracks grid + frame (no extra width on top of the padding). */
@@ -72,7 +72,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.12),   /* lit top edge */
     inset 0 -1px 0 rgba(0, 0, 0, 0.35),         /* shaded bottom */
     var(--elevation-1);                          /* grounded elevation */
-  /* Paint containment so the 81 cells don't repaint the page during drops. */
+  /* Paint containment so the 63 cells don't repaint the page during drops. */
   contain: layout paint;
 }
 
@@ -154,7 +154,7 @@
    piece is about to drop, which reads as "the new piece passed through the
    settled one." */
 @keyframes cf-slide-down {
-  0%   { transform: translateY(calc(-1 * var(--cf-drop-rows, 9) * var(--cf-cell-stride, 55px))) scale(0.92, 1.12); }
+  0%   { transform: translateY(calc(-1 * var(--cf-drop-rows, 7) * var(--cf-cell-stride, 55px))) scale(0.92, 1.12); }
   68%  { transform: translateY(0) scale(1.14, 0.86); }
   84%  { transform: translateY(-5px) scale(0.96, 1.04); }
   100% { transform: translateY(0) scale(1, 1); }
@@ -230,7 +230,7 @@
        column off the right edge of a 390px phone. The reserve is 86px (78px chrome
        + 8px safety), and because the grid tracks derive from --cf-cell the whole
        board shrinks with it — the full 9 columns always fit. */
-    --cf-cell: clamp(24px, min(calc((100dvh - 220px) / 9), calc((100dvw - 86px) / 9)), 44px);
+    --cf-cell: clamp(24px, min(calc((100dvh - 220px) / 7), calc((100dvw - 86px) / 9)), 44px);
     --cf-cell-stride: calc(var(--cf-cell) + 2px);
   }
   .cf-board {
@@ -251,7 +251,7 @@
 
 @media (max-width: 360px) {
   .cf-layout {
-    --cf-cell: clamp(22px, min(calc((100dvh - 200px) / 9), calc((100dvw - 40px) / 9)), 36px);
+    --cf-cell: clamp(22px, min(calc((100dvh - 200px) / 7), calc((100dvw - 40px) / 9)), 36px);
   }
   .cf-cell { font-size: 0.75rem; }
 }
@@ -263,8 +263,8 @@
   position: relative;
 }
 
-/* ARIA row wrapper. `display: contents` keeps all 81 cells as direct
-   grid items of .cf-board so the 9×9 template above still lays them out — the
+/* ARIA row wrapper. `display: contents` keeps all 63 cells as direct
+   grid items of .cf-board so the 9×7 template above still lays them out — the
    element exists purely to satisfy grid > row > gridcell in the a11y tree. */
 .cf-row { display: contents; }
 
@@ -311,7 +311,7 @@
      reserve now counts the real bar, the board's margin is halved, and the cell floor drops
      to 20px; on a touch screen the board is driven by the 44px side pads, not the cells. */
   .cf-layout {
-    --cf-cell: clamp(20px, min(calc((100dvh - 200px) / 9), calc((100dvw - 100px) / 9)), 84px);
+    --cf-cell: clamp(20px, min(calc((100dvh - 200px) / 7), calc((100dvw - 100px) / 9)), 84px);
   }
   .cf-board { margin: 0.4rem auto; }
   /* The status strip tracks the board's width, and a 200px strip wraps both names onto two
@@ -355,7 +355,7 @@
 
 @media (pointer: coarse) and (max-width: 640px) {
   .cf-layout {
-    --cf-cell: clamp(22px, min(calc((100dvh - 276px) / 9), calc((100dvw - 86px) / 9)), 44px);
+    --cf-cell: clamp(22px, min(calc((100dvh - 276px) / 7), calc((100dvw - 86px) / 9)), 44px);
   }
 }
 

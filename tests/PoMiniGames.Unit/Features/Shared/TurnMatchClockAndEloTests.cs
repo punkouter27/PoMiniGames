@@ -40,7 +40,7 @@ public class TurnMatchClockAndEloTests
         pairing.State.TurnMsLeft.Should().BeInRange(1, (int)Clock.TotalMilliseconds, "a live game carries the time left");
 
         var state = await hub.NextStateAsync(s => s.MoveCount == 1);
-        state.LastMove.Should().Be(new TurnMatchMove(8, 0, TurnMatchSide.First), "index 0 of the legal columns, landing by gravity");
+        state.LastMove.Should().Be(new TurnMatchMove(ConnectFiveRules.BoardRows - 1, 0, TurnMatchSide.First), "index 0 of the legal columns, landing by gravity");
         state.Turn.Should().Be(TurnMatchSide.Second);
         state.TurnMsLeft.Should().BeGreaterThan(0, "the clock restarts for the next seat");
 
