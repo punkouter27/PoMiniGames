@@ -1080,6 +1080,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         UnwireSessionHandlers();
         _gameCode = null;
         _localCarId = null;
+        _world = null;
+        _finalResult = null;
         // The next race renders new canvases (the section's @key): this one's WebGL context is gone.
         _raceSerial++;
     }

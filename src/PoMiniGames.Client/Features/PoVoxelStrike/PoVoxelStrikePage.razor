@@ -194,7 +194,7 @@
     private LobbyClient<PoVoxelStrikeLobbyPlayer>? _lobby;   // handed out by OnlineLobby
     private string _lobbyConnectionId = "";                  // this browser's seat id when the run started
     private int _playerNumber = 1;
-    private int _squadSize = 1;
+    private int _squadSize;
     private Task _applyFrameInFlight = Task.CompletedTask;
     private Task _submitInFlight = Task.CompletedTask;
 
@@ -247,7 +247,7 @@
 
     private string StartObjective => _tab == Tab.Solo
         ? "Blast through the walls to the golden chalice — while the guns shoot back."
-        : _runStarted
+        : _runStarted && _squadSize > 0
             ? $"Same arena, whole squad — you are P{_playerNumber} of {_squadSize}. Go down and a squadmate standing over you gets you back up."
             : "Blast through the walls to the golden chalice with your squad — while the guns shoot back.";
 
@@ -522,6 +522,7 @@
         if (_tab != Tab.Online || _runStarted) return;
         _runStarted = true;
         _ready = false;
+        _squadSize = 0;
         ResetRun();
         _phase = Phase.Intro;
         StateHasChanged();
@@ -538,6 +539,7 @@
             var me = info.Players.FirstOrDefault(p => p.ConnectionId == _lobbyConnectionId);
             _playerNumber = me?.PlayerNumber ?? 1;
             _squadSize = Math.Max(1, info.Players.Count);
+            StateHasChanged();
             var names = new string[info.Players.Max(p => p.PlayerNumber)];
             foreach (var p in info.Players)
             {

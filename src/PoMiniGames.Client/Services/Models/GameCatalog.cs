@@ -266,7 +266,7 @@ public static class GameCatalog
     // game without a line fails review rather than shipping a blank card.
     private static readonly Dictionary<string, string> Descriptions = new(StringComparer.OrdinalIgnoreCase)
     {
-        [GameKeys.ConnectFive.Value] = "Drop discs on a 9×9 board — five in a row wins.",
+        [GameKeys.ConnectFive.Value] = "Drop discs on a 9×7 board — five in a row wins.",
         [GameKeys.TicTacToe.Value] = "Four in a row on a 6×6 grid, against CPU or a friend.",
         [GameKeys.PoBrawl.Value] = "Time the tap, pick your spots, put them on the canvas.",
         [GameKeys.PoRacer.Value] = "Grand prix racing against the ghost of your best lap.",

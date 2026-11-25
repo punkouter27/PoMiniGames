@@ -122,7 +122,10 @@ export function stepBudget(s, frameMs, tier) {
         if (s.rung > top) { s.rung = top; changed = top; }
         s.slowReads = 0; s.fastReads = 0;
     }
-    if (!(frameMs > 0) || frameMs > 250) return changed;
+    // Frames over 2000 ms (tab switch, suspend, debugger) are not evidence and are skipped;
+    // sustained low-FPS frames (e.g. 250-500 ms under heavy GPU load) must still count so the
+    // ladder can step down instead of staying pinned at high quality.
+    if (!(frameMs > 0) || frameMs > 2000) return changed;
     s.ring[s.cursor] = frameMs;
     s.cursor = (s.cursor + 1) % RING;
     if (s.filled < RING) s.filled++;
@@ -135,7 +138,8 @@ export function stepBudget(s, frameMs, tier) {
     s.sinceRaise++;
     if (p95 > s.targetMs * 1.25) {
         s.fastReads = 0;
-        if (++s.slowReads >= DROP_READS && s.rung > 0) {
+        const needDrops = p95 > s.targetMs * 4 ? 1 : DROP_READS;
+        if (++s.slowReads >= needDrops && s.rung > 0) {
             // Dropped straight back after a raise: that rung is too dear, wait longer next time.
             if (s.sinceRaise <= PROBE_READS) s.backoff = Math.min(MAX_BACKOFF, s.backoff + 1);
             s.sinceRaise = Infinity;
