@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PoBrawl - Tournament and FFA before / after</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 "Segoe UI", sans-serif; background: #101725; color: #edf2f8; }
+    body { margin: 0; padding: 32px; }
+    h1, h2, p { margin-top: 0; }
+    .lead { color: #aab8ca; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    section { padding: 24px; border: 1px solid #35445a; border-radius: 16px; background: #182337; }
+    .card { padding: 20px; border-radius: 14px; background: #f6f8fc; color: #182030; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { padding: 8px 12px; border: 1px solid #bbc3d2; border-radius: 24px; font-weight: 700; font-size: 13px; }
+    .new { background: #fff0c7; border-color: #d79c18; }
+    .note { margin: 20px 0 0; padding: 12px; border-left: 4px solid #e8b44d; background: #222b38; }
+    .flow { color: #ffd166; font-weight: 700; margin-top: 20px; }
+    .live { margin-top: 24px; }
+    .live img { width: 100%; border-radius: 12px; }
+    @media (max-width: 760px) { body { padding: 16px; } main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>PoBrawl - a second automatic demo</h1>
+  <p class="lead">Before / after menu mockups and annotated live FFA capture.</p>
+  <main>
+    <section aria-label="Before">
+      <h2>Before</h2>
+      <div class="card">
+        <h3>Brawl</h3>
+        <div class="chips"><span class="chip">1P</span><span class="chip">2P</span><span class="chip">Online</span><span class="chip">Tournament</span></div>
+      </div>
+      <p class="flow">16-slot draw &gt; 15 individual bouts &gt; one champion</p>
+      <p class="note">Only the Cup was available as a CPU demo. Two presidents fought at a time.</p>
+    </section>
+    <section aria-label="After">
+      <h2>After</h2>
+      <div class="card">
+        <h3>Brawl</h3>
+        <div class="chips"><span class="chip">1P</span><span class="chip">2P</span><span class="chip">Online</span><span class="chip">DEMO &middot; Tournament</span><span class="chip new">DEMO &middot; FFA</span></div>
+      </div>
+      <p class="flow">16 simultaneous fighters &gt; last survivor &gt; 5-second hold &gt; replay</p>
+      <p class="note">FFA uses a wide arena overview, health and knockout places. Attacks from behind bypass a guard; the Cup stays separate.</p>
+    </section>
+  </main>
+  <section class="live" aria-label="Live free-for-all screenshot">
+    <h2>After - live 16-president free-for-all</h2>
+    <img src="261108-pobrawl-ffa-live.png" alt="Live PoBrawl FFA with all sixteen presidents, health bars and elimination places">
+    <p class="note">The board tracks the whole field. The arena stays unobstructed; the last fighter standing wins, then all sixteen return.</p>
+  </section>
+</body>
+</html>

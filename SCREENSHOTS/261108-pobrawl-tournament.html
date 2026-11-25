@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PoBrawl tournament bracket · before and after</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, "Segoe UI", sans-serif;
+            color: #eef2ff;
+            background: #080d1b;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            max-width: 1540px;
+            margin: 0 auto;
+            padding: 32px;
+            background:
+                radial-gradient(ellipse at 50% 0, rgba(48, 61, 110, .48), transparent 55%),
+                #080d1b;
+        }
+
+        header { margin: 0 0 24px; }
+        header p, .note { color: #a7b3d4; }
+        h1 { margin: 0; color: #ffd166; font-size: 2rem; letter-spacing: .08em; }
+        header p { margin: 8px 0 0; }
+
+        main {
+            display: grid;
+            grid-template-columns: minmax(0, .8fr) minmax(0, 1.6fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        article {
+            padding: 20px;
+            border: 1px solid #293453;
+            border-radius: 16px;
+            background: rgba(15, 23, 45, .94);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
+        }
+
+        .eyebrow {
+            color: #8d9abd;
+            font-size: .75rem;
+            font-weight: 800;
+            letter-spacing: .15em;
+        }
+
+        h2 { margin: 5px 0 6px; font-size: 1.35rem; }
+        .note { margin: 0 0 16px; font-size: .9rem; }
+        .rounds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+        .round h3 { margin: 0 0 7px; color: #a7b3d4; font-size: .72rem; text-align: center; }
+        ol { display: grid; gap: 5px; list-style: none; margin: 0; padding: 0; }
+        li {
+            min-width: 0;
+            padding: 6px;
+            border: 1px solid #34405d;
+            border-radius: 7px;
+            background: #111a31;
+            font-size: .72rem;
+        }
+
+        li span { display: flex; justify-content: space-between; gap: 4px; white-space: nowrap; }
+        li span + span { margin-top: 3px; padding-top: 3px; border-top: 1px solid #26314c; }
+        small { color: #8492b5; font-variant-numeric: tabular-nums; }
+        .bye { color: #ffd166; font-weight: 800; }
+        .tbd { color: #7e8baa; }
+        .badge {
+            display: inline-block;
+            margin: 0 0 14px;
+            padding: 5px 9px;
+            border: 1px solid #a87c2a;
+            border-radius: 99px;
+            color: #ffe4a0;
+            background: rgba(255, 209, 102, .1);
+            font-size: .78rem;
+            font-weight: 700;
+        }
+
+        .annotations {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .annotations p {
+            margin: 0;
+            padding: 9px;
+            border-left: 3px solid #ffd166;
+            border-radius: 4px;
+            color: #d5def5;
+            background: #111a31;
+            font-size: .78rem;
+        }
+
+        .before-list { display: grid; gap: 9px; margin: 18px 0; }
+        .before-list div {
+            display: flex;
+            justify-content: space-between;
+            padding: 11px;
+            border: 1px solid #34405d;
+            border-radius: 8px;
+            background: #111a31;
+        }
+
+        .before-list small { align-self: center; }
+        .old-count { padding-top: 12px; border-top: 1px solid #34405d; color: #a7b3d4; }
+
+        @media (max-width: 900px) {
+            body { padding: 16px; }
+            main { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 620px) {
+            .rounds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .annotations { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🥊 BRAWL CUP</h1>
+        <p>Annotated main-menu preview · the old eight-fighter draw beside the complete 16-slot tournament bracket.</p>
+    </header>
+    <main>
+        <article aria-label="Before: eight-fighter cup draw">
+            <div class="eyebrow">BEFORE</div>
+            <h2>Eight-fighter draw</h2>
+            <p class="note">Only eight of the current fifteen fighters appeared in the menu preview.</p>
+            <div class="before-list">
+                <div><span>Nixon</span><small>vs</small><span>Trump</span></div>
+                <div><span>Reagan</span><small>vs</small><span>Eisenhower</span></div>
+                <div><span>Obama</span><small>vs</small><span>Ford</span></div>
+                <div><span>Carter</span><small>vs</small><span>JFK</span></div>
+            </div>
+            <p class="old-count">8 entrants · 7 CPU bouts · remaining fighters omitted</p>
+        </article>
+        <article aria-label="After: 16-slot tournament menu bracket">
+            <div class="eyebrow">AFTER</div>
+            <h2>Full tournament bracket in the menu</h2>
+            <p class="note">Every current fighter has a seed; future players can fill the open slot.</p>
+            <div class="badge">15 presidents + 1 BYE · 16 slots</div>
+            <div class="rounds">
+                <section class="round">
+                    <h3>ROUND OF 16</h3>
+                    <ol>
+                        <li><span>Nixon <small>1000</small></span><span>Trump <small>1000</small></span></li>
+                        <li><span>Reagan <small>1000</small></span><span>Eisenhower <small>1000</small></span></li>
+                        <li><span>Obama <small>1000</small></span><span>Ford <small>1000</small></span></li>
+                        <li><span>Carter <small>1000</small></span><span>JFK <small>1000</small></span></li>
+                        <li><span>FDR <small>1000</small></span><span>LBJ <small>1000</small></span></li>
+                        <li><span>Biden <small>1000</small></span><span>Truman <small>1000</small></span></li>
+                        <li><span>Bush <small>1000</small></span><span>Clinton <small>1000</small></span></li>
+                        <li><span class="bye">BYE</span><span>Bush Sr. <small>1000</small></span></li>
+                    </ol>
+                </section>
+                <section class="round">
+                    <h3>QUARTERFINALS</h3>
+                    <ol>
+                        <li><span class="tbd">TBD</span><span class="tbd">TBD</span></li>
+                        <li><span class="tbd">TBD</span><span class="tbd">TBD</span></li>
+                        <li><span class="tbd">TBD</span><span class="tbd">TBD</span></li>
+                        <li><span class="tbd">TBD</span><span>Bush Sr. <small>1000</small></span></li>
+                    </ol>
+                </section>
+                <section class="round">
+                    <h3>SEMIFINALS</h3>
+                    <ol>
+                        <li><span class="tbd">TBD</span><span class="tbd">TBD</span></li>
+                        <li><span class="tbd">TBD</span><span class="tbd">TBD</span></li>
+                    </ol>
+                </section>
+                <section class="round">
+                    <h3>FINAL</h3>
+                    <ol><li><span class="tbd">TBD</span><span class="tbd">TBD</span></li></ol>
+                </section>
+            </div>
+            <div class="annotations">
+                <p>All 15 current fighters enter; a future 16th replaces BYE.</p>
+                <p>BYEs advance automatically and never change Elo.</p>
+                <p>CPU bouts run to one winner; Elo changes appear in the bracket and standings.</p>
+            </div>
+        </article>
+    </main>
+</body>
+</html>

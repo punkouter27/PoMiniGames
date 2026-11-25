@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marble Race mobile layout — before and after</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:20px;background:#10121d;color:#f5f3ff;font:15px/1.4 system-ui,sans-serif}
+h1{margin:0 0 12px;font-size:22px}.compare{display:grid;grid-template-columns:repeat(2,390px);gap:20px}
+section{padding:10px;background:#1a1b2b;border:1px solid #49445f;border-radius:12px}h2{margin:0 0 8px;font-size:17px}
+.screen{height:602px;padding:18px 14px;background:#121321;border:1px solid #635b80;border-radius:12px;overflow:hidden}
+.card{padding:16px;background:#201b32;border:1px solid #7046a8;border-radius:16px}
+.title{margin:0;font-size:22px}.objective{color:#c3bdd2}.setup{display:grid;gap:8px;margin-top:12px}
+.tracks{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.track{padding:6px;background:#302a40;border-radius:8px;text-align:center}
+.glyph{height:34px;margin-bottom:2px;border-radius:5px;background:linear-gradient(150deg,#24263a,#4c3273)}
+.after .glyph{height:28px;margin-bottom:0}.choices{display:flex;justify-content:space-around;margin-top:10px;padding:10px;background:#302a40;border-radius:8px}
+.note{margin:10px 0 0;color:#d4c9ff}.tag{color:#b9a2ff;font-weight:700}
+@media(max-width:1024px){body{padding:8px}h1{font-size:17px;margin-bottom:6px}.compare{grid-template-columns:minmax(0,1fr);gap:8px}section{padding:6px}h2{font-size:13px;margin-bottom:3px}.screen{height:252px;padding:8px}.card{width:calc(100% / .52);transform:scale(.52);transform-origin:top left}.note{font-size:11px;line-height:1.15;margin:3px 0 0}}
+</style>
+<h1>Marble Race setup at 390 × 844</h1>
+<div class="compare">
+  <section class="before">
+    <h2>Before — setup overflows</h2>
+    <div class="screen"><div class="card">
+      <h3 class="title">🔮 Marble Race</h3><p class="objective">You steer RED in a pack of 101. Finish in the top 10.</p>
+      <div class="setup"><b>Track</b><div class="tracks">
+        <div class="track"><div class="glyph"></div>Neon Canyon</div><div class="track"><div class="glyph"></div>Spiral Works</div>
+        <div class="track"><div class="glyph"></div>Grand Spiral</div><div class="track"><div class="glyph"></div>Playground Run</div>
+      </div><b>Your marble</b><div class="choices">Swirl · Cat's eye · Galaxy</div>
+      <b>Weight</b><div class="choices">Light · Balanced · Heavy</div></div>
+    </div></div>
+    <p class="note"><span class="tag">Before:</span> The intro body exceeded its 602px viewport by 11px, creating an inner scrollbar.</p>
+  </section>
+  <section class="after">
+    <h2>After — compact, readable setup</h2>
+    <div class="screen"><div class="card">
+      <h3 class="title">🔮 Marble Race</h3><p class="objective">You steer RED in a pack of 101. Finish in the top 10.</p>
+      <div class="setup"><b>Track</b><div class="tracks">
+        <div class="track"><div class="glyph"></div>Neon Canyon</div><div class="track"><div class="glyph"></div>Spiral Works</div>
+        <div class="track"><div class="glyph"></div>Grand Spiral</div><div class="track"><div class="glyph"></div>Playground Run</div>
+      </div><b>Your marble</b><div class="choices">Swirl · Cat's eye · Galaxy</div>
+      <b>Weight</b><div class="choices">Light · Balanced · Heavy</div></div>
+    </div></div>
+    <p class="note"><span class="tag">After:</span> Track glyphs are 6px shorter; verified body overflow is 0px, with every choice retained.</p>
+  </section>
+</div>
