@@ -509,7 +509,7 @@ export function createUiFx(root) {
     // audio listens (a spectral freeze of the scene while one is up), so it is announced on change.
     let menuOpen = false;
     function announceMenu() {
-        const open = Boolean(currentPanel() || document.querySelector('dialog.gps-modal[open], dialog.game-opts-sheet[open]'));
+        const open = Boolean(currentPanel() || document.querySelector('dialog.gps-modal[open], dialog.game-opts-sheet[open], .gps-modal[data-po-dialog="gameover"], .game-opts-sheet, .game-pause-dialog'));
         if (open === menuOpen) return;
         menuOpen = open;
         try { window.dispatchEvent(new CustomEvent('pocapitol:menu', { detail: { open } })); } catch { /* nobody listening */ }

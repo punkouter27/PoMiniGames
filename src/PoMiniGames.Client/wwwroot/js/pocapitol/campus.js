@@ -1,10 +1,11 @@
 import * as THREE from 'three-eco/webgpu';
 import * as TSL from 'three-eco/tsl';
+import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
 import { mirror } from './nodes.js';
 import { SURFACE, addSurface } from './look.js';
 
 // Public-reference massing and landscape detail. The playable footprint remains fictional.
-export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
+export function createCampus({ surfaces, surfaceDetail, osm, isWebGPU = true } = {}) {
     const group = new THREE.Group();
     group.name = 'capitol-campus-reference';
     const geometries = new Set(), materials = new Set();
@@ -22,7 +23,9 @@ export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     const paving = mat('#aaa69c', 0.88, 0, SURFACE.paving);
     const bark = mat('#51463b', 0.98, 0, SURFACE.generic);
     const bronze = mat('#403f32', 0.48, 0.72, SURFACE.generic);
-    const glass = new THREE.MeshPhysicalMaterial({ color: '#263746', roughness: 0.12, metalness: 0.15, clearcoat: 0.8, clearcoatRoughness: 0.16, envMapIntensity: 1.5 });
+    const glass = isWebGPU
+        ? new THREE.MeshPhysicalMaterial({ color: '#263746', roughness: 0.12, metalness: 0.15, clearcoat: 0.8, clearcoatRoughness: 0.16, envMapIntensity: 1.5 })
+        : new THREE.MeshStandardMaterial({ color: '#263746', roughness: 0.14, metalness: 0.25, envMapIntensity: 1.3 });
     materials.add(glass);
     const mesh = (geometry, material, x, y, z, parent = group) => {
         geometries.add(geometry);
@@ -60,7 +63,9 @@ export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     for (const x of [-15, 15]) box(x, 0.02, 128, 1, 0.55, 57, stone);
     for (const z of [100, 156]) box(0, 0.02, z, 31, 0.55, 1, stone);
     const waterUniforms = { uTime: { value: 0 } };
-    const water = new THREE.MeshPhysicalNodeMaterial({ color: '#344d59', roughness: 0.16, metalness: 0.05, transmission: 0.18, transparent: true, opacity: 0.92, ior: 1.333, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.7 });
+    const water = isWebGPU
+        ? new THREE.MeshPhysicalNodeMaterial({ color: '#344d59', roughness: 0.16, metalness: 0.05, transmission: 0.18, transparent: true, opacity: 0.92, ior: 1.333, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.7 })
+        : new THREE.MeshStandardNodeMaterial({ color: '#344d59', roughness: 0.18, metalness: 0.12, transparent: true, opacity: 0.9, envMapIntensity: 1.4 });
     {
         const uTime = mirror(waterUniforms.uTime), pg = TSL.positionGeometry;
         water.positionNode = TSL.positionLocal.add(TSL.vec3(0, 0, TSL.sin(pg.x.mul(1.7).add(uTime.mul(0.7))).mul(0.018).add(TSL.cos(pg.y.mul(2.1).sub(uTime.mul(0.45))).mul(0.012))));
@@ -355,21 +360,49 @@ export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     group.updateMatrixWorld(true);
     const pieces = [];
     group.traverse(object => { if (object.isMesh && !object.isInstancedMesh) pieces.push(object); });
-    const buckets = new Map();
-    for (const piece of pieces) {
-        const params = piece.geometry.parameters;
-        const shape = params?.shapes ? piece.geometry.uuid : `${piece.geometry.type}:${JSON.stringify(params ?? {})}`;
-        const key = `${piece.material.uuid}|${shape}`;
-        if (!buckets.has(key)) buckets.set(key, []);
-        buckets.get(key).push(piece);
-    }
-    for (const members of buckets.values()) {
-        if (members.length < 2) continue;
-        const batch = new THREE.InstancedMesh(members[0].geometry, members[0].material, members.length);
-        batch.castShadow = true; batch.receiveShadow = true;
-        members.forEach((piece, i) => { batch.setMatrixAt(i, piece.matrixWorld); piece.parent.remove(piece); });
-        group.add(batch);
-        batches.push(batch);
+    if (isWebGPU) {
+        const buckets = new Map();
+        for (const piece of pieces) {
+            const params = piece.geometry.parameters;
+            const shape = params?.shapes ? piece.geometry.uuid : `${piece.geometry.type}:${JSON.stringify(params ?? {})}`;
+            const key = `${piece.material.uuid}|${shape}`;
+            if (!buckets.has(key)) buckets.set(key, []);
+            buckets.get(key).push(piece);
+        }
+        for (const members of buckets.values()) {
+            if (members.length < 2) continue;
+            const batch = new THREE.InstancedMesh(members[0].geometry, members[0].material, members.length);
+            batch.castShadow = true; batch.receiveShadow = true;
+            members.forEach((piece, i) => { batch.setMatrixAt(i, piece.matrixWorld); piece.parent.remove(piece); });
+            group.add(batch);
+            batches.push(batch);
+        }
+    } else {
+        const byMat = new Map();
+        for (const piece of pieces) {
+            if (!byMat.has(piece.material)) byMat.set(piece.material, []);
+            byMat.get(piece.material).push(piece);
+        }
+        for (const [material, members] of byMat) {
+            if (members.length < 2) continue;
+            const geos = [];
+            for (const piece of members) {
+                const g = piece.geometry.clone();
+                g.applyMatrix4(piece.matrixWorld);
+                for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+                if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+                geos.push(g);
+                piece.parent.remove(piece);
+            }
+            const indexed = geos.every(g => g.index);
+            const merged = mergeGeometries(indexed ? geos : geos.map(g => (g.index ? g.toNonIndexed() : g)));
+            for (const g of geos) g.dispose();
+            if (!merged) continue;
+            const batch = new THREE.Mesh(merged, material);
+            batch.castShadow = true; batch.receiveShadow = true;
+            group.add(batch);
+            batches.push({ dispose() { merged.dispose(); } });
+        }
     }
 
     return {

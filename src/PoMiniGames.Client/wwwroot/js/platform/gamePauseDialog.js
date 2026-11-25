@@ -46,7 +46,7 @@ export function detach(root) {
     document.removeEventListener('keydown', trap.keydown, true);
     document.removeEventListener('focusin', trap.focusin);
     traps.delete(root);
-    if (trap.opener?.isConnected && !document.querySelector('dialog[open]')) {
+    if (trap.opener?.isConnected && !document.querySelector('dialog[open], .rz-dialog-wrapper')) {
         trap.opener.focus({ preventScroll: true });
     }
 }

@@ -22,7 +22,6 @@
    /pofighter/1player is the practice room (js/pofighter/index.js): a punching bag, nothing scored.
    /pofighter/arcade is 1P vs the CPU (js/pofighter/arcade.js): every other fighter in turn, then
    your Shadow; difficulty on the start card; the run is recorded in local stats.
-   /pofighter/versus is local 2P (arcade.js): P1 WASD F/G, P2 arrows K/L, or two pads.
    /pofighter/demo is the attract-mode demo (js/pofighter/demo.js): Kim and Nick, both CPU, best
    of three, forever; no start card, and any key or tap returns to the main menu. Every completed
    match is rated on the live fighter Elo board (DemoBoutFinished, PoFighterDemoElo).
@@ -465,6 +464,15 @@
     protected override async Task OnParametersSetAsync()
     {
         var mode = Mode ?? string.Empty;
+        if (!string.IsNullOrEmpty(mode)
+            && !string.Equals(mode, "1player", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(mode, "arcade", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(mode, "demo", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(mode, "tournament", StringComparison.OrdinalIgnoreCase))
+        {
+            Navigation.NavigateTo("/pofighter" + new Uri(Navigation.Uri).Query, replace: true);
+            return;
+        }
         if (string.Equals(_activeMode, mode, StringComparison.OrdinalIgnoreCase))
         {
             if (Kiosk.IsActive && (IsDemo || IsTournament) && !_introDismissed)

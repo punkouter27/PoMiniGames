@@ -136,7 +136,7 @@ async function init(hostId, reference) {
         // Esc leaves for the main menu (owner, 2026-11-21); P (or its rebinding) pauses. A menu that
         // is open (options sheet, pause panel, end card) handles its own Esc, so it is left alone.
         if (e.code === 'Escape' && !e.repeat) {
-            if (g.state.status === 'active' && !document.querySelector('dialog[open]')) { e.preventDefault(); toMainMenu(); }
+            if (g.state.status === 'active' && !document.querySelector('dialog[open], .rz-dialog-wrapper, [data-po-dialog]')) { e.preventDefault(); toMainMenu(); }
             return;
         }
         if (matches(g.prefs, 'pause', e.code) && !e.repeat) {
@@ -363,6 +363,7 @@ async function init(hostId, reference) {
                     if (document.pointerLockElement === view.canvas) releasePointer(g);
                 }
             }
+            if (!g.started) return;
             const moving = Math.hypot(x, z) > 0.1 && g.state.status === 'active';
 
             // Real-time Tactical Radar & Unit Inspector updates

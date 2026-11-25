@@ -115,8 +115,8 @@
                     }
                     else if (!isDisabled)
                     {
-                        @* Ghost preview of whoever moves next (X vs CPU; the active token in 2P). *@
-                        @Mark(isX: PlayMode == "2p" ? _current2pToken == CellValue.X : PlayMode == "online" ? _mySide == TurnMatchSide.First : true, ghost: true)
+                        @* Ghost preview of whoever moves next (X vs CPU). *@
+                        @Mark(isX: PlayMode == "online" ? _mySide == TurnMatchSide.First : true, ghost: true)
                     }
                 </div>
             }
@@ -154,9 +154,6 @@
     private GameResult _gameResult = GameResult.InProgress;
 
     // Outcome for the end-of-game cue (GameOverModal picks the sound from this).
-    // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
-    // one of the two people at the keyboard just won — so it stays InProgress and
-    // the modal sounds the neutral round-over instead of celebrating at someone.
     private GameResult OutcomeForCue => PlayMode is "ai" or "online" ? _gameResult : GameResult.InProgress;
 
     // Spoken by GameShell's shared live region. The board is a
@@ -168,7 +165,7 @@
         : _gameResult switch
     {
         GameResult.Win => "You win.",
-        GameResult.Loss => PlayMode == "ai" ? "You lose." : "Circles win.",
+        GameResult.Loss => "You lose.",
         GameResult.Draw => "It's a draw.",
         _ when _isAiTurn => "Opponent is thinking.",
         _ => "Your turn.",
@@ -177,7 +174,7 @@
     // ── Visible turn strip (Features/Shared/Lobby/TurnStrip.razor) ────────────────────────────
     // Derived from the SAME state the spoken Announcement reads, rather than tracking
     // its own: two turn indicators that can disagree is worse than one that is only
-    // spoken. X is always the left side; in local play Win means X won (HandleTwoPlayerMove).
+    // spoken. X is always the left side.
     // Your own seat is "You" on the strip: the session's "<name> (you)" is 27 characters
     // for a guest, and two of those wrapped the strip to three lines on a phone.
     private string OnlineSeatName(TurnMatchSide side) =>
@@ -190,42 +187,37 @@
         "online" => OnlineSeatName(TurnMatchSide.First),
         // Against the CPU there is one person at the board. Their display name adds
         // nothing, and a guest's is 21 characters that wrapped the strip to three lines.
-        "ai" => "You",
-        _ => P1Name,
+        _ => "You",
     };
     private string OName => PlayMode switch
     {
-        "ai" => "CPU",
         "demo" => "O",
         "online" => OnlineSeatName(TurnMatchSide.Second),
-        _ => _player2Name,
+        _ => "CPU",
     };
 
     // Demo plays itself, so neither side is "waiting on you" and nothing is highlighted.
     private bool IsXTurn => _gameResult == GameResult.InProgress && PlayMode switch
     {
         "demo" => false,
-        "ai" => !_isAiTurn,
         "online" => _online is { Phase: QuickMatchPhase.Playing, Turn: TurnMatchSide.First },
-        _ => _current2pToken == CellValue.X,
+        _ => !_isAiTurn,
     };
     private bool IsOTurn => _gameResult == GameResult.InProgress && PlayMode switch
     {
         "demo" => false,
-        "ai" => _isAiTurn,
         "online" => _online is { Phase: QuickMatchPhase.Playing, Turn: TurnMatchSide.Second },
-        _ => _current2pToken == CellValue.O,
+        _ => _isAiTurn,
     };
 
     private string StatusText => IsOnline ? OnlineStatusText : _gameResult switch
     {
-        GameResult.Win => PlayMode == "ai" ? "You win!" : $"{XName} wins!",
-        GameResult.Loss => PlayMode == "ai" ? "You lose" : $"{OName} wins!",
+        GameResult.Win => "You win!",
+        GameResult.Loss => "You lose",
         GameResult.Draw => "Draw",
         _ when PlayMode == "demo" => "Demo — CPU vs CPU",
         _ when _isAiTurn => "CPU thinking…",
-        _ when PlayMode == "ai" => "Your turn",
-        _ => $"{(_current2pToken == CellValue.X ? XName : OName)}'s turn",
+        _ => "Your turn",
     };
 
     // Adaptive 1-player rating (same system as ConnectFive/PoBrawl). The CPU is
@@ -236,13 +228,9 @@
     // ELO change from the just-finished game, shown on the game-over panel.
     private int? _lastEloDelta;
     private bool _isAiTurn;
-    // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
+    // "ai" (vs CPU) or "online"; "demo" is driven by the route param.
     private string _playMode = "ai";
     private string PlayMode => IsDemo ? "demo" : _playMode;
-    private CellValue _current2pToken = CellValue.X; // whose turn in 2-player mode
-    // Shared by both board games: the second player on this device is usually the same person.
-    private const string Player2Key = "pominigames:player2";
-    private string _player2Name = LocalStorageService.GetItem<string>(Player2Key) is { Length: > 0 } saved ? saved : "Player 2";
     private bool _matchRecorded;
     private string _playerName = "";
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
@@ -265,15 +253,10 @@
     // Intro/welcome gate — overlay blocks the board until dismissed (OK); demo
     // flashes it for 2s. Nothing auto-moves in human modes, so the overlay is
     // the only gate needed.
-    // The intro branches on PlayMode so each variant surfaces the controls that
-    // actually apply (the 1P "the CPU answers with ⭕" copy is wrong for 2P).
     private bool _introDone;
-    private GameIntro.IntroMode _introMode => PlayMode switch
-    {
-        "demo" => GameIntro.IntroMode.Demo,
-        "2p"   => GameIntro.IntroMode.TwoPlayer,
-        _      => GameIntro.IntroMode.OnePlayer,
-    };
+    private GameIntro.IntroMode _introMode => PlayMode == "demo"
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
     private void DismissIntro()
     {
         _introDone = true;
@@ -305,14 +288,6 @@
                 <li>Everyone who picks Online meets in one shared lobby: the first in hosts, the guest marks Ready, the host starts</li>
                 <li>The host plays ❌ and goes first</li>
                 <li>The board lives on the server: tap a cell on your turn, then wait for theirs</li>
-            </ul>
-        </div>,
-        "2p" => @<div>
-            <p>Two players, one device — ❌ goes first, then ⭕.</p>
-            <ul>
-                <li>Tap an empty cell on your turn; the next player taps on theirs</li>
-                <li>Rows, columns and diagonals all count</li>
-                <li>No CPU and no rating: just take turns</li>
             </ul>
         </div>,
         _ => @<div>
@@ -382,7 +357,6 @@
     // to the player's adaptive ELO, exactly like ConnectFive.
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
         : IsOnline ? OnlineSummary
-        : PlayMode == "2p" ? TwoPlayerSummary
         : @<div>
             @if (_gameResult == GameResult.Win)
             {
@@ -429,28 +403,12 @@
         }
     </div>;
 
-    // Two people at one screen: name the winner. This used to fall through to the 1P copy,
-    // so X winning read "You win!" and O winning read "AI wins".
-    private RenderFragment TwoPlayerSummary => _gameResult switch
-    {
-        GameResult.Win => @<div class="cf-result cf-result--win">❌ @P1Name won! Nice game.</div>,
-        GameResult.Loss => @<div class="cf-result cf-result--win">⭕ @_player2Name won! Nice game.</div>,
-        _ => @<div class="cf-result cf-result--draw">🤝 Draw</div>,
-    };
-    
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
         if (RouteMode == GameMode.Multiplayer) _playMode = "online";
         ResetGame();
         if (PlayMode == "demo") Kiosk.SetCurrent("tictactoe-demo");
-    }
-
-    private void OnPlayer2NameChange(ChangeEventArgs e)
-    {
-        var name = e.Value?.ToString();
-        _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
-        LocalStorageService.SetItem(Player2Key, _player2Name);
     }
 
     private void ResetGame()
@@ -462,7 +420,6 @@
         _lastMove = null;
         _gameId++;
         _isAiTurn = false;
-        _current2pToken = CellValue.X;
         _matchRecorded = false;
         _lastEloDelta = null;
         // Match the CPU to the player's rating as it stands right now — this is
@@ -574,8 +531,6 @@
         // rejected input is felt, not silently ignored.
         if (_board.Get(row, col) != CellValue.None) { _ = Feedback.ErrorAsync(); return; }
 
-        if (PlayMode == "2p") { HandleTwoPlayerMove(row, col); return; }
-
         var currentToken = CellValue.X;
         _board = _board.Place(row, col, currentToken);
         _lastMove = (row, col);
@@ -631,50 +586,6 @@
         }
     }
     
-    // Local pass-and-play: X = Player 1 (the local player), O = Player 2.
-    private void HandleTwoPlayerMove(int row, int col)
-    {
-        var token = _current2pToken;
-        _board = _board.Place(row, col, token);
-        _lastMove = (row, col);
-        _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(col, TicTacToeBoard.Size));
-
-        var winCheck = _board.CheckWin(token);
-        if (winCheck.Won)
-        {
-            _winCells = winCheck.Cells;
-            _gameResult = token == CellValue.X ? GameResult.Win : GameResult.Loss;
-            _ = Feedback.PersonalBestAsync();
-            RecordLocalMatch();
-            return;
-        }
-
-        if (_board.IsFull())
-        {
-            _gameResult = GameResult.Draw;
-            _ = Feedback.CompleteAsync();
-            RecordLocalMatch();
-            return;
-        }
-
-        _current2pToken = token == CellValue.X ? CellValue.O : CellValue.X;
-    }
-
-    // Record the 2-player outcome to the head-to-head history (owner's perspective:
-    // Win = Player 1 won, Loss = Player 2 won). Local vs-AI stats are left untouched.
-    private void RecordLocalMatch()
-    {
-        if (_matchRecorded) return;
-        _matchRecorded = true;
-        var outcome = _gameResult switch
-        {
-            GameResult.Win => MatchOutcome.Win,
-            GameResult.Loss => MatchOutcome.Loss,
-            _ => MatchOutcome.Draw
-        };
-        _ = MatchHistory.RecordAsync("tictactoe", MatchMode.Local2P, _player2Name, outcome);
-    }
-
     private string GetCellAriaLabel(CellValue value) => value switch
     {
         CellValue.X => "X",
@@ -690,7 +601,6 @@
         _winCells = new();
         _isAiTurn = false;
         _matchRecorded = false;
-        _current2pToken = CellValue.X;
         _lastMove = null;
         _gameId++;
     }
