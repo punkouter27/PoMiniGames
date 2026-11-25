@@ -54,6 +54,12 @@ public class PoCabinetCarBody
     public double Z { get; set; }
     public double Vz { get; set; }
     public double Susp { get; set; }
+    /// <summary>Always-automatic 6-speed gearbox, tyre temperature (0..1) and threshold brake lockup (0..1).</summary>
+    public int Gear { get; set; } = 1;
+    public double Rpm { get; set; } = PoCabinetPhysics.IdleRpm;
+    public double ShiftCut { get; set; }
+    public double TyreTemp { get; set; } = 0.55;
+    public double BrakeLock { get; set; }
 }
 
 /// <summary>Race conditions for <see cref="PoCabinetPhysics.Step"/>: rain, and how much rubber is
@@ -94,23 +100,23 @@ public readonly record struct PoCabinetConditions(bool Wet, double Rubber);
 public static class PoCabinetPhysics
 {
     public const double TickSeconds = 1.0 / 30.0;
-    /// <summary>Top speed on tarmac at full throttle, units/s.</summary>
-    public const double MaxSpeed = 140;
-    /// <summary>HUD conversion: 140 units/s reads as 280 km/h.</summary>
-    public const double KmhPerUnit = 2.0;
-    public const double Accel = 55;
-    public const double BrakeDecel = 130;
-    public const double CoastDecel = 14;
-    public const double ReverseAccel = 25;
-    public const double ReverseMax = 18;
+    /// <summary>Top speed on tarmac at full throttle, units/s (560 u/s = 56.0 m/s = 201.6 km/h at 10 u/m).</summary>
+    public const double MaxSpeed = 560;
+    /// <summary>True 1:1 HUD conversion: 10 sim units = 1 m, so 1 u/s = 0.36 km/h.</summary>
+    public const double KmhPerUnit = 0.36;
+    public const double Accel = 160;
+    public const double BrakeDecel = 310;
+    public const double CoastDecel = 32;
+    public const double ReverseAccel = 65;
+    public const double ReverseMax = 65;
     /// <summary>Yaw rate at full lock once rolling, rad/s.</summary>
-    public const double SteerRate = 2.3;
+    public const double SteerRate = 3.2;
     /// <summary>Below this speed the available lock scales down linearly — no pivoting on the spot.</summary>
-    public const double SteerFullSpeed = 18;
+    public const double SteerFullSpeed = 48;
     /// <summary>Lateral acceleration cap (speed × yaw rate). Asking for more understeers.</summary>
-    public const double GripAccel = 105;
-    public const double ScrubDecel = 30;
-    public const double GrassDecel = 50;
+    public const double GripAccel = 310;
+    public const double ScrubDecel = 75;
+    public const double GrassDecel = 120;
     public const double GrassGrip = 0.6;
     /// <summary>Grass strip between the road edge and the barrier.</summary>
     public const double RunOff = 26;
@@ -125,12 +131,12 @@ public static class PoCabinetPhysics
     public const double ContactRestitution = 0.2;
     /// <summary>Yaw inertia over mass: the square of a 39 x 17 body's radius of gyration.</summary>
     public const double YawInertia = 150;
-    public const double SlipDecel = 120;
+    public const double SlipDecel = 260;
     public const double SpinDecel = 5;
-    public const double MaxSlip = 60;
+    public const double MaxSlip = 140;
     public const double MaxSpin = 2.5;
     public const double MaxContactSpin = 4.0;
-    public const double SlipSliding = 8;
+    public const double SlipSliding = 20;
     public const double WallScrapeTorque = 0.65;
     public const double WallSlipRetain = 0.35;
     public const double ContactFriction = 0.16;
@@ -139,16 +145,24 @@ public static class PoCabinetPhysics
     public const double SuspK = 48.0;
     public const double SuspDamp = 9.0;
     public const int SolverIterations = 3;
-    public const double CcdSpeedSq = 4900.0;
+    public const double CcdSpeedSq = 16000.0;
     /// <summary>Cars further apart than this along the road never touch: where a course
     /// crosses over itself they are on different levels.</summary>
     public const double SameRoad = 120;
-    public const double GridColumn = 22;
-    public const double GridRow = 50;
+    public const double GridColumn = 26;
+    public const double GridRow = 58;
+    public const double GridStagger = 18;
+    /// <summary>Always-automatic 6-speed gearbox constants (mirrors physics.js and audio.js).</summary>
+    public const double IdleRpm = 950;
+    public const double RedlineRpm = 8200;
+    public const double ShiftUpRpm = 7700;
+    public const double ShiftDownRpm = 3700;
+    public const double ShiftCutSecs = 0.065;
+    private static readonly double[] GearTopSpeed = [135, 220, 310, 405, 495, 585];
     /// <summary>Damage: closing speed a body shrugs off, and the square of the excess over it that
-    /// takes all of a car's structure (a square hit on the barrier at about 110 u/s).</summary>
-    public const double DamageFloor = 12;
-    public const double DamageScale = 9500;
+    /// takes all of a car's structure (a square hit on the barrier at ~420 u/s = 150 km/h).</summary>
+    public const double DamageFloor = 45;
+    public const double DamageScale = 140000;
     /// <summary>Engine share of a hit on the nose and of one anywhere else.</summary>
     public const double EngineNose = 1.25;
     public const double EngineOther = 0.3;
@@ -162,13 +176,13 @@ public static class PoCabinetPhysics
     public const double LockLoss = 0.3;
     public const double PullSteer = 0.14;
     /// <summary>A wrecked car limps at no more than this, and only until it is this far off the tarmac.</summary>
-    public const double LimpSpeed = 14;
+    public const double LimpSpeed = 45;
     public const double LimpThrottle = 0.5;
     public const double WreckClear = 16;
     /// <summary>Hills: gravity along the road (u/s² per unit of grade) and the drag on speed past
     /// a car's top speed, so a long descent tops out.</summary>
-    public const double SlopeGravity = 60;
-    public const double OverspeedDrag = 1.2;
+    public const double SlopeGravity = 150;
+    public const double OverspeedDrag = 1.4;
     /// <summary>Grip a turn banked into it adds per unit of bank (off-camber takes up to half that).</summary>
     public const double BankGrip = 0.6;
     /// <summary>The friction circle: the share of cornering grip full brake pressure takes.</summary>
@@ -185,10 +199,10 @@ public static class PoCabinetPhysics
     public const double KerbGrip = 0.97;
     public const double KerbWetGrip = 0.8;
     public const double SausageGrip = 0.85;
-    public const double SausageScrub = 45;
+    public const double SausageScrub = 110;
     public const double SausageKick = 1.1;
     public const double GravelGrip = 0.45;
-    public const double GravelDecel = 95;
+    public const double GravelDecel = 240;
 
     /// <summary>Barrier distance from the centerline on the track's nominal width.</summary>
     public static double WallLateral(PoCabinetTrack track) => track.HalfWidth + RunOff - CarRadius * 0.5;
@@ -282,12 +296,15 @@ public static class PoCabinetPhysics
     }
 
     /// <summary>
-    /// Advance one car by <paramref name="dt"/> in two continuous sub-steps so fast cars do not
-    /// tunnel past barriers or dividers. Mirrors physics.js <c>step</c>.
+    /// Advance one car by <paramref name="dt"/> in four continuous sub-steps (120 Hz internal integration
+    /// at 30 Hz ticks) so kerbs, weight transfer, automatic gear shifts and fast contacts stay crisp.
+    /// Mirrors physics.js <c>step</c>.
     /// </summary>
     public static void Step(PoCabinetTrack track, PoCabinetCarBody car, PoCabinetControls c, double dt, double grip, PoCabinetConditions cond = default)
     {
-        double subDt = dt * 0.5;
+        double subDt = dt * 0.25;
+        StepSub(track, car, c, subDt, grip, cond);
+        StepSub(track, car, c, subDt, grip, cond);
         StepSub(track, car, c, subDt, grip, cond);
         StepSub(track, car, c, subDt, grip, cond);
     }
@@ -322,6 +339,33 @@ public static class PoCabinetPhysics
         double slope = seg >= 0 ? track.Grade(seg) * roadDot : 0;
         double bank = seg >= 0 ? track.Bank(seg) : 0;
 
+        // ── Always-automatic 6-speed gearbox + RPM torque curve ─────────
+        int g = car.Gear > 0 ? car.Gear : 1;
+        double fwdV = Math.Max(0, v);
+        static double RpmIn(double speed, int gearIdx) => speed / GearTopSpeed[gearIdx - 1] * RedlineRpm;
+        int prevG = g;
+        while (g < 6 && RpmIn(fwdV, g) > ShiftUpRpm) g++;
+        while (g > 1 && RpmIn(fwdV, g) < ShiftDownRpm && RpmIn(fwdV, g - 1) < ShiftUpRpm - 600) g--;
+        if (g > prevG) car.ShiftCut = ShiftCutSecs;
+        car.Gear = g;
+        double rpm = RpmIn(fwdV, g);
+        if (g == 1 && fwdV < 20) rpm = Math.Max(rpm, IdleRpm + throttle * 4200 * (1 - fwdV / 20));
+        car.Rpm = Math.Min(RedlineRpm, Math.Max(IdleRpm, rpm));
+        double rpmNorm = Math.Clamp((car.Rpm - IdleRpm) / (RedlineRpm - IdleRpm), 0, 1);
+        double gearBoost = 1.16 - (g - 1) * 0.05;
+        double torqueFactor = (0.78 + 0.28 * PoCabinetDetMath.Sin(rpmNorm * Math.PI)) * gearBoost;
+        if (car.ShiftCut > 0)
+        {
+            car.ShiftCut = Math.Max(0, car.ShiftCut - dt);
+            torqueFactor *= 0.2;
+        }
+
+        // ── Threshold braking & progressive front wheel lockup ──────────
+        double lockTarget = !airborne && brake > 0.84 && v > 28
+            ? Math.Min(1, (brake - 0.84) / 0.16 * (0.45 + 0.55 * Math.Abs(steer)))
+            : 0;
+        car.BrakeLock += (lockTarget - car.BrakeLock) * Math.Min(1, dt * 10);
+
         // ── Longitudinal ────────────────────────────────────────────────
         double v2;
         if (v < -0.01)
@@ -345,9 +389,11 @@ public static class PoCabinetPhysics
         else
         {
             double ratio = v / top;
-            double a = throttle * Accel * power * grip * Math.Max(0, 1 - ratio * ratio)
-                       - brake * BrakeDecel
-                       - CoastDecel * (1 - throttle);
+            double brakeEff = 1 - 0.14 * car.BrakeLock;
+            double engineBrake = CoastDecel * (1 - throttle) * (1 + (6 - g) * 0.14);
+            double a = throttle * Accel * torqueFactor * power * grip * Math.Max(0, 1 - ratio * ratio)
+                       - brake * BrakeDecel * brakeEff
+                       - engineBrake;
             // Grass drags, gravel beaches the car, a raised kerb scrubs it.
             if (surf == SurfGrass && v > 25) a -= GrassDecel;
             else if (surf == SurfGravel && v > 8) a -= GravelDecel;
@@ -359,21 +405,39 @@ public static class PoCabinetPhysics
             v2 = Math.Max(0, v + a * dt);
         }
 
-        // ── Steering with a lateral-grip cap ────────────────────────────
+        // ── Steering with progressive tyre slip & weight transfer ───────
         double speedAbs = Math.Abs(v2);
         double lockScale = Math.Min(1, speedAbs / SteerFullSpeed);
         double omegaWanted = steer * SteerRate * lockScale * (v2 < 0 ? -1 : 1);
-        // Grip to turn with: banked load + dynamic longitudinal weight transfer + friction circle.
+        double heatIn = (Math.Abs(steer) * (speedAbs / MaxSpeed) * 0.08 + brake * 0.06 + (car.Sliding ? 0.14 : 0) + car.BrakeLock * 0.12) * dt;
+        double coolOut = (0.015 + 0.015 * (speedAbs / MaxSpeed)) * Math.Max(0, car.TyreTemp - 0.45) * dt;
+        car.TyreTemp = Math.Clamp(car.TyreTemp + heatIn - coolOut, 0.3, 1.0);
+        double tempDelta = car.TyreTemp - 0.8;
+        double tempGrip = 1.04 - 0.18 * tempDelta * tempDelta;
+        // Grip to turn with: banked load + dynamic longitudinal weight transfer + friction circle + lockup washout.
         double camber = omegaWanted > 0 ? -bank : bank;
-        double longLoad = Math.Clamp((v2 - v) / (Accel * dt + 1e-6), -0.35, 0.35);
-        double loadFactor = Math.Max(0.68, 1.0 - TrailLoss * brake * brake - Math.Max(0, longLoad) * 0.04 + (brake > 0.05 && brake < 0.65 ? 0.04 : 0.0));
-        double omegaGrip = GripAccel * grip * surfaceGrip * (1 + BankGrip * Math.Min(1, Math.Max(-0.5, camber)))
+        double longLoad = Math.Clamp((v2 - v) / (Accel * dt + 1e-6), -0.45, 0.45);
+        double trailBonus = brake > 0.06 && brake < 0.72 ? 0.08 : 0.0;
+        double loadFactor = Math.Max(0.62, 1.0 - TrailLoss * brake * brake - Math.Max(0, longLoad) * 0.06 + trailBonus - 0.28 * car.BrakeLock);
+        double omegaGrip = GripAccel * grip * surfaceGrip * tempGrip * (1 + BankGrip * Math.Min(1, Math.Max(-0.5, camber)))
             * loadFactor / Math.Max(speedAbs, 1);
-        double omega = Math.Clamp(omegaWanted, -omegaGrip, omegaGrip);
-        car.Sliding = Math.Abs(omegaWanted) > omegaGrip * 1.02 && speedAbs > 30;
+        double absWanted = Math.Abs(omegaWanted);
+        double omega;
+        if (absWanted <= omegaGrip)
+        {
+            omega = omegaWanted;
+        }
+        else
+        {
+            double sr = absWanted / Math.Max(omegaGrip, 1e-5);
+            double tail = sr < 1.45 ? 1.0 - 0.14 * ((sr - 1.0) / 0.45) * ((sr - 1.0) / 0.45) : 0.86;
+            omega = (omegaWanted > 0 ? 1 : -1) * omegaGrip * tail;
+        }
+        car.Sliding = (absWanted > omegaGrip * 1.02 && speedAbs > 30) || car.BrakeLock > 0.35;
         if (car.Sliding)
         {
-            v2 = v2 > 0 ? Math.Max(0, v2 - ScrubDecel * dt) : Math.Min(0, v2 + ScrubDecel * dt);
+            double excess = Math.Clamp(absWanted / Math.Max(omegaGrip, 1e-5) - 0.65, 0.35, 1.5);
+            v2 = v2 > 0 ? Math.Max(0, v2 - ScrubDecel * excess * dt) : Math.Min(0, v2 + ScrubDecel * excess * dt);
         }
 
         // What a contact left behind: the tyres scrub the sideways slide and the spin off.
@@ -754,9 +818,8 @@ public static class PoCabinetPhysics
         if (car.Damage >= 1 || car.Engine >= 1) car.Wrecked = true;
     }
 
-    /// <summary>Columns of the starting grid: as many as the tarmac takes, at least two.</summary>
-    public static int GridColumns(PoCabinetTrack track) =>
-        Math.Max(2, (int)Math.Floor(track.HalfWidth * 1.6 / GridColumn) + 1);
+    /// <summary>Columns of the starting grid: realistic 2-wide F1/GT staggered formation.</summary>
+    public static int GridColumns(PoCabinetTrack _) => 2;
 
     /// <summary>
     /// Distance behind the line of grid row <paramref name="row"/>. Rows are
@@ -784,14 +847,16 @@ public static class PoCabinetPhysics
     }
 
     /// <summary>
-    /// Starting-grid slot <paramref name="slot"/>: rows across the tarmac, pole just behind the
-    /// line, so every car's race distance starts negative and lap 1 ends at one lap length.
+    /// Starting-grid slot <paramref name="slot"/>: staggered 2-by-2 F1/GT rows across the tarmac,
+    /// pole just behind the line, so every car's race distance starts negative and lap 1 ends at one lap length.
     /// </summary>
     public static void GridSlot(PoCabinetTrack track, PoCabinetCarBody car, int slot)
     {
         int cols = GridColumns(track);
-        double back = GridBack(track, slot / cols);
-        double lateral = (slot % cols - (cols - 1) / 2.0) * GridColumn;
+        int col = slot % cols;
+        double back = GridBack(track, slot / cols) + (col == 1 ? GridStagger : 0);
+        double spacing = Math.Max(GridColumn, track.HalfWidth * 0.68);
+        double lateral = (col - (cols - 1) / 2.0) * spacing;
         var p = track.PointAt(track.Length - back);
         car.X = p.X + -p.Ty * lateral;
         car.Y = p.Y + p.Tx * lateral;

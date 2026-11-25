@@ -27,10 +27,11 @@ import { gravel, patchMask, repairs, chevrons, boardAtlas, arrowSign, jokerPanel
 /** Samples over which a divider tapers (track.js ISLAND_TAPER). */
 const TAPER = 4;
 const ISLAND_HEIGHT = 0.75;
-/** Corner detection: a stretch the cars cannot take flat (u/s), and a brake worth boards. */
-const CORNER_SPEED = 112;
-const BRAKE_DROP = 22;
-const BOARD_STEP = 45;
+/** Corner detection: a stretch the cars cannot take flat (u/s), and a brake worth boards.
+ *  BOARD_STEP = 500 sim units = 50.0 m (exact 50 m / 100 m / 150 m FIA braking boards). */
+const CORNER_SPEED = 360;
+const BRAKE_DROP = 65;
+const BOARD_STEP = 500;
 
 /**
  * A band across the road at each sample of [i0, i0 + count]: `cols(k)` gives its lateral
@@ -180,11 +181,11 @@ export class Trackside {
         if (this.wet) {
             m.color.set('#6c6c70');
             m.roughness = 0.92;
-            m.opacity = 0.1 + 0.32 * this.level;
+            m.opacity = 0.14 + 0.32 * this.level;
         } else {
-            m.color.set('#0d0d0f');
-            m.roughness = 0.6;
-            m.opacity = 0.07 + 0.36 * this.level;
+            m.color.set('#0b0b0e');
+            m.roughness = 0.56;
+            m.opacity = 0.16 + 0.36 * this.level;
         }
     }
 
@@ -336,7 +337,7 @@ export class Trackside {
             const x = t.x[ap] - t.ty[ap] * lat, y = t.y[ap] + t.tx[ap] * lat;
             if (this.clear(x, y, 4)) items.push({ x, y, fx: -t.tx[ap] + c.dir * t.ty[ap] * 0.6, fy: -t.ty[ap] - c.dir * t.tx[ap] * 0.6, label, size: 1.3, height: 1.7 });
             if (!c.brake) return;
-            // 3, 2, 1 on the outside before the turn-in.
+            // 150m, 100m, 50m braking distance boards on the outside before every braking zone.
             for (let m = 1; m <= 3; m++) {
                 const at = t.cum[c.start] - m * BOARD_STEP;
                 const k = t.indexAt(at);
@@ -344,7 +345,7 @@ export class Trackside {
                 const blat = -c.dir * (wallFace(t, k, -c.dir) + 7);
                 const bx = p.x - p.ty * blat, by = p.y + p.tx * blat;
                 if (!this.clear(bx, by, 3)) continue;
-                items.push({ x: bx, y: by, fx: -p.tx - c.dir * p.ty * 0.25, fy: -p.ty + c.dir * p.tx * 0.25, label: String(m), size: 0.95, height: 1.25 });
+                items.push({ x: bx, y: by, fx: -p.tx - c.dir * p.ty * 0.25, fy: -p.ty + c.dir * p.tx * 0.25, label: `${m * 50}`, size: 1.15, height: 1.3 });
             }
         });
         if (!items.length) return;

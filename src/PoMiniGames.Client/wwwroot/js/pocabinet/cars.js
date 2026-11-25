@@ -738,7 +738,7 @@ class CarHandle {
         if (this.disposed || !snap) return;
         const now = performance.now();
         const x = snap.x / WS, z = snap.y / WS;
-        const speed = (Number(snap.speedKmh) || 0) / 2 / WS;     // world units/s
+        const speed = (Number(snap.speedKmh) || 0) / 3.6;        // true world m/s (1:1 with WHEEL_R)
         this.group.position.set(x, Number(snap.h) || 0, z);
         // Yaw, then the road's slope about the car's own lateral axis, then its bank about
         // the car's length (+ roll = right side up; the car's right is local +Z).
@@ -750,12 +750,14 @@ class CarHandle {
             dh = Math.atan2(Math.sin(dh), Math.cos(dh));
             const yawRate = dh / dt;
             const accel = (speed - this.last.v) / dt;
-            const k = 1 - Math.exp(-dt * 8);
-            const steerTarget = Math.max(-0.45, Math.min(0.45, yawRate * 0.35 * (speed > 0.5 ? 1 : 0)));
+            const k = 1 - Math.exp(-dt * 10);
+            const rawSteer = Number(snap.steer) || 0;
+            const steerTarget = Math.max(-0.48, Math.min(0.48,
+                Math.abs(rawSteer) > 0.01 ? -rawSteer * 0.44 : yawRate * 0.35 * (speed > 0.5 ? 1 : 0)));
             this.steer += (steerTarget - this.steer) * k;
-            this.roll += (Math.max(-0.075, Math.min(0.075, -yawRate * speed * 0.0044)) - this.roll) * k;
-            this.pitch += (Math.max(-0.055, Math.min(0.055, accel * 0.0031)) - this.pitch) * k;
-            const brake = accel < -3 ? 1 : 0;
+            this.roll += (Math.max(-0.095, Math.min(0.095, -yawRate * speed * 0.0054)) - this.roll) * k;
+            this.pitch += (Math.max(-0.072, Math.min(0.072, accel * 0.0040)) - this.pitch) * k;
+            const brake = (Number(snap.brake) || 0) > 0.12 || accel < -2.6 ? 1 : 0;
             if (brake !== this.braking) { this.braking = brake; this.applyLights(); }
             this.spin -= speed * dt / WHEEL_R;
 
@@ -814,9 +816,9 @@ class CarHandle {
 
     applyLights() {
         // A smashed lamp stays dark (the shader draws the hole); HDR emissive drives tail bloom & wash (#3).
-        this.tailMat.color.copy(TAIL).multiplyScalar(this.braking ? 3.8 : 1.35);
-        const coneOp = this.braking ? 0.34 : 0.08;
-        const coneScale = this.braking ? 1.05 : 0.55;
+        this.tailMat.color.copy(TAIL).multiplyScalar(this.braking ? 5.2 : 1.35);
+        const coneOp = this.braking ? 0.42 : 0.08;
+        const coneScale = this.braking ? 1.2 : 0.55;
         for (let i = 0; i < this.cones.length; i++) {
             const c = this.cones[i];
             const broken = i === 0 ? this.lamps.tailL : this.lamps.tailR;

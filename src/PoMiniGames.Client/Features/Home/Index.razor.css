@@ -228,27 +228,6 @@
     box-shadow: var(--elevation-1);
 }
 
-/* Directional GPU-composited page-turn wipe with 18ms per-card stagger */
-.home-grid--next .home-card:not([hidden]) {
-    animation: home-card-wipe-next 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(var(--card-i, 0) * 18ms);
-}
-
-.home-grid--prev .home-card:not([hidden]) {
-    animation: home-card-wipe-prev 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(var(--card-i, 0) * 18ms);
-}
-
-@keyframes home-card-wipe-next {
-    from { opacity: 0; transform: translate3d(20px, 0, 0); }
-    to { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-
-@keyframes home-card-wipe-prev {
-    from { opacity: 0; transform: translate3d(-20px, 0, 0); }
-    to { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-
 /* The heading: icon + game name on the left, linking to the game's primary mode. */
 .home-card-head {
     display: inline-flex;
@@ -481,16 +460,7 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     }
 }
 
-/* ── Pages ─────────────────────────────────────────────────────────────────
-   The menu fits one screen (Profile B, 1366×768 and 375×667): js/platform/homePager.js packs whole grid rows
-   into pages that fit the window and Index.razor shows one page; the cards of the other pages carry `hidden`.
-   Wide windows lay the cards out two to a row (head + modes over the description, the ≤899px card) so a laptop
-   needs two pages, not four. The pager keeps its height even with one page, so measuring is stable. */
-.home-card[hidden] { display: none; }
-
-/* Swipes stay with the page (homePager.js turns them into page turns); vertical panning and zoom stay native. */
-.home-grid { touch-action: pan-y pinch-zoom; }
-
+/* Wide windows lay the cards out two to a row. */
 @media (min-width: 1100px) {
     .home-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -512,63 +482,7 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-card-modes { grid-area: modes; }
 }
 
-.home-pager {
-    position: relative;
-    z-index: 1;
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    margin-top: var(--space-2);
-    touch-action: manipulation;
-}
-.home-pager--single { visibility: hidden; }
-
-.home-pager ::deep .home-pager__step,
-.home-pager ::deep .home-pager__dot {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-pill);
-    background: var(--surface-1);
-    color: var(--color-text);
-    font: 700 var(--text-sm) / 1 var(--font-display);
-    cursor: pointer;
-    transition: background 0.15s var(--ease-standard), border-color 0.15s var(--ease-standard);
-}
-.home-pager ::deep .home-pager__step:hover:not(:disabled),
-.home-pager ::deep .home-pager__dot:hover {
-    border-color: var(--color-accent);
-}
-.home-pager ::deep .home-pager__dot--on {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--po-on-accent);
-}
-.home-pager ::deep .home-pager__step:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
-.home-sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-/* Phones: the three mode groups flow on one line and wrap only when a card has many chips (Brawl), so a card is
-   one chip row tall and a 375×667 page holds three of them; the pager keeps 44px targets with a tighter gap. */
+/* Phones: the three mode groups flow on one line and wrap only when a card has many chips (Brawl). */
 @media (max-width: 640px) {
     .arcade-marquee { margin-bottom: var(--space-2); padding-left: var(--space-3); }
     .arcade-marquee__coin { display: none; }
@@ -583,20 +497,4 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-mode-group:empty { display: none; }
     .home-card-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .home-mode-group:not(:empty) { padding: 0.1rem; }
-    .home-pager { gap: 0.25rem; margin-top: var(--space-2); }
-    .home-pager ::deep .home-pager__step,
-    .home-pager ::deep .home-pager__dot { min-width: 44px; padding: 0 0.25rem; }
-}
-
-/* Short phones (375×667): the one-line description gives way so a page holds three games, not two; it stays in
-   the card's tooltip and on the game's own start card. */
-@media (max-width: 640px) and (max-height: 740px) {
-    .home-card-desc { display: none; }
-    .home-card { grid-template-areas: "head" "modes"; }
-}
-
-/* Narrow phones: the page buttons, a swipe and PageUp/PageDown turn pages; Previous/Next would push the row past
-   the screen edge once there are six pages. */
-@media (max-width: 400px) {
-    .home-pager ::deep .home-pager__step { display: none; }
 }

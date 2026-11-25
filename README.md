@@ -317,11 +317,8 @@ sign-in: a player is a random browser id plus three initials.
 - `PageHeader` is the one page header: title, an optional meta line and an action slot,
   used by the hub, leaderboards and My Stats (/diag uses the standard System status layout). New top-level pages use it
   rather than their own head markup.
-- The main menu (`Features/Home/Index.razor`) fits one screen with no scrolling at 1366×768 and 375×667: the
-  game cards are cut into pages that fit the window (`js/platform/homePager.js` packs whole rows), turned by the
-  page buttons under the grid (Radzen buttons), PageUp/PageDown, the arrow keys on the pager, or a sideways swipe.
-  Every game is at most two presses away (its page, then its mode chip). Wide windows show two cards a row; short
-  phones drop the one-line description (it stays in the card's tooltip and on the start card).
+- The main menu (`Features/Home/Index.razor`) displays every game card in one scrolling grid (two cards per row on
+  wide windows, stacked on narrower viewports), with one chip per supported mode.
 - `GameShell` owns the title, Settings entry point, diagnostics and result dialog.
   Keep game artwork and HUDs game-specific, but do not override the shared dialogs'
   theme, typography or geometry.

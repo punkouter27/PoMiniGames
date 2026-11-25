@@ -78,6 +78,7 @@
                         @* Fixed size from the first render (CSS) and faded in, so it does not pop in once
                            minimap.js draws on it. *@
                         <canvas id="pocabinetMinimap" class="pocabinet-minimap" aria-hidden="true"></canvas>
+                        <canvas id="pocabinetMirror" class="pocabinet-mirror" width="220" height="48" data-active="false" aria-hidden="true"></canvas>
                         @* Rendered from the Loading pass on, so the timing tower's box is there before
                            broadcast.js fills it. *@
                         @if (Mode == GameMode.Demo)

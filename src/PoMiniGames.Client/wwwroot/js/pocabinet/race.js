@@ -424,7 +424,8 @@ class Race {
         }
         // The demo's director owns its camera: the button asks it for the next shot.
         if (this.director) { this.director.cutNow(); return; }
-        this.cameraMode = this.cameraMode === 'chase' ? 'far' : 'chase';
+        const order = ['chase', 'hood', 'bumper', 'far'];
+        this.cameraMode = order[(order.indexOf(this.cameraMode) + 1) % order.length];
     }
 
     /** Rain grip from the mounted environment, until it is held for the race (see the constructor). */
@@ -513,6 +514,8 @@ class Race {
                     car.corneringSkill, bodies, this.grip);
                 if (car.isLocal) this.lastControls = c;
                 car.throttle = c.throttle;   // the demo's engine note follows the car on screen
+                car.lastBrake = c.brake;
+                car.lastSteer = c.steer;
             }
             ph.step(this.track, car.body, c, stepDt, this.grip, this.cond);
         }
@@ -947,6 +950,9 @@ class Race {
             car.mesh?.update({
                 x: pose.x, y: pose.y, heading: pose.heading, speedKmh: pose.speed * ph.KMH_PER_UNIT,
                 h: car.render.h, pitch: car.render.pitch, roll: car.render.roll, susp: car.body.susp || 0,
+                surface: car.body.surface || 0,
+                steer: car.isLocal ? this.lastControls.steer : (car.lastSteer || 0),
+                brake: car.isLocal ? this.lastControls.brake : (car.lastBrake || 0),
             });
             car.mesh?.setCondition(!!car.body.wrecked);
             car.mesh?.weather(this.paused ? 0 : dt, car.body.surface);   // dirt and rain on the paint
@@ -967,9 +973,12 @@ class Race {
         this.cull();
         updateDebris(this.paused ? 0 : dt * this.timeScale, this);
         if (focus) {
-            this.scene.setView({ ...focus.render, mode, dt });
-            if (focus.mesh) focus.mesh.group.visible = true;
+            const steer = focus.isLocal ? this.lastControls.steer : 0;
+            const brake = focus.isLocal ? this.lastControls.brake : 0;
+            this.scene.setView({ ...focus.render, mode, dt, steer, brake });
+            if (focus.mesh) focus.mesh.group.visible = mode !== 'bumper';
         }
+        this.drawMirror(mode, focus);
         this.director?.draw(now);
         // The rubber going down on the racing line (and the line drying first in the rain).
         if (now - (this.rubberDrawnAt || 0) > 500) {
@@ -987,6 +996,53 @@ class Race {
                 })));
             } catch { /* decorative */ }
         }
+    }
+
+    /** Virtual rear-view mirror (hood & bumper cams): draws approaching rivals behind focus. */
+    drawMirror(mode, focus) {
+        const el = this._mirrorEl ?? (this._mirrorEl = document.getElementById('pocabinetMirror'));
+        if (!el) return;
+        const active = !!(focus && (mode === 'hood' || mode === 'bumper'));
+        if (el.dataset.active !== (active ? 'true' : 'false')) el.dataset.active = active ? 'true' : 'false';
+        if (!active) return;
+        const ctx = this._mirrorCtx ?? (this._mirrorCtx = el.getContext('2d'));
+        if (!ctx) return;
+        const w = el.width, h = el.height;
+        ctx.clearRect(0, 0, w, h);
+        // Road horizon + lane guides
+        ctx.fillStyle = 'rgba(12, 16, 28, 0.82)';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.34); ctx.lineTo(w, h * 0.34);
+        ctx.moveTo(w * 0.5, h * 0.34); ctx.lineTo(w * 0.5, h);
+        ctx.stroke();
+
+        const hx = Math.cos(focus.render.heading), hy = Math.sin(focus.render.heading);
+        let danger = false;
+        for (const car of this.cars) {
+            if (car === focus || car.body.wrecked) continue;
+            const dx = car.render.x - focus.render.x, dy = car.render.y - focus.render.y;
+            const fwd = dx * hx + dy * hy;
+            if (fwd > 12 || fwd < -220) continue;
+            const side = dy * hx - dx * hy;
+            if (Math.abs(side) > 85) continue;
+            const dist = Math.max(10, -fwd);
+            const t = Math.min(1, 1 - dist / 220);
+            // Mirror flips left/right naturally: car on your left appears on left of mirror.
+            const mx = w * 0.5 + (side / 75) * (w * 0.44);
+            const my = h * 0.34 + t * (h * 0.56);
+            const rw = 8 + t * 18, rh = 4 + t * 9;
+            if (dist < 42 && Math.abs(side) < 28) danger = true;
+            ctx.fillStyle = car.color || '#60a5fa';
+            ctx.fillRect(mx - rw * 0.5, my - rh * 0.5, rw, rh);
+            // Headlight pips
+            ctx.fillStyle = 'rgba(255, 248, 220, 0.9)';
+            ctx.fillRect(mx - rw * 0.36, my - rh * 0.15, 2.2, 2.2);
+            ctx.fillRect(mx + rw * 0.36 - 2.2, my - rh * 0.15, 2.2, 2.2);
+        }
+        el.dataset.danger = danger ? 'true' : 'false';
     }
 
     /**

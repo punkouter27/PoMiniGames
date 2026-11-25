@@ -1,11 +1,22 @@
 /* FPS pill — runtime instance.
 
    The shared visual rules live in app-shell.css (`.gl-fps`, tiers, mobile
-   sizing), next to the top-bar rail rules that position the chip. This file
-   only carries the ‹centered› variant used by FpsCounter itself — the top bar
-   centre rail
-   moves the chip to the middle of the rail, distinct from a left-anchored
-   desktop variant. */
+   sizing), next to the top-bar rail rules that position the chip. On desktop
+   the pill anchors to the true horizontal centre of the top bar so the game
+   title and ELO badge on the right never push it off-centre. */
 .gl-fps--centered {
     margin: 0 auto;
+    white-space: nowrap;
+}
+
+@media (min-width: 769px) {
+    .gl-fps--centered {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        margin: 0;
+        pointer-events: none;
+        z-index: 2;
+    }
 }
