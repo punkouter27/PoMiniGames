@@ -67,12 +67,6 @@
     z-index: 0;
 }
 
-/* Content layers sit above the canvas. */
-.home-activity {
-    position: relative;
-    z-index: 1;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .home-ambient { display: none; }
 }
@@ -414,83 +408,6 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     }
 }
 
-/* ── Recent activity ─────────────────────────────────────────────────────── */
-.home-activity {
-    margin-top: var(--space-6);
-    width: 100%;
-    max-width: var(--content-max, 960px);
-}
-
-.home-activity__title {
-    font-size: 1rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-    color: var(--color-text-secondary);
-    font-family: var(--font-display);
-}
-
-.home-activity__list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-    gap: 0.5rem;
-}
-
-/* Each recent match is a small card rather than a line of text: the outcome glyph is
-   the thing the eye lands on, and the result reads before the words. */
-.home-activity__card {
-    display: grid;
-    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.35rem 0.5rem;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--surface-1);
-    font-size: 0.85rem;
-}
-
-.home-activity__icon {
-    font-size: 1.1rem;
-    line-height: 1;
-}
-
-.home-activity__body {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.home-activity__game {
-    color: var(--color-text-primary);
-    font-weight: 600;
-    text-decoration: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.home-activity__game:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-}
-
-.home-activity__msg {
-    color: var(--color-text-secondary);
-    font-size: var(--text-xs);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.home-activity__time {
-    color: var(--color-text-secondary);
-    font-size: 0.75rem;
-    flex-shrink: 0;
-}
-
 /* ── Responsive stacking below 900px ─────────────────────────────────────────
    Wide screens keep icon, name, description and mode buttons in one left-to-right row.
    Tablets wrap the description onto a second line; phones stack cleanly with full-width rows. */
@@ -546,11 +463,6 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-mode-chip { min-height: 2.25rem; min-width: 2.5rem; padding: 0.25rem 0.65rem; font-size: 0.78rem; }
     .home-mode-chip { max-width: 100%; white-space: normal; text-align: center; overflow-wrap: anywhere; }
     .home-mode-group:not(:empty) { border-radius: var(--radius-md); }
-
-    /* Keep the feed to two rows on phones so the page still ends inside the
-       first viewport; the full list remains on desktop. */
-    .home-activity { margin-top: 0.75rem; }
-    .home-activity__card:nth-child(n+3) { display: none; }
 }
 
 /* Narrow phones: the reel button is its icon (its name stays in aria-label). */

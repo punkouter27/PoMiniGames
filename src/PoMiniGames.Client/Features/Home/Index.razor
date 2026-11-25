@@ -2,7 +2,6 @@
 @inject NavigationManager NavigationManager
 @inject KioskCoordinator Kiosk
 @inject IJSRuntime JS
-@inject ActivityFeedService ActivityFeed
 @inject UiFeedbackService Feedback
 @inject OnlineStatusService OnlineStatus
 @inject ToastService Toasts
@@ -144,38 +143,6 @@
         </PoButton>
         <span class="home-sr-only" role="status">@($"Page {_page + 1} of {PageCount}")</span>
     </nav>
-
-
-    @* Home page activity feed: surfaces the player's most recent matches
-       so the page never feels empty even on a fresh install. Pulled from the
-       existing /api/matches endpoint via ActivityFeedService — no new API. *@
-    @if (_activity.Count > 0)
-    {
-        <RadzenPanel AllowCollapse="true" Collapsed="true" class="home-activity" aria-label="Your recent activity">
-            <HeaderTemplate>
-                <h2 class="home-activity__title">Your recent activity (@_activity.Count)</h2>
-            </HeaderTemplate>
-            <ChildContent>
-                <RadzenTimeline Orientation="Orientation.Vertical" LinePosition="LinePosition.Start" class="home-activity__timeline">
-                    <Items>
-                        @foreach (var item in _activity)
-                        {
-                            <RadzenTimelineItem PointStyle="PointStyle.Primary" PointSize="PointSize.Small">
-                                <LabelContent>
-                                    <span class="home-activity__time" title="@item.When.ToString("u")">@FormatRelative(item.When)</span>
-                                </LabelContent>
-                                <ChildContent>
-                                    <span class="home-activity__icon" aria-hidden="true">@item.Icon</span>
-                                    <a class="home-activity__game" href="@item.Url">@item.GameTitle</a>
-                                    <span class="home-activity__msg">@item.Message</span>
-                                </ChildContent>
-                            </RadzenTimelineItem>
-                        }
-                    </Items>
-                </RadzenTimeline>
-            </ChildContent>
-        </RadzenPanel>
-    }
 </div>
 
 @code {
@@ -229,9 +196,6 @@
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
 
-    // Activity feed (recent matches).
-    private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
-
     // Offline, a hub-backed or API-backed mode is not playable: with the service
     // worker installed the shell loads fine without a network, so leaving these
     // navigable would drop the player into a lobby that can never connect. Modes
@@ -264,31 +228,6 @@
         // Connectivity drives which chips are navigable (see IsPlayable), so the grid
         // has to re-render the moment the browser goes offline or comes back.
         OnlineStatus.StateChanged += OnOnlineStateChanged;
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        // Pull the feed once on initial render. The ActivityFeedService is
-        // best-effort — it never throws — so we can await it without a try
-        // and still get a graceful empty feed if the API is offline.
-        try
-        {
-            _activity = await ActivityFeed.GetRecentAsync(limit: 5);
-        }
-        catch
-        {
-            _activity = Array.Empty<ActivityFeedService.FeedItem>();
-        }
-    }
-
-    private static string FormatRelative(DateTimeOffset when)
-    {
-        var diff = DateTimeOffset.UtcNow - when;
-        if (diff.TotalSeconds < 60) return "just now";
-        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
-        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
-        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
-        return when.ToString("MMM d");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

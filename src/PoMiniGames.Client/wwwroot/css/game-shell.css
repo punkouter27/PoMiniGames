@@ -99,6 +99,84 @@
   max-height: clamp(200px, 46vh, 380px);
   overflow-y: auto;
 }
+.po-rz-dialog--intro .pm-species-label {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.po-rz-dialog--intro .pm-species {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.po-rz-dialog--intro .pm-continue {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.po-rz-dialog--intro .pm-species ul.rz-datalist-data {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 0;
+}
+.po-rz-dialog--intro .pm-species ul.rz-datalist-data > li {
+  padding: 0;
+  margin: 0 !important;
+  background: none;
+  box-shadow: none;
+}
+.po-rz-dialog--intro .pm-species-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  min-height: 44px;
+  padding: 0.3rem 0.45rem;
+  text-align: left;
+  font: inherit;
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.po-rz-dialog--intro .pm-species-card.pm-species-card--on {
+  background: var(--accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+.po-rz-dialog--intro .pm-species-cash {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+.po-rz-dialog--intro .pm-species-trait {
+  display: none;
+  color: var(--color-text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+.po-rz-dialog--intro .pm-species-picked {
+  display: block;
+  margin: 0;
+  text-align: center;
+  font-size: 0.75rem;
+}
+.po-rz-dialog--intro .pm-classic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+@media (max-width: 520px), (max-height: 560px) {
+  .po-rz-dialog--intro .pm-species-card { min-height: 0; padding: 0.2rem 0.4rem; }
+  .po-rz-dialog--intro .pm-species-trait { display: none; }
+}
 .po-rz-side-dialog .game-opts-sheet,
 .po-rz-side-dialog .pocabinet-drawer__panel {
   width: min(22rem, 100vw);
