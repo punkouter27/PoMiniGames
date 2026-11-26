@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoBrawl FFA - jointed knockout falls</title>
+<style>
+body{margin:24px;background:#111827;color:#f8fafc;font:16px system-ui}
+main{max-width:1340px;margin:auto}figure{margin:24px 0}
+img{width:100%;border-radius:12px}figcaption{padding:12px 0}
+</style>
+<main>
+<h1>FFA knockouts: fall, do not snap</h1>
+<p>Uses the same eleven-body, ten-joint physics ragdoll as 1v1, scaled to the FFA fighters.
+The killing hit carries into the tumble; bodies remain until the next round.</p>
+<figure>
+<img src="261109-ffa-ragdoll-before.png" alt="Reconstructed previous knockout: fighter immediately rotated sideways">
+<figcaption>Before: reconstructed original instant sideways pose, with no physics-driven fall.</figcaption>
+</figure>
+<figure>
+<img src="261109-ffa-ragdoll-after.png" alt="Actual physics-driven knockout 183 milliseconds after impact">
+<figcaption>After: actual knockout at 183 ms. Independent limbs fall from the current pose with momentum.</figcaption>
+</figure>
+<figure>
+<img src="261109-ffa-ragdoll-landed.png" alt="Knocked-out fighter settled on the mat">
+<figcaption>Settled: gravity and joint constraints leave the fighter on the mat; the next round restores the standing guard immediately.</figcaption>
+</figure>
+</main>
+</html>

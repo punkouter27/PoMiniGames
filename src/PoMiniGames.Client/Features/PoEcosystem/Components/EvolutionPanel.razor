@@ -2,15 +2,11 @@
    per trait, plus the tint picker that colours creatures in the world by that trait so
    selection pressure is something you can see from the air, not only read here. *@
 <div class="poeco-evolution">
-    <label class="poeco-field poeco-field--row" title="The same lenses as the 👁 menu on the HUD (L steps through them)">
+    <div class="poeco-field poeco-field--row" title="The same lenses as the 👁 menu on the HUD (L steps through them)">
         <span>Lens</span>
-        <select value="@Tint" @onchange="e => OnTint.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : -1)">
-            @foreach (var (id, label, _, _) in EcoLens.All)
-            {
-                <option value="@id">@label</option>
-            }
-        </select>
-    </label>
+        <PoSelect AriaLabel="Lens" Options="@LensOptions" Value="@Tint.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                  ValueChanged="@((string v) => OnTint.InvokeAsync(int.TryParse(v, out var t) ? t : -1))" />
+    </div>
 
     <div class="poeco-evo-grid">
         @for (var t = 0; t < EcoSpeciesInfo.Traits.Length; t++)
@@ -36,6 +32,9 @@
 </div>
 
 @code {
+    private static readonly IReadOnlyList<(string Value, string Text)> LensOptions =
+        [.. EcoLens.All.Select(l => (l.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), l.Label))];
+
     private const int TraitCount = 5;
     private const double Width = 160, Height = 60;
 

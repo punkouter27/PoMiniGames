@@ -18,22 +18,42 @@
         @if (lap > 0) { <p>Best lap: @PoRacerFormatting.Time(lap)</p> }
         <details>
         <summary>Final standings</summary>
-        <table>
-            <caption>Final standings</caption>
-            <thead><tr><th scope="col">Pos.</th><th scope="col">Driver</th><th scope="col">Race time</th><th scope="col">Best lap</th></tr></thead>
-            <tbody>
-                @foreach (var entry in Result.Standings)
-                {
-                    var trait = Roster.FirstOrDefault(r => r.Id == entry.CarId)?.Trait;
-                    <tr class="@(entry.CarId == PlayerId ? "local-driver" : "")">
-                        <td>@entry.Position</td>
-                        <td>@entry.Name @if (!string.IsNullOrEmpty(trait)) { <small>@trait</small> }</td>
-                        <td>@(entry.Finished ? PoRacerFormatting.Time(entry.TotalTimeSeconds) : "DNF")</td>
-                        <td>@PoRacerFormatting.Time(entry.BestLapSeconds)</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        @{
+            var bestOverall = Result.Standings.Where(s => s.BestLapSeconds > 0).Select(s => s.BestLapSeconds).DefaultIfEmpty(0).Min();
+        }
+        <RadzenDataGrid Data="@Result.Standings" TItem="PoRacerFinalEntry" AllowSorting="true" Density="Density.Compact" class="race-results-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="PoRacerFinalEntry" Property="Position" Title="Pos." Width="56px" />
+                <RadzenDataGridColumn TItem="PoRacerFinalEntry" Property="Name" Title="Driver">
+                    <Template Context="entry">
+                        @{ var trait = Roster.FirstOrDefault(r => r.Id == entry.CarId)?.Trait; }
+                        <span class="@(entry.CarId == PlayerId ? "local-driver" : null)">
+                            @entry.Name
+                            @if (!string.IsNullOrEmpty(trait)) { <small> @trait</small> }
+                        </span>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PoRacerFinalEntry" Property="TotalTimeSeconds" Title="Race time">
+                    <Template Context="entry">
+                        @(entry.Finished ? PoRacerFormatting.Time(entry.TotalTimeSeconds) : "DNF")
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PoRacerFinalEntry" Property="BestLapSeconds" Title="Best lap">
+                    <Template Context="entry">
+                        @{
+                            var pacePct = bestOverall > 0 && entry.BestLapSeconds > 0
+                                ? Math.Clamp(Math.Round((bestOverall / entry.BestLapSeconds) * 100.0), 10, 100)
+                                : 0;
+                        }
+                        <span>@PoRacerFormatting.Time(entry.BestLapSeconds)</span>
+                        @if (pacePct > 0)
+                        {
+                            <RadzenProgressBar Value="@pacePct" ShowValue="false" Style="height: 4px; margin-top: 2px;" />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
         </details>
     }
     <p class="result-foot">

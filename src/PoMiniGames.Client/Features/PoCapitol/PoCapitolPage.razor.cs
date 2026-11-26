@@ -681,21 +681,9 @@ public partial class PoCapitolPage : IAsyncDisposable
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol weather unavailable"); }
     }
 
-    private async Task OnSensitivityChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
-        {
-            await SavePrefsAsync(sensitivity: value);
-        }
-    }
+    private Task OnSensitivityChanged(double value) => SavePrefsAsync(sensitivity: value);
 
-    private async Task OnFovChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-        {
-            await SavePrefsAsync(fov: value);
-        }
-    }
+    private Task OnFovChanged(int value) => SavePrefsAsync(fov: value);
 
     private Task OnDebriefModelChanged(ChangeEventArgs e) => SavePrefsAsync(debriefModel: e.Value?.ToString()?.Trim());
 

@@ -1,36 +1,19 @@
 @namespace PoMiniGamesClient.Features.Shared
-@inject IJSRuntime JS
+@inject DialogService Dialogs
 @inject NavigationManager Nav
 @implements IDisposable
 
 @*
-    A game's mid-match options (mode, online) in a side drawer. Difficulty is not one of
-    them: it is chosen before play, in GameIntro's Options slot on the start card (see
-    PoRacer's Pace), never here or in Settings. It opens the way the
-    Settings sheet does: a native modal <dialog> pinned to the right edge on a wide window
-    and a bottom sheet on a phone, so it has the focus trap, Esc and the inert page behind
-    for free. GameShell renders it, and a gear button to open it, only for a page that
-    passes OptionsContent.
-
-    It closes itself on navigation: a mode switch inside it changes the address, and a
-    dialog left in the top layer across a route change reads as a frozen page.
+    A game's mid-match options (mode, online) in a Radzen side dialog (DialogService.OpenSideAsync).
+    Difficulty is not one of them: it is chosen before play, in GameIntro's Options slot on the
+    start card. GameShell renders it, and a button to open it, only for a page that passes
+    OptionsContent. Closes automatically on navigation.
 *@
 
 <PoButton class="game-opts-gear" aria-label="@Heading" title="@Heading"
         aria-haspopup="dialog" Click="OpenAsync">
-    @* Sliders, not a gear: the app's Settings gear sits beside this one in the top bar. *@
     <span class="material-symbols-outlined" aria-hidden="true">tune</span>
 </PoButton>
-
-<dialog @ref="_dialog" class="game-opts-sheet" closedby="any" aria-labelledby="game-opts-title">
-    <header class="game-opts-head">
-        <h2 id="game-opts-title" class="game-opts-title">@Heading</h2>
-        <PoButton class="game-opts-close" aria-label="Close game options" Click="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
-    </header>
-    <div class="game-opts-body">
-        @ChildContent
-    </div>
-</dialog>
 
 @code {
     /// <summary>The page's option controls. Rendered inside the drawer.</summary>
@@ -39,32 +22,80 @@
     /// <summary>The drawer's heading and the gear's accessible name.</summary>
     [Parameter] public string Heading { get; set; } = "Game options";
 
-    private ElementReference _dialog;
     private bool _open;
 
-    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+    private RenderFragment SheetContent => @<div class="game-opts-sheet" role="dialog" aria-modal="true" aria-labelledby="game-opts-title">
+        <header class="game-opts-head">
+            <h2 id="game-opts-title" class="game-opts-title">@Heading</h2>
+            <PoButton class="game-opts-close" aria-label="Close game options" Click="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></PoButton>
+        </header>
+        <div class="game-opts-body">
+            @ChildContent
+        </div>
+    </div>;
 
-    private async Task OpenAsync()
+    protected override void OnInitialized()
     {
-        _open = true;
-        await _dialog.ShowModalAloneAsync(JS);
+        Nav.LocationChanged += OnLocationChanged;
     }
 
-    private async Task CloseAsync()
+    protected override void OnParametersSet()
     {
+        if (_open) Dialogs.Refresh();
+    }
+
+    private Task OpenAsync()
+    {
+        if (_open) return Task.CompletedTask;
+        _open = true;
+        _ = RunSideDialogAsync();
+        return Task.CompletedTask;
+    }
+
+    private async Task RunSideDialogAsync()
+    {
+        try
+        {
+            await Dialogs.OpenSideAsync<PoDialogFragmentHost>(
+                Heading,
+                new Dictionary<string, object?> { [nameof(PoDialogFragmentHost.Content)] = SheetContent },
+                new SideDialogOptions
+                {
+                    Position = DialogPosition.Right,
+                    ShowTitle = false,
+                    ShowClose = false,
+                    CloseDialogOnOverlayClick = true,
+                    CssClass = "po-rz-side-dialog",
+                    WrapperCssClass = "po-rz-dialog-wrapper po-rz-dialog-wrapper--side",
+                });
+        }
+        finally
+        {
+            _open = false;
+        }
+    }
+
+    private Task CloseAsync()
+    {
+        if (!_open) return Task.CompletedTask;
         _open = false;
-        await _dialog.CloseAsync(JS);
+        Dialogs.CloseSide();
+        return Task.CompletedTask;
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         if (!_open) return;
-        _ = InvokeAsync(async () =>
-        {
-            try { await CloseAsync(); }
-            catch (JSDisconnectedException) { /* page torn down */ }
-        });
+        _ = InvokeAsync(CloseAsync);
     }
 
-    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        if (_open)
+        {
+            _open = false;
+            Dialogs.CloseSide();
+        }
+    }
 }

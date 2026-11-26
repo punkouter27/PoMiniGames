@@ -2,7 +2,6 @@
 @inject NavigationManager NavigationManager
 @inject KioskCoordinator Kiosk
 @inject IJSRuntime JS
-@inject ActivityFeedService ActivityFeed
 @inject UiFeedbackService Feedback
 @inject OnlineStatusService OnlineStatus
 @inject ToastService Toasts
@@ -71,18 +70,11 @@
         </div>
     </div>
 
-    @* One screen, no scrolling (Profile B): the grid is cut into pages that each fit the window
-       (js/platform/homePager.js measures the rows and packs them), and the pager under it turns them:
-       a page button, Previous/Next, PageUp/PageDown, the arrow keys on the pager, or a sideways swipe.
-       Every game is at most two presses away: its page, then its mode chip. Off-page cards stay in the
-       DOM with `hidden`, so they are out of the tab order and the accessibility tree. *@
-    <div class="home-grid" id="home-grid" @ref="_grid" aria-roledescription="paged list" aria-label="Games">
-        @{ var cardIndex = 0; }
+    <div class="home-grid" id="home-grid" aria-label="Games">
         @foreach (var game in GameCatalog.AllSorted)
         {
             var playable = IsPlayable(game.Primary);
-            var onPage = IsOnPage(cardIndex++);
-            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")" hidden="@(!onPage)">
+            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
                 @* Left-to-right row: icon + game name, description, then a button for each mode. *@
                 @if (playable)
                 {
@@ -122,102 +114,12 @@
             </article>
         }
     </div>
-
-    <nav class="home-pager @(PageCount > 1 ? null : "home-pager--single")" @ref="_pager" aria-label="Game pages">
-        <PoButton class="home-pager__step" aria-label="Previous page" Disabled="@(_page == 0)" Click="() => GoToPage(_page - 1)">
-            <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
-        </PoButton>
-        @for (var i = 0; i < PageCount; i++)
-        {
-            var page = i;
-            <PoButton class="@(page == _page ? "home-pager__dot home-pager__dot--on" : "home-pager__dot")"
-                      aria-label="@($"Page {page + 1} of {PageCount}")"
-                      aria-current="@(page == _page ? "page" : null)"
-                      Click="() => GoToPage(page)">
-                <span aria-hidden="true">@(page + 1)</span>
-            </PoButton>
-        }
-        <PoButton class="home-pager__step" aria-label="Next page" Disabled="@(_page >= PageCount - 1)" Click="() => GoToPage(_page + 1)">
-            <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
-        </PoButton>
-        <span class="home-sr-only" role="status">@($"Page {_page + 1} of {PageCount}")</span>
-    </nav>
-
-
-    @* Home page activity feed: surfaces the player's most recent matches
-       so the page never feels empty even on a fresh install. Pulled from the
-       existing /api/matches endpoint via ActivityFeedService — no new API. *@
-    @if (_activity.Count > 0)
-    {
-        <section class="home-activity" aria-label="Your recent activity">
-            <h2 class="home-activity__title">Your recent activity</h2>
-            <ul class="home-activity__list">
-                @foreach (var item in _activity)
-                {
-                    <li class="home-activity__card">
-                        <span class="home-activity__icon" aria-hidden="true">@item.Icon</span>
-                        <span class="home-activity__body">
-                            <a class="home-activity__game" href="@item.Url">@item.GameTitle</a>
-                            <span class="home-activity__msg">@item.Message</span>
-                        </span>
-                        <span class="home-activity__time" title="@item.When.ToString("u")">@FormatRelative(item.When)</span>
-                    </li>
-                }
-            </ul>
-        </section>
-    }
 </div>
 
 @code {
     private ElementReference _ambientCanvas;
-    private ElementReference _grid;
-    private ElementReference _pager;
-    private IJSObjectReference? _pagerModule;
-    private IJSObjectReference? _pagerHandle;
-    private DotNetObjectReference<Index>? _pagerRef;
-
-    // First card index of each page (from homePager.js measure); [0] = everything on one page until measured.
-    private int[] _pageStarts = [0];
-    private int _page;
-
-    private int PageCount => _pageStarts.Length;
-
-    private bool IsOnPage(int index)
-    {
-        var start = _pageStarts[_page];
-        var end = _page + 1 < _pageStarts.Length ? _pageStarts[_page + 1] : int.MaxValue;
-        return index >= start && index < end;
-    }
-
-    private void GoToPage(int page)
-    {
-        var next = Math.Clamp(page, 0, PageCount - 1);
-        if (next == _page) return;
-        _page = next;
-        StateHasChanged();
-    }
-
-    /// <summary>homePager.js: PageUp/PageDown, the arrow keys on the pager, or a swipe on the grid.</summary>
-    [JSInvokable]
-    public void TurnPage(int delta) => GoToPage(_page + delta);
-
-    /// <summary>homePager.js: the window changed size (or the fonts landed) and the rows were packed again.</summary>
-    [JSInvokable]
-    public void OnPagesMeasured(int[] starts)
-    {
-        if (starts is not { Length: > 0 } || starts[0] != 0) starts = [0];
-        if (starts.SequenceEqual(_pageStarts)) return;
-        // Stay on the page that holds the first card the player was looking at.
-        var firstShown = _pageStarts[_page];
-        _pageStarts = starts;
-        _page = Math.Max(0, Array.FindLastIndex(starts, s => s <= firstShown));
-        StateHasChanged();
-    }
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
-
-    // Activity feed (recent matches).
-    private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
     // Offline, a hub-backed or API-backed mode is not playable: with the service
     // worker installed the shell loads fine without a network, so leaving these
@@ -236,10 +138,10 @@
             ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
                   href="@(m.ChipUrl ?? m.Url)" data-hub-nav data-spring data-sonify
                   title="@($"{game.Title} — {ModeDescription(m)}")"
-                  aria-label="@($"{game.Title}, {ModeDescription(m)}")">@ModeLabel(m)</a>
+                  aria-label="@($"{ModeLabel(m)}: {game.Title}, {ModeDescription(m)}")">@ModeLabel(m)</a>
             : @<span class="home-mode-chip home-mode-chip--offline"
                      aria-disabled="true"
-                     aria-label="@($"{game.Title}, {ModeDescription(m)} — unavailable offline")"
+                     aria-label="@($"{ModeLabel(m)}: {game.Title}, {ModeDescription(m)} — unavailable offline")"
                      title="Needs a connection — unavailable offline">@ModeLabel(m)</span>;
 
     protected override void OnInitialized()
@@ -253,31 +155,6 @@
         OnlineStatus.StateChanged += OnOnlineStateChanged;
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        // Pull the feed once on initial render. The ActivityFeedService is
-        // best-effort — it never throws — so we can await it without a try
-        // and still get a graceful empty feed if the API is offline.
-        try
-        {
-            _activity = await ActivityFeed.GetRecentAsync(limit: 5);
-        }
-        catch
-        {
-            _activity = Array.Empty<ActivityFeedService.FeedItem>();
-        }
-    }
-
-    private static string FormatRelative(DateTimeOffset when)
-    {
-        var diff = DateTimeOffset.UtcNow - when;
-        if (diff.TotalSeconds < 60) return "just now";
-        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
-        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
-        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
-        return when.ToString("MMM d");
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // Lazy WebGL bootstrap — only on first paint so we don't ship the
@@ -285,19 +162,6 @@
         // probe so low-memory phones and prefers-reduced-motion users skip
         // the GPU wake entirely; the CSS gradient behind the canvas is the
         // fallback for everyone else.
-        if (firstRender)
-        {
-            try
-            {
-                _pagerModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/homePager.js");
-                _pagerRef = DotNetObjectReference.Create(this);
-                _pagerHandle = await _pagerModule.InvokeAsync<IJSObjectReference>("attach", _grid, _pager, _pagerRef);
-            }
-            catch (JSException)
-            {
-                // No pager script: every card stays on the one page.
-            }
-        }
         if (firstRender && !_ambientStarted)
         {
             _ambientStarted = true;
@@ -368,22 +232,6 @@
         PlayerNames.StateChanged -= OnPlayerNamesChanged;
         OnlineStatus.StateChanged -= OnOnlineStateChanged;
         try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", false); } catch { /* page unloading */ }
-        if (_pagerHandle is not null)
-        {
-            try
-            {
-                await _pagerHandle.InvokeVoidAsync("dispose");
-                await _pagerHandle.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { /* page unloading */ }
-            _pagerHandle = null;
-        }
-        if (_pagerModule is not null)
-        {
-            try { await _pagerModule.DisposeAsync(); } catch (JSDisconnectedException) { /* page unloading */ }
-            _pagerModule = null;
-        }
-        _pagerRef?.Dispose();
         if (_ambientModule is not null)
         {
             try

@@ -227,8 +227,7 @@
     private int _tab;
     private readonly Dictionary<string, GameLeaderboardDto?> _boards = [];
     private bool _boardsLoaded;
-    private bool _radzenReady;
-    private IJSObjectReference? _theme;
+    private bool _radzenReady = true;
 
     private GameLeaderboardDto? Current => _boards.GetValueOrDefault(_board);
 
@@ -310,17 +309,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        try
-        {
-            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/radzenTheme.js");
-            await _theme.InvokeVoidAsync("ensure");
-        }
-        catch (JSException ex)
-        {
-            Console.Error.WriteLine($"[pobrawl-hq] Radzen theme failed: {ex.Message}");
-        }
         await LoadKeepsakeAsync();
-        _radzenReady = true;
         StateHasChanged();
     }
 
@@ -387,13 +376,5 @@
             catch (JSDisconnectedException) { }
             catch (JSException) { }
         }
-        if (_theme is null) return;
-        try
-        {
-            await _theme.InvokeVoidAsync("remove");
-            await _theme.DisposeAsync();
-        }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
     }
 }

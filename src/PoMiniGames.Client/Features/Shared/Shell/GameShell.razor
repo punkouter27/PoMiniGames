@@ -360,5 +360,9 @@
     {
         _gameOverCts?.Cancel();
         _gameOverCts?.Dispose();
+        if (OperatingSystem.IsBrowser())
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized, blocking: false);
+        }
     }
 }

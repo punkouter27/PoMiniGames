@@ -89,8 +89,8 @@
              @onfocus="BoardFocused"
              @onpointerleave="ClearHover">
             @* role="grid" requires role="row" between it and its gridcells.
-               `display: contents` keeps all 81 cells as
-               direct grid items of .cf-board, so the 9×9 template, the drop
+               `display: contents` keeps all 63 cells as
+               direct grid items of .cf-board, so the 9×7 template, the drop
                animation and the GL overlay alignment are unchanged. *@
             @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
             {
@@ -124,7 +124,7 @@
                            from above the board down to its resting row (row index + 1
                            strides). No emoji + cell-fill double-circle. *@
                         @* --drop-rows is not per-cell. The .cf-layout defines
-                           --cf-drop-rows: 9 (board depth), and every disc drops the
+                           --cf-drop-rows: 7 (board depth), and every disc drops the
                            full distance from above the board, so each disc travels
                            the same drop length regardless of its landing row. *@
                         @if (piece == Piece.Red)
@@ -175,9 +175,6 @@
     private GameResult _gameResult = GameResult.InProgress;
 
     // Outcome for the end-of-game cue (GameOverModal picks the sound from this).
-    // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
-    // one of the two people at the keyboard just won — so it stays InProgress and
-    // the modal sounds the neutral round-over instead of celebrating at someone.
     private GameResult OutcomeForCue => PlayMode is "ai" or "online" ? _gameResult : GameResult.InProgress;
 
     // Spoken by GameShell's shared live region. The board is a
@@ -189,7 +186,7 @@
         : _gameResult switch
     {
         GameResult.Win => "You win.",
-        GameResult.Loss => PlayMode == "ai" ? "You lose." : "Yellow wins.",
+        GameResult.Loss => "You lose.",
         GameResult.Draw => "It's a draw.",
         _ when _isAiTurn => "Opponent is thinking.",
         _ when _kbCol >= 0 => $"Your turn. Column {_kbCol + 1} of {ConnectFiveBoard.Cols} selected.",
@@ -206,15 +203,13 @@
         "online" => OnlineSeatName(TurnMatchSide.First),
         // Against the CPU there is one person at the board. Their display name adds
         // nothing, and a guest's is 21 characters that wrapped the strip to three lines.
-        "ai" => "You",
-        _ => P1Name,
+        _ => "You",
     };
     private string YellowName => PlayMode switch
     {
-        "ai" => "CPU",
         "demo" => "Yellow",
         "online" => OnlineSeatName(TurnMatchSide.Second),
-        _ => _player2Name,
+        _ => "CPU",
     };
 
     // Demo plays itself, so neither side is "waiting on you" and nothing is
@@ -222,42 +217,31 @@
     private bool IsRedTurn => _gameResult == GameResult.InProgress && PlayMode switch
     {
         "demo" => false,
-        "ai" => !_isAiTurn,
         "online" => OnlinePlaying && OnlineTurn == TurnMatchSide.First,
-        _ => _current2pPlayer == Player.Red,
+        _ => !_isAiTurn,
     };
 
     private bool IsYellowTurn => _gameResult == GameResult.InProgress && PlayMode switch
     {
         "demo" => false,
-        "ai" => _isAiTurn,
         "online" => OnlinePlaying && OnlineTurn == TurnMatchSide.Second,
-        _ => _current2pPlayer == Player.Yellow,
+        _ => _isAiTurn,
     };
 
     private string StatusText => IsOnline ? OnlineStatusText : _gameResult switch
     {
-        GameResult.Win => PlayMode == "ai" ? "You win!" : $"{RedName} wins!",
-        GameResult.Loss => PlayMode == "ai" ? "You lose" : $"{YellowName} wins!",
+        GameResult.Win => "You win!",
+        GameResult.Loss => "You lose",
         GameResult.Draw => "Draw",
         _ when PlayMode == "demo" => "Demo — CPU vs CPU",
         _ when _isAiTurn => "CPU thinking…",
-        _ when PlayMode == "ai" => "Your turn",
-        _ => $"{(_current2pPlayer == Player.Red ? RedName : YellowName)}'s turn",
+        _ => "Your turn",
     };
 
     private bool _isAiTurn;
-    // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
+    // "ai" (vs CPU) or "online"; "demo" is driven by the route param.
     private string _playMode = "ai";
     private string PlayMode => IsDemo ? "demo" : _playMode;
-    // 2-player turn state is a Player record, not a raw
-    // Piece. The only valid values are Player.Red / Player.Yellow; the empty
-    // player can never appear here, so wrong-state bugs (e.g. styling a "ghost"
-    // disc with no current player) fail at construction time, not at render.
-    private Player _current2pPlayer = Player.Red; // whose turn in 2-player mode
-    // Shared by both board games: the second player on this device is usually the same person.
-    private const string Player2Key = "pominigames:player2";
-    private string _player2Name = LocalStorageService.GetItem<string>(Player2Key) is { Length: > 0 } saved ? saved : "Player 2";
     private bool _matchRecorded;
     private string _playerName = "";
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
@@ -302,12 +286,9 @@
         ? IsMyOnlineTurn
         : _gameResult == GameResult.InProgress && !_isAiTurn && PlayMode != "demo";
     // The ghost wears the colour of whoever is about to move.
-    private string GhostColorClass => PlayMode switch
-    {
-        "2p" => _current2pPlayer == Player.Red ? "red-piece" : "yellow-piece",
-        "online" => _mySide == TurnMatchSide.First ? "red-piece" : "yellow-piece",
-        _ => "red-piece",
-    };
+    private string GhostColorClass => PlayMode == "online"
+        ? (_mySide == TurnMatchSide.First ? "red-piece" : "yellow-piece")
+        : "red-piece";
 
     private void SetHover(int col)
     {
@@ -354,12 +335,9 @@
     // The intro branches on PlayMode so each variant shows the controls that
     // actually apply (the 1P "CPU is matched to your ELO…" copy is wrong for 2P).
     private bool _introDone;
-    private GameIntro.IntroMode _introMode => PlayMode switch
-    {
-        "demo" => GameIntro.IntroMode.Demo,
-        "2p"   => GameIntro.IntroMode.TwoPlayer,
-        _      => GameIntro.IntroMode.OnePlayer,
-    };
+    private GameIntro.IntroMode _introMode => PlayMode == "demo"
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
     private async Task DismissIntro()
     {
         // The start card hands over to the board with a View Transition (extras.js); it resolves
@@ -403,13 +381,6 @@
                 <li>The board lives on the server: drop a disc on your turn, then wait for theirs</li>
             </ul>
         </div>,
-        "2p" => @<div>
-            <p>Two players, one device — pass it back and forth.</p>
-            <ul>
-                <li>Player 1 drops 🔴, then Player 2 drops 🟡, and so on</li>
-                <li>No CPU and no rating: just take turns</li>
-            </ul>
-        </div>,
         _ => @<div>
             <ul>
                 <li>Mouse or touch: click a column, or use the on-screen arrows and Drop button. Keyboard: Tab to the board, then Left/Right arrows pick a column and Enter, Space or Down drops your disc</li>
@@ -420,7 +391,6 @@
     };
 
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
-        : PlayMode == "2p" ? TwoPlayerSummary
         : PlayMode == "online" ? OnlineSummary
         : AiSummary;
 
@@ -458,14 +428,6 @@
         }
     </div>;
 
-    private RenderFragment TwoPlayerSummary => _gameResult switch
-    {
-        GameResult.Win  => @<div class="cf-result cf-result--win">🔴 @P1Name won! Nice game.</div>,
-        GameResult.Loss => @<div class="cf-result cf-result--win">🟡 @_player2Name won! Nice game.</div>,
-        GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
-        _               => @<text></text>
-    };
-
     // 1-player: result banner plus the ELO change from this game. _lastEloDelta is
     // set by ApplyAdaptiveResult, so the panel shows the new rating and +/- swing.
     private RenderFragment AiSummary => @<div class="cf-ai-summary">
@@ -497,13 +459,6 @@
         if (RouteMode == GameMode.Multiplayer) _playMode = "online";
         ResetGame();
         if (IsDemo) Kiosk.SetCurrent("connectfive-demo");
-    }
-
-    private void OnPlayer2NameChange(ChangeEventArgs e)
-    {
-        var name = e.Value?.ToString();
-        _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
-        LocalStorageService.SetItem(Player2Key, _player2Name);
     }
 
     // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
@@ -540,7 +495,6 @@
         _gameResult = GameResult.InProgress;
         _winCells = new();
         _isAiTurn = false;
-        _current2pPlayer = Player.Red;
         _matchRecorded = false;
         // A fresh game must play the cascade again on its next win.
         _winCascadePlayed = false;
@@ -772,8 +726,6 @@
         var targetRow = _board.GetTargetRow(col);
         if (targetRow < 0) return;
 
-        if (PlayMode == "2p") { HandleTwoPlayerDrop(targetRow, col); return; }
-
         _board = _board.Place(targetRow, col, Player.Red);
         _ = Feedback.ChipDropAsync(targetRow, UiFeedbackService.BoardPan(col, ConnectFiveBoard.Cols)); // realistic slide + thud, synced to the drop animation
         TryDrop(col, targetRow, "red"); // §CF-1 physics-driven visual drop
@@ -870,36 +822,6 @@
         }
     }
 
-    // Local pass-and-play: Red = Player 1 (the local player), Yellow = Player 2.
-    private void HandleTwoPlayerDrop(int targetRow, int col)
-    {
-        var player = _current2pPlayer;
-        _board = _board.Place(targetRow, col, player);
-        _ = Feedback.ChipDropAsync(targetRow, UiFeedbackService.BoardPan(col, ConnectFiveBoard.Cols)); // realistic slide + thud, 2P
-        TryDrop(col, targetRow, player == Player.Red ? "red" : "yellow"); // §CF-1 physics-driven visual drop
-
-        var winCheck = _board.CheckWin(player);
-        if (winCheck.Won)
-        {
-            _winCells = winCheck.Cells;
-            _gameResult = player == Player.Red ? GameResult.Win : GameResult.Loss;
-            OnWinDetected();
-            _ = Feedback.CompleteAsync(); // §4 victory chord for whoever connected five
-            RecordLocalMatch();
-            return;
-        }
-
-        if (_board.IsFull())
-        {
-            _gameResult = GameResult.Draw;
-            RecordLocalMatch();
-            return;
-        }
-
-        // Player.Other proves at the type level that we never advance to an empty player.
-        _current2pPlayer = player.Other;
-    }
-
     /// <summary>
     /// Shared post-win hook. Marks the win so the cascade is a
     /// one-shot. Without this, the .win-cell CSS animation could replay on
@@ -911,21 +833,6 @@
         _winCascadePlayed = true;
     }
     private bool _winCascadePlayed;
-
-    // Record the 2-player outcome to the head-to-head history (owner's perspective:
-    // Win = Player 1 won, Loss = Player 2 won). Local vs-AI stats are left untouched.
-    private void RecordLocalMatch()
-    {
-        if (_matchRecorded) return;
-        _matchRecorded = true;
-        var outcome = _gameResult switch
-        {
-            GameResult.Win => MatchOutcome.Win,
-            GameResult.Loss => MatchOutcome.Loss,
-            _ => MatchOutcome.Draw
-        };
-        _ = MatchHistory.RecordAsync("connectfive", MatchMode.Local2P, _player2Name, outcome);
-    }
 
     private string GetPieceClass(Piece piece) => piece switch
     {
@@ -950,7 +857,6 @@
         _winCascadePlayed = false;
         _isAiTurn = false;
         _matchRecorded = false;
-        _current2pPlayer = Player.Red;
         _hoverCol = -1;
         _lastGhostRenderKey = -1;
     }

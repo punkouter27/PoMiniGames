@@ -11,38 +11,37 @@
    work: either source turns the option on, so with the app's switch on, turning
    Cabinet's off would do nothing. One button opens the sheet.
 
-   It lives in two places: the start card's Settings tab (PoCabinetPreRace) and
+   It lives in two places: the start card's Settings tab and
    PoCabinetDrawer, which the pause card and the lobby open. The racing-line overlay was
    removed 2026-10-19: it was the centre line coloured by curvature, not a line to follow.
 
    Graphics: the quality tier is the APP's (window.PoQuality via SettingsService, the same
    switch as the app sheet's Graphics row), shown here because a 3D race is where it
    matters. Scan detail is Cabinet's own (RoomDetail). The camera is not a stored setting:
-   it is the race's C-key cycle, so its button only shows while a race is mounted. No
-   Radzen here either: its theme is global CSS that the app loads only on the pages built
-   on it (PoMule, Brawl HQ, the leaderboards), and it cannot be scoped to one panel. *@
+   it is the race's C-key cycle, so its button only shows while a race is mounted. The
+   controls are Radzen's (switches, select bars, slider), like every other game's options. *@
 @inject SettingsService AppSettings
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
     <fieldset class="pocabinet-settings__group">
         <legend>Sound</legend>
-        <label class="pocabinet-settings__row">
-            <span>Race music</span>
-            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.Music" @onchange="OnMusicChanged" />
-        </label>
-        <label class="pocabinet-settings__row">
-            <span>Radio voices</span>
-            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.RadioVoice" @onchange="OnRadioVoiceChanged" />
-        </label>
+        <div class="pocabinet-settings__row">
+            <span aria-hidden="true">Race music</span>
+            <RadzenSwitch Value="@Value.Music" Change="@((bool on) => RaiseAsync(s => s.Music = on))" InputAttributes="@Aria("Race music")" />
+        </div>
+        <div class="pocabinet-settings__row">
+            <span aria-hidden="true">Radio voices</span>
+            <RadzenSwitch Value="@Value.RadioVoice" Change="@((bool on) => RaiseAsync(s => s.RadioVoice = on))" InputAttributes="@Aria("Radio voices")" />
+        </div>
     </fieldset>
 
     <fieldset class="pocabinet-settings__group">
         <legend>Graphics &amp; camera</legend>
-        @Pills("gfx", "Graphics quality", GraphicsOptions, AppSettings.Graphics, SetGraphicsAsync,
+        @Pills("Graphics quality", GraphicsOptions, AppSettings.Graphics, SetGraphicsAsync,
                "Every game's setting. Lower is smoother on a slow device.")
-        @Pills("room", "Scan detail", RoomOptions, Value.RoomDetail, v => RaiseAsync(s => s.RoomDetail = v),
+        @Pills("Scan detail", RoomOptions, Value.RoomDetail, v => RaiseAsync(s => s.RoomDetail = v),
                "The scanned court: Auto is the full 9.6 MB scan on a computer and a light 2.4 MB one on a phone or a slow link; Lite draws the plain court.")
-        @Pills("gpu", "GPU shaders", GpuOptions, Value.GpuCompute, v => RaiseAsync(s => s.GpuCompute = v),
+        @Pills("GPU shaders", GpuOptions, Value.GpuCompute, v => RaiseAsync(s => s.GpuCompute = v),
                "Uses WebGPU WGSL compute and fluid UI shaders when supported, with automatic WebGL2 fallback.")
         @if (OnCycleCamera.HasDelegate)
         {
@@ -55,34 +54,34 @@
 
     <fieldset class="pocabinet-settings__group">
         <legend>Display</legend>
-        @Pills("hud", "HUD size", HudOptions, Format(Value.HudScale), v => RaiseAsync(s => s.HudScale = ParseDouble(v, s.HudScale)))
+        @Pills("HUD size", HudOptions, Format(Value.HudScale), v => RaiseAsync(s => s.HudScale = ParseDouble(v, s.HudScale)))
         @if (ShowWeather)
         {
             @* The race holds its weather from the lights (the lap proof carries one wet flag),
                so a change mid-race is for the next one and says so. *@
-            @Pills("weather", WeatherNextRace ? "Weather (next race)" : "Weather", WeatherOptions, Value.Weather, v => RaiseAsync(s => s.Weather = v))
+            @Pills(WeatherNextRace ? "Weather (next race)" : "Weather", WeatherOptions, Value.Weather, v => RaiseAsync(s => s.Weather = v))
         }
     </fieldset>
 
     <fieldset class="pocabinet-settings__group">
         <legend>Driving aids</legend>
-        @Pills("assist", "Steering assist", AssistOptions, Value.SteeringAssist, v => RaiseAsync(s => s.SteeringAssist = v))
-        <label class="pocabinet-settings__row">
-            <span>Auto-brake for corners</span>
-            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.AutoBrake" @onchange="e => RaiseAsync(s => s.AutoBrake = e.Value is bool b && b)" />
-        </label>
+        @Pills("Steering assist", AssistOptions, Value.SteeringAssist, v => RaiseAsync(s => s.SteeringAssist = v))
+        <div class="pocabinet-settings__row">
+            <span aria-hidden="true">Auto-brake for corners</span>
+            <RadzenSwitch Value="@Value.AutoBrake" Change="@((bool on) => RaiseAsync(s => s.AutoBrake = on))" InputAttributes="@Aria("Auto-brake for corners")" />
+        </div>
     </fieldset>
 
     <fieldset class="pocabinet-settings__group">
         <legend>Touch screens</legend>
-        @Pills("touch", "On-screen controls", TouchOptions, Value.TouchControls, v => RaiseAsync(s => s.TouchControls = v))
-        @Pills("steer", "Steering", SteerOptions, Value.SteerMode, v => RaiseAsync(s => s.SteerMode = v))
-        <label class="pocabinet-settings__row">
-            <span>Sensitivity</span>
-            <input type="range" min="0.5" max="1.5" step="0.05"
-                   value="@Format(Value.SteerSensitivity)" @oninput="e => RaiseAsync(s => s.SteerSensitivity = ParseDouble(e.Value?.ToString(), s.SteerSensitivity))" />
+        @Pills("On-screen controls", TouchOptions, Value.TouchControls, v => RaiseAsync(s => s.TouchControls = v))
+        @Pills("Steering", SteerOptions, Value.SteerMode, v => RaiseAsync(s => s.SteerMode = v))
+        <div class="pocabinet-settings__row">
+            <span aria-hidden="true">Sensitivity</span>
+            <RadzenSlider TValue="double" Min="0.5m" Max="1.5m" Step="0.05" Value="@Value.SteerSensitivity"
+                          Change="@((double v) => RaiseAsync(s => s.SteerSensitivity = v))" HandleLabel="Steering sensitivity" />
             <span class="pocabinet-settings__value">@($"{Value.SteerSensitivity:0.00}×")</span>
-        </label>
+        </div>
     </fieldset>
 </div>
 
@@ -105,10 +104,10 @@
     private static readonly (string Value, string Text)[] RoomOptions = [("auto", "Auto"), ("splat", "Full"), ("mesh", "Lite")];
     private static readonly (string Value, string Text)[] GpuOptions = [("auto", "Auto"), ("webgpu", "WebGPU"), ("webgl", "WebGL2")];
 
-    /// <summary>One labelled row of radio pills; the group name keeps each row its own radio set.</summary>
-    private RenderFragment Pills(string name, string label, (string Value, string Text)[] options, string current, Func<string, Task> onPick, string? hint = null) => __builder =>
+    /// <summary>One labelled row of choices (a Radzen select bar).</summary>
+    private RenderFragment Pills(string label, (string Value, string Text)[] options, string current, Func<string, Task> onPick, string? hint = null) => __builder =>
     {
-        <div class="pocabinet-settings__row" role="radiogroup" aria-label="@label">
+        <div class="pocabinet-settings__row">
             <span>
                 @label
                 @if (hint is not null)
@@ -116,15 +115,15 @@
                     <small>@hint</small>
                 }
             </span>
-            <span class="pocabinet-pills">
-                @foreach (var (value, text) in options)
-                {
-                    <label class="pocabinet-pill">
-                        <input type="radio" name="pocabinet-@name" value="@value" checked="@(value == current)" @onchange="() => onPick(value)" />
-                        <span>@text</span>
-                    </label>
-                }
-            </span>
+            <RadzenSelectBar TValue="string" class="pocabinet-pills" Size="ButtonSize.Small" AriaLabel="@label"
+                             Value="@current" Change="@((string v) => onPick(v))">
+                <Items>
+                    @foreach (var (value, text) in options)
+                    {
+                        <RadzenSelectBarItem Text="@text" Value="@value" />
+                    }
+                </Items>
+            </RadzenSelectBar>
         </div>
     };
 
@@ -145,11 +144,7 @@
         catch { /* interop gone: the sheet still shows the stored choice */ }
     }
 
-    private Task OnMusicChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.Music = e.Value is bool b && b);
-
-    private Task OnRadioVoiceChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.RadioVoice = e.Value is bool b && b);
+    private static Dictionary<string, object> Aria(string label) => new() { ["aria-label"] = label };
 
     private static double ParseDouble(string? raw, double fallback) =>
         double.TryParse(raw, System.Globalization.NumberStyles.Float,

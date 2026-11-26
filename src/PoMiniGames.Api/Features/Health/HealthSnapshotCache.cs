@@ -41,6 +41,9 @@ public sealed class HealthSnapshotCache(TimeProvider time) : IDisposable
         }
     }
 
+    /// <summary>The cached snapshot if still fresh, without triggering a new health run.</summary>
+    public HealthSnapshot? Peek() => Fresh();
+
     public void Dispose() => _gate.Dispose();
 
     private HealthSnapshot? Fresh() =>

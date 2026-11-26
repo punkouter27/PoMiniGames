@@ -24,7 +24,7 @@ $files = Get-ChildItem -Path $clientRoot -Recurse -Filter *.css -File |
 # Hex colour ratchet: a colour literal outside po-tokens.css is a colour that will not follow
 # the light/dark theme or a retheme. The count may only go DOWN: when you migrate a literal to a
 # var(--token), lower this number in the same change. Never raise it - add a token instead.
-$hexBaseline = 594
+$hexBaseline = 556
 $hexCount = 0
 $hexPattern = [regex]'#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b'
 

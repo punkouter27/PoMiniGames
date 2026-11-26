@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PoBrawl Cup · Five-second results hold</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 "Segoe UI", sans-serif; background: #101725; color: #edf2f8; }
+    body { margin: 0; padding: 3rem; }
+    h1 { margin: 0 0 .4rem; font-size: 2rem; }
+    .lead { margin: 0 0 2rem; color: #aab8ca; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    section { padding: 1.5rem; border: 1px solid #35445a; border-radius: 1rem; background: #182337; }
+    h2 { margin: 0 0 1rem; font-size: 1.25rem; }
+    .result { padding: 1.25rem; border-radius: .75rem; background: #222e43; }
+    .winner { color: #ffe1a0; font-size: 1.35rem; font-weight: 700; }
+    .clock { display: inline-block; margin-top: .75rem; padding: .3rem .7rem; border-radius: 2rem; background: #293d5b; color: #b7d1ff; font-weight: 700; }
+    .next { margin-top: 1rem; color: #aab8ca; }
+    .note { margin-top: 1.5rem; padding: 1rem; border-left: 4px solid #e8b44d; background: #222b38; }
+    @media (max-width: 760px) { body { padding: 1rem; } main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Brawl Cup · Results and bout transition</h1>
+  <p class="lead">Before / after behavior mockup · the bracket remains visible long enough to read each result.</p>
+  <main>
+    <section aria-label="Before">
+      <h2>Before · speed-dependent hold</h2>
+      <div class="result">
+        <div class="winner">Nixon beats Hoover by KO</div>
+        <p>Round of 16 · Match 4 of 15 · Elo +12</p>
+        <span class="clock">3.2–4.2 seconds</span>
+        <p class="next">Then the next bracket bout starts.</p>
+      </div>
+    </section>
+    <section aria-label="After">
+      <h2>After · fixed five-second hold</h2>
+      <div class="result">
+        <div class="winner">Nixon beats Hoover by KO</div>
+        <p>Round of 16 · Match 4 of 15 · Elo +12</p>
+        <span class="clock">5 seconds at every speed</span>
+        <p class="next">Then the next bracket bout starts automatically.</p>
+      </div>
+    </section>
+  </main>
+  <p class="note"><strong>Notes:</strong> The result is rendered before the timer starts. The final champion presentation remains unchanged.</p>
+</body>
+</html>

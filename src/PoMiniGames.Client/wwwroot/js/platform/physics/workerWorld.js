@@ -6,7 +6,8 @@
 export function createWorkerWorld(options = {}) {
   if (typeof Worker === 'undefined') return Promise.resolve(null);
   let worker;
-  try { worker = new Worker(new URL('./physicsWorker.js', import.meta.url), { type: 'module' }); }
+  const workerPath = options.backend === 'ammo' ? './ammoWorker.js' : './physicsWorker.js';
+  try { worker = new Worker(new URL(workerPath, import.meta.url), { type: 'module' }); }
   catch { return Promise.resolve(null); }
 
   let nextId = 1;
@@ -23,6 +24,10 @@ export function createWorkerWorld(options = {}) {
     addBody(desc) { const id = nextId++; ids.push(id); worker.postMessage({ type: 'add', id, desc }); return ids.length - 1; },
     removeBody(slot) { const id = ids[slot]; ids.splice(slot, 1); worker.postMessage({ type: 'remove', id }); },
     set(slot, patch) { worker.postMessage({ type: 'set', id: ids[slot], ...patch }); },
+    applyImpulses(items) {
+      const mapped = items.map((it) => ({ id: ids[it.slot], impulse: it.impulse })).filter((it) => it.id != null);
+      if (mapped.length) worker.postMessage({ type: 'batchImpulse', items: mapped });
+    },
     /** Ask for a step; the previous pose buffer is recycled. Safe to call every frame (coalesces). */
     step(dt) {
       if (pending) return false;

@@ -13,7 +13,7 @@
     /* BOB's colour: the fight's player-one green, deep enough for white 12px labels (5:1). */
     --pbm-won-hi: #1f9d4f;
     --pbm-won-lo: #14703a;
-    --pbm-won-ink: #fff;
+    --pbm-won-ink: var(--po-white);
     --pbm-dest: light-dark(#b7791f, #ffd166);
     --pbm-route: light-dark(#a16207, #ffd166);
     --pbm-meter: light-dark(rgba(15, 23, 42, 0.10), rgba(255, 255, 255, 0.12));

@@ -355,10 +355,10 @@ export class Scenery {
         const t = this.track;
         const count = Math.max(8, Math.round(t.length / 150));
         const armLen = 2.6;
-        const postGeom = new THREE.CylinderGeometry(0.09, 0.13, 6, 6);
-        postGeom.translate(0, 3, 0);
-        const armGeom = new THREE.BoxGeometry(0.1, 0.1, armLen);
-        const headGeom = new THREE.BoxGeometry(0.4, 0.16, 0.8);
+        const postGeom = new THREE.CylinderGeometry(0.11, 0.17, 9, 6);
+        postGeom.translate(0, 4.5, 0);
+        const armGeom = new THREE.BoxGeometry(0.12, 0.12, armLen);
+        const headGeom = new THREE.BoxGeometry(0.48, 0.18, 0.95);
         const posts = new THREE.InstancedMesh(postGeom, lam('#3a3d44', { roughness: 0.5, metalness: 0.7 }), count);
         const arms = new THREE.InstancedMesh(armGeom, lam('#3a3d44', { roughness: 0.5, metalness: 0.7 }), count);
         const heads = new THREE.InstancedMesh(headGeom, lam('#8f8a78'), count);
@@ -376,12 +376,12 @@ export class Scenery {
             dummy.rotation.set(0, 0, 0);
             dummy.updateMatrix();
             posts.setMatrixAt(used, dummy.matrix);
-            dummy.position.set(bx + inward.x * armLen / 2, y + 5.8, bz + inward.z * armLen / 2);
+            dummy.position.set(bx + inward.x * armLen / 2, y + 8.7, bz + inward.z * armLen / 2);
             dummy.rotation.set(0, yawTo(inward.x, inward.z), 0);
             dummy.updateMatrix();
             arms.setMatrixAt(used, dummy.matrix);
             const hx = bx + inward.x * armLen, hz = bz + inward.z * armLen;
-            dummy.position.set(hx, y + 5.72, hz);
+            dummy.position.set(hx, y + 8.62, hz);
             dummy.updateMatrix();
             heads.setMatrixAt(used, dummy.matrix);
             used++;
@@ -772,15 +772,15 @@ export class Scenery {
         if (!spots.length) return;
         const dummy = new THREE.Object3D();
         const color = new THREE.Color();
-        const trunkGeom = new THREE.CylinderGeometry(0.14, 0.2, 1, 5);
+        const trunkGeom = new THREE.CylinderGeometry(0.18, 0.28, 1, 5);
         trunkGeom.translate(0, 0.5, 0);
         const coneGeom = new THREE.ConeGeometry(1, 1, 7);
         coneGeom.translate(0, 0.5, 0);
         const trunks = new THREE.InstancedMesh(trunkGeom, lam('#5a4230'), spots.length);
         const crowns = new THREE.InstancedMesh(coneGeom, wind(lam('#ffffff', { roughness: 0.9 }), 0.07), spots.length);
         spots.forEach((p, i) => {
-            const h = 4 + this.rng() * 4;
-            const r = 1.2 + this.rng() * 1.1;
+            const h = 9 + this.rng() * 7;
+            const r = 2.0 + this.rng() * 1.4;
             const y = this.gy(p.x, p.y) - 0.15;
             dummy.position.set(p.x / WS, y, p.y / WS);
             dummy.rotation.set(0, this.rng() * 6.28, 0);
@@ -807,15 +807,15 @@ export class Scenery {
         const dummy = new THREE.Object3D();
         const color = new THREE.Color();
         const LEAVES = 7;
-        const trunkGeom = new THREE.CylinderGeometry(0.11, 0.2, 1, 6);
+        const trunkGeom = new THREE.CylinderGeometry(0.15, 0.26, 1, 6);
         trunkGeom.translate(0, 0.5, 0);
-        const leafGeom = new THREE.BoxGeometry(2.6, 0.05, 0.5);
-        leafGeom.translate(1.3, 0, 0);
+        const leafGeom = new THREE.BoxGeometry(3.2, 0.06, 0.58);
+        leafGeom.translate(1.6, 0, 0);
         const trunks = new THREE.InstancedMesh(trunkGeom, lam('#8a6a48'), spots.length);
         const leaves = new THREE.InstancedMesh(leafGeom, wind(lam('#ffffff', { roughness: 0.75, side: THREE.DoubleSide }), 0.09, 'x', 0.45), spots.length * LEAVES);
         const top = new THREE.Vector3();
         spots.forEach((p, i) => {
-            const h = 5 + this.rng() * 4;
+            const h = 8 + this.rng() * 6;
             const lean = (this.rng() - 0.5) * 0.3;
             const yaw = this.rng() * 6.28;
             dummy.position.set(p.x / WS, this.gy(p.x, p.y) - 0.15, p.y / WS);
@@ -867,14 +867,14 @@ export class Scenery {
         for (const p of spots) {
             const y = this.gy(p.x, p.y) - 0.15;
             const fir = firs.includes(p);
-            const h = fir ? 6 + this.rng() * 5 : 4 + this.rng() * 3.5;
+            const h = fir ? 11 + this.rng() * 8 : 8 + this.rng() * 7;
             dummy.position.set(p.x / WS, y, p.y / WS);
             dummy.rotation.set(0, this.rng() * 6.28, 0);
             dummy.scale.set(1, h * (fir ? 0.3 : 0.55), 1);
             dummy.updateMatrix();
             trunks.setMatrixAt(tr++, dummy.matrix);
             if (fir) {
-                const r = 1.1 + this.rng() * 0.6;
+                const r = 1.9 + this.rng() * 1.1;
                 dummy.position.y = y + h * 0.22;
                 dummy.scale.set(r, h * 0.85, r);
                 dummy.updateMatrix();
@@ -885,7 +885,7 @@ export class Scenery {
             }
             const hue = hues[Math.floor(this.rng() * hues.length)];
             for (let k = 0; k < 2; k++) {
-                const r = (1.4 + this.rng() * 1.1) * (k ? 0.75 : 1);
+                const r = (2.2 + this.rng() * 1.6) * (k ? 0.75 : 1);
                 dummy.position.set(p.x / WS + (this.rng() - 0.5) * 0.9 * k, y + h * (0.62 + 0.25 * k), p.y / WS + (this.rng() - 0.5) * 0.9 * k);
                 dummy.rotation.set(this.rng(), this.rng() * 6.28, 0);
                 dummy.scale.set(r, r * (0.8 + this.rng() * 0.3), r);

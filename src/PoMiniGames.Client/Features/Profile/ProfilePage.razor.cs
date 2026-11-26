@@ -121,8 +121,7 @@ public partial class ProfilePage
     // ── Radzen theme (charts) ────────────────────────────────────
     // Loaded on demand like Brawl HQ and the leaderboards, and removed on navigation
     // so a page that has no Radzen controls does not carry its theme.
-    private bool _radzenReady;
-    private IJSObjectReference? _theme;
+    private bool _radzenReady = true;
 
     /// <summary>One bar in the Win Rate by Game chart.</summary>
     public sealed record WinRateRow(string Label, double WinPercent);
@@ -250,37 +249,11 @@ public partial class ProfilePage
         await Task.CompletedTask;
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         PlayerNameService.StateChanged -= OnNameChanged;
         GC.SuppressFinalize(this);
-        if (_theme is null) return;
-        try
-        {
-            await _theme.InvokeVoidAsync("remove");
-            await _theme.DisposeAsync();
-        }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
-    }
-
-    // Radzen's theme and script, on demand: only the charts need them, and its CSS is
-    // global, so it is in the document only while this page is (same loader as the
-    // leaderboards and Brawl HQ).
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender || _theme is not null) return;
-        try
-        {
-            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/radzenTheme.js");
-            await _theme.InvokeVoidAsync("ensure");
-        }
-        catch (JSException ex)
-        {
-            Console.Error.WriteLine($"[profile] Radzen theme failed: {ex.Message}");
-        }
-        _radzenReady = true;
-        StateHasChanged();
+        return ValueTask.CompletedTask;
     }
 
     private void OnNameChanged()

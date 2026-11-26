@@ -21,7 +21,7 @@ public class SandPlaygroundUiTests
         using var playwright = await Playwright.CreateAsync();
         var options = BrowserLaunch.Options();
         // The simulation is WebGL2; SwiftShader gives the headless shell a real context.
-        options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewPlayerContextAsync();
         var page = await context.NewPageAsync();

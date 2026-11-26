@@ -29,17 +29,16 @@
                         <span class="arcade-slot @(i == _letters.Length && _letters.Length < 3 ? "arcade-slot--active" : "")">@ch</span>
                     }
                 </div>
-                <input @ref="_inputRef"
+                <PoTextBox @ref="_input"
                        id="arcade-initials-input"
-                       name="initials"
-                       type="text"
+                       Name="initials"
                        class="arcade-hidden-input"
-                       autocomplete="off"
+                       AutoComplete="false"
                        autocapitalize="characters"
                        spellcheck="false"
                        aria-label="Enter 3-letter initials (A to Z)"
                        aria-invalid="@(_editContext.GetValidationMessages(_initialsField).Any() ? "true" : "false")"
-                       value="@_letters"
+                       Value="@_letters"
                        @oninput="OnInput" />
             </div>
 
@@ -73,7 +72,7 @@
     private EditContext _editContext = default!;
     private FieldIdentifier _initialsField;
     private bool _submitting;
-    private ElementReference _inputRef;
+    private PoTextBox? _input;
     private string _letters = string.Empty;
     private bool _wasOpen;
     private Action? _onStateChanged;
@@ -120,7 +119,7 @@
             _wasOpen = true;
             try
             {
-                await _inputRef.FocusAsync();
+                if (_input is not null) await _input.Element.FocusAsync();
             }
             catch
             {

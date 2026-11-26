@@ -11,10 +11,4 @@
        Domain is a leaf project with no API/Shared dependency, so the edge
        is safe and the WASM client still only takes types it actually uses
        (ProjectReference is consumed by the trimmer, not pulled in wholesale). -->
-  <ItemGroup>
-    <PackageReference Include="FluentValidation" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
-  </ItemGroup>
 </Project>

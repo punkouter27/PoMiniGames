@@ -1,0 +1,37 @@
+@namespace PoMiniGamesClient.Features.Shared
+@* The app's dropdown for a short list of (value, text) pairs: a RadzenDropDown (Profile A: Radzen controls) used by
+   the start card's map picker, the lobbies and the game panels in place of a native <select>. *@
+<RadzenDropDown TValue="string" Data="@_items" TextProperty="@nameof(Option.Text)" ValueProperty="@nameof(Option.Value)"
+                Value="@Value" Change="@OnChangeAsync" Disabled="@Disabled" class="@Class"
+                InputAttributes="@_inputAttributes" />
+
+@code {
+    /// <summary>The choices, in order: the value sent back and the text shown.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<(string Value, string Text)> Options { get; set; } = [];
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    /// <summary>The accessible name, for a dropdown with no visible label of its own.</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>One choice as Radzen reads it (by property name).</summary>
+    public sealed record Option(string Value, string Text);
+
+    private IReadOnlyList<(string Value, string Text)>? _source;
+    private List<Option> _items = [];
+    private Dictionary<string, object>? _inputAttributes;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_source, Options))
+        {
+            _source = Options;
+            _items = [.. Options.Select(o => new Option(o.Value, o.Text))];
+        }
+        _inputAttributes = AriaLabel is null ? null : new() { ["aria-label"] = AriaLabel };
+    }
+
+    private Task OnChangeAsync(object? value) =>
+        value is string s && s != Value ? ValueChanged.InvokeAsync(s) : Task.CompletedTask;
+}

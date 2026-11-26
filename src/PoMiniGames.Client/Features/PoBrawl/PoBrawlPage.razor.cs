@@ -329,6 +329,18 @@ public partial class PoBrawlPage
             await StartOnlineAsync();
             return;
         }
+        // Warm the engine module graph while the player reads the 1P intro card so clicking OK
+        // doesn't pay the full ~45-module + WebGPU Three.js fetch/parse waterfall upfront.
+        if (_mode == "1p" && !_introDone)
+        {
+            _ = PreloadEngineAsync();
+        }
+    }
+
+    private async Task PreloadEngineAsync()
+    {
+        try { await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"); }
+        catch { /* InitEngine retries and surfaces any load error */ }
     }
 
     /// <summary>Everything this page keeps per player name: stats, Elo, the rung, the fastest KO, the clears.</summary>

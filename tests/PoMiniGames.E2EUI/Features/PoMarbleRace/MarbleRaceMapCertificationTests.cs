@@ -83,7 +83,7 @@ public class MarbleRaceMapCertificationTests
         using var playwright = await Playwright.CreateAsync();
         var options = BrowserLaunch.Options();
         // The engine needs a GL context to boot even though nothing is drawn.
-        options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var page = await (await browser.NewPlayerContextAsync()).NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);

@@ -129,7 +129,11 @@ if (builder.Environment.IsDevelopment())
                     "http://localhost:5261",
                     "https://localhost:7208",
                     "http://localhost:5080",
-                    "https://localhost:5080")
+                    "https://localhost:5080",
+                    "http://127.0.0.1:5261",
+                    "https://127.0.0.1:7208",
+                    "http://127.0.0.1:5080",
+                    "https://127.0.0.1:5080")
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 // Allow credentials so the antiforgery cookie round-trips when the

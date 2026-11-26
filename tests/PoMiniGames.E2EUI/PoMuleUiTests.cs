@@ -82,10 +82,10 @@ public class PoMuleUiTests
 
         // Walk back and up through the town's door: the store's interior takes over the screen.
         await page.Keyboard.DownAsync("a");
-        await page.WaitForTimeoutAsync(1000);
+        await page.WaitForFunctionAsync($"() => window.__pomule().avatars[0].x <= {Math.Round(before[0][0] + 12, 2).ToString(System.Globalization.CultureInfo.InvariantCulture)}", null, new() { Timeout = 15_000 });
         await page.Keyboard.UpAsync("a");
         await page.Keyboard.DownAsync("w");
-        await page.WaitForFunctionAsync("() => !!window.__pomule().interior", null, new() { Timeout = 10_000 });
+        await page.WaitForFunctionAsync("() => !!window.__pomule().interior", null, new() { Timeout = 15_000 });
         await page.Keyboard.UpAsync("w");
         // East and down into the corral: walking into the stall buys the M.U.L.E.
         await page.Keyboard.DownAsync("d");

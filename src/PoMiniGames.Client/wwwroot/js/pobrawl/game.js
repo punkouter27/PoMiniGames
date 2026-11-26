@@ -469,18 +469,14 @@ export class BrawlGame {
     // later rounds reuse the same cached textures and stay filtered.
     this._applyTextureAnisotropy();
     // The first match opens on the VS splash too; training skips it. Either way the
-    // count waits for the shader warm-up. Under the Full show the warm-up first waits for its
-    // layers to load (show.js), so their shaders compile with the rest; nothing draws meanwhile.
-    let ready;
+    // count waits for the shader warm-up. Optional Full-show dressing (show.js) finishes
+    // loading in the background without blocking the arena's first frame.
+    const ready = this._warmupRender();
     if (showLoad) {
-      this._compiling = true;
-      ready = this._ready = showLoad.then(() => {
-        if (this.disposed) return undefined;
+      showLoad.then(() => {
+        if (this.disposed) return;
         this._applyTextureAnisotropy(); // their textures were not in the scene for the pass above
-        return this._warmupRender();
       });
-    } else {
-      ready = this._warmupRender();
     }
     if (this.options.mode === 'online') {
       ready.then(() => {
@@ -1083,10 +1079,11 @@ export class BrawlGame {
     const line = this._introLine;
     this._introLine = null;
     if (!line || this.training) return SPLASH_HOLD_MS;
-    // Held long enough to read the introduction off the caption bar.
+    // Keep the caption up long enough to read into the countdown, without stalling the VS splash for 7 s.
     const words = String(line).split(/\s+/).length;
-    const hold = Math.min(7000, Math.max(SPLASH_HOLD_MS, 600 + words * 360));
-    this._caption(line, hold / 1000);
+    const hold = Math.min(2200, Math.max(SPLASH_HOLD_MS, 500 + words * 120));
+    const captionSecs = Math.min(7, Math.max(3.2, 0.6 + words * 0.32));
+    this._caption(line, captionSecs);
     return hold;
   }
 
@@ -1124,9 +1121,9 @@ export class BrawlGame {
     this.renderer.setRenderTarget(this.composer.readBuffer);
     let compiled;
     try {
-      // The shared warm-up: compileAsync raced against a timeout; the synchronous traversal
-      // that needs the objects shown and the composer target bound happens inside this call.
-      compiled = warmup(this.renderer, this.scene, this.camera, { render: false });
+      // The shared warm-up: compileAsync raced against a short cap so a cold GPU driver
+      // never leaves the arena blank for 8 seconds; remaining materials compile on first use.
+      compiled = warmup(this.renderer, this.scene, this.camera, { render: false, timeoutMs: 2500 });
     } catch (e) {
       compiled = Promise.reject(e);
     } finally {

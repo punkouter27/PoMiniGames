@@ -7,7 +7,7 @@
     --rz-text-title-color: var(--color-text-primary);
     --rz-base-background-color: var(--color-surface);
     --rz-primary: var(--color-accent);
-    --rz-on-primary: #fff;
+    --rz-on-primary: var(--po-white);
     --rz-grid-background-color: transparent;
     --rz-grid-header-background-color: var(--surface-2);
     --rz-grid-header-color: var(--color-text-secondary);
@@ -26,7 +26,7 @@
     --rz-selectbar-color: var(--color-text-secondary);
     --rz-selectbar-border: 1px solid var(--color-border);
     --rz-selectbar-selected-background-color: var(--color-accent);
-    --rz-selectbar-selected-color: #fff;
+    --rz-selectbar-selected-color: var(--po-white);
     --rz-selectbar-selected-border: 1px solid var(--color-accent);
     --rz-chart-axis-color: var(--color-border);
     --rz-chart-axis-label-color: var(--color-text-secondary);

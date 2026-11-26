@@ -12,6 +12,7 @@
 
 import { BUTTONS, ButtonEdges, activePad, connectedPads, pressed, stick, rumble } from '../platform/gamepadBus.js';
 import { vibrate } from '../platform/impactBus.js';
+import { startPoseController } from '../platform/poseInput.js';
 
 const MOVE_KEYS = {
     wasd: { KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down' },
@@ -83,6 +84,19 @@ export function createInput(root, layoutName, session) {
     const input = {
         get device() { return device; },
         pad: () => padFor(layoutName),
+        _pose: null,
+        async enablePose() {
+            if (this._pose) return true;
+            this._pose = await startPoseController((action, held) => {
+                device = 'pose';
+                if (action === 'punch' && held) press('punchMid');
+                else if (action === 'kick' && held) press('kick');
+                else if (action === 'crouch') { if (held) keys.add('down'); else keys.delete('down'); }
+                else if (action === 'jump' && held) press('up');
+            });
+            return true;
+        },
+        disablePose() { this._pose?.stop(); this._pose = null; },
         /** The controls since the last sample (see the file header). */
         sample() {
             const gp = padFor(layoutName);
@@ -107,7 +121,7 @@ export function createInput(root, layoutName, session) {
             const gp = padFor(layoutName);
             if (gp) rumble(gp, strong, weak, ms, opts);
         },
-        dispose() { for (const u of undo.splice(0)) u(); },
+        dispose() { this.disablePose(); for (const u of undo.splice(0)) u(); },
     };
     session?.cleanup.push(() => input.dispose());
     return input;

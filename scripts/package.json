@@ -1,0 +1,15 @@
+{
+  "name": "pominigames-scripts",
+  "private": true,
+  "description": "Shared npm workspace for PoMiniGames local lint, screenshot, and asset toolchains.",
+  "workspaces": [
+    "ci/js-lint",
+    "pocabinet",
+    "pocapitol",
+    "pomarblerace",
+    "screenshots"
+  ],
+  "scripts": {
+    "lint:js": "npm run lint --workspace=ci/js-lint"
+  }
+}

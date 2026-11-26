@@ -39,18 +39,20 @@
 import { wrapAngle, sin, cos, atan2 } from './track.js';
 
 export const TICK_SECONDS = 1 / 30;
-export const MAX_SPEED = 140;
-export const KMH_PER_UNIT = 2.0;
-const ACCEL = 55;
-const BRAKE_DECEL = 130;
-const COAST_DECEL = 14;
-const REVERSE_ACCEL = 25;
-const REVERSE_MAX = 18;
-const STEER_RATE = 2.3;
-const STEER_FULL_SPEED = 18;
-export const GRIP_ACCEL = 105;
-const SCRUB_DECEL = 30;
-const GRASS_DECEL = 50;
+// True 1:1 meter scale (WORLD_SCALE = 10 sim units/m → 1 u/s = 0.1 m/s = 0.36 km/h).
+// 560 u/s = 56.0 m/s = 201.6 km/h real-world GT speed past 1:1 meter props and 50m/100m/150m boards.
+export const MAX_SPEED = 560;
+export const KMH_PER_UNIT = 0.36;
+const ACCEL = 160;
+const BRAKE_DECEL = 310;
+const COAST_DECEL = 32;
+const REVERSE_ACCEL = 65;
+const REVERSE_MAX = 65;
+const STEER_RATE = 3.2;
+const STEER_FULL_SPEED = 48;
+export const GRIP_ACCEL = 310;
+const SCRUB_DECEL = 75;
+const GRASS_DECEL = 120;
 const GRASS_GRIP = 0.6;
 export const RUN_OFF = 26;
 export const CAR_RADIUS = 14;
@@ -63,12 +65,12 @@ const HULL_RADIUS = 8.5;
 const CONTACT_RESTITUTION = 0.2;
 /** Yaw inertia over mass: the square of a 39 x 17 body's radius of gyration. */
 const YAW_INERTIA = 150;
-const SLIP_DECEL = 120;
+const SLIP_DECEL = 260;
 const SPIN_DECEL = 5;
-const MAX_SLIP = 60;
+const MAX_SLIP = 140;
 const MAX_SPIN = 2.5;
 const MAX_CONTACT_SPIN = 4.0;
-const SLIP_SLIDING = 8;
+const SLIP_SLIDING = 20;
 const WALL_SCRAPE_TORQUE = 0.65;
 const WALL_SLIP_RETAIN = 0.35;
 const CONTACT_FRICTION = 0.16;
@@ -77,14 +79,14 @@ const GRAVITY_Z = 98.1;
 const SUSP_K = 48.0;
 const SUSP_DAMP = 9.0;
 const SOLVER_ITERATIONS = 3;
-const CCD_SPEED_SQ = 4900.0;
+const CCD_SPEED_SQ = 16000.0;
 /** Cars further apart than this along the road never touch: where a course
  *  crosses over itself they are on different levels. */
 const SAME_ROAD = 120;
 /** Damage (hurt()): closing speed a body shrugs off, and the square of the excess over it that
- *  takes all of a car's structure (a square hit on the barrier at about 110 u/s). */
-const DAMAGE_FLOOR = 12;
-const DAMAGE_SCALE = 9500;
+ *  takes all of a car's structure (a square hit on the barrier at ~420 u/s = 150 km/h). */
+const DAMAGE_FLOOR = 45;
+const DAMAGE_SCALE = 140000;
 /** Engine share of a hit on the nose (radiator, engine bay) and of one anywhere else. */
 const ENGINE_NOSE = 1.25;
 const ENGINE_OTHER = 0.3;
@@ -99,14 +101,12 @@ const GRIP_LOSS = 0.2;
 const LOCK_LOSS = 0.3;
 const PULL_STEER = 0.14;
 /** A wrecked car limps at no more than this, and only until it is this far off the tarmac. */
-const LIMP_SPEED = 14;
+const LIMP_SPEED = 45;
 const LIMP_THROTTLE = 0.5;
 const WRECK_CLEAR = 16;
-/** Hills (track.grade): gravity along the road, arcade-strong so a descent is felt (u/s² per
- *  unit of grade), and the drag that takes back speed past a car's top speed, so a long
- *  descent tops out instead of running away (per second of overspeed). */
-const SLOPE_GRAVITY = 60;
-const OVERSPEED_DRAG = 1.2;
+/** Hills (track.grade): gravity along the road (u/s² per unit of grade) and drag past top speed. */
+const SLOPE_GRAVITY = 150;
+const OVERSPEED_DRAG = 1.4;
 /** A banked turn holds a car in (+ this share of grip per unit of bank turning into it), an
  *  off-camber one lets it go (down to −half that). */
 const BANK_GRIP = 0.6;
@@ -114,7 +114,7 @@ const BANK_GRIP = 0.6;
  *  so braking hard into a corner washes the nose wide. */
 const TRAIL_LOSS = 0.25;
 /** AI: how far over its own pace a car lets a descent carry it before it brakes for it. */
-const RUN_ON = 30;
+const RUN_ON = 75;
 /**
  * What a car is on (body.surface, set at the end of every step from where it ended up, read by
  * the next one): the road, an apex kerb (flat or raised), or the run-off past the edge.
@@ -131,22 +131,22 @@ export const KERB_OUTER = 12;
 const KERB_GRIP = 0.97;
 const KERB_WET_GRIP = 0.8;
 const SAUSAGE_GRIP = 0.85;
-const SAUSAGE_SCRUB = 45;
+const SAUSAGE_SCRUB = 110;
 const SAUSAGE_KICK = 1.1;
 const GRAVEL_GRIP = 0.45;
-const GRAVEL_DECEL = 95;
+const GRAVEL_DECEL = 240;
 /** AI: how far ahead it starts picking its side of a road divider, and how wide it keeps of it. */
-const ISLAND_LOOK = 320;
+const ISLAND_LOOK = 420;
 const ISLAND_CLEAR = 14;
 /** AI following: the gap it keeps to the car ahead (centres; hulls touch at 39) and the braking it plans on. */
-const FOLLOW_GAP = 44;
-const FOLLOW_DECEL = 80;
+const FOLLOW_GAP = 48;
+const FOLLOW_DECEL = 200;
 /** How far up the road the AI looks for traffic. */
-const AI_RANGE = 170;
+const AI_RANGE = 320;
 /** AI braking points: the deceleration a driver plans on, from a cautious one's to (+ the late
  *  share) a late braker's. Well under BRAKE_DECEL, which is what a stamp on the pedal gives. */
-const AI_BRAKE_PLAN = 60;
-const AI_BRAKE_PLAN_LATE = 40;
+const AI_BRAKE_PLAN = 160;
+const AI_BRAKE_PLAN_LATE = 110;
 /** The step its braking-curve scan takes up the road (the track's curvature sample step). */
 const AI_CURVE_STEP = 8;
 /** AI racing line: how much of the track's racing line a driver follows, and how far (a share of
@@ -167,8 +167,16 @@ const BLUE_STEP = 0.1;
 const BLUE_LIFT = 0.95;
 /** Aim error (radians) past which a car rolling forward is pointing the wrong way down the road. */
 const WRONG_WAY = 2;
-const GRID_COLUMN = 22;
-const GRID_ROW = 50;
+const GRID_COLUMN = 26;
+const GRID_ROW = 58;
+const GRID_STAGGER = 18;
+// Always-automatic 6-speed gearbox (matches audio.js GEAR_TOP_KMH / KMH_PER_UNIT).
+const GEAR_TOP_SPEED = [135, 220, 310, 405, 495, 585];
+const IDLE_RPM = 950;
+const REDLINE_RPM = 8200;
+const SHIFT_UP_RPM = 7700;
+const SHIFT_DOWN_RPM = 3700;
+const SHIFT_CUT_SECS = 0.065;
 /** Solo and demo races: 63 rivals and the player (PoCabinetCatalog.SoloCarCount - 1). */
 const SOLO_RIVALS = 63;
 /** The player's grid slot in a solo race: mid-pack, quicker cars ahead and slower behind.
@@ -355,6 +363,8 @@ export function createBody() {
         // Body style physics properties (defaults preserve equal-mass unit contract).
         style: 0, mass: 1, inertia: YAW_INERTIA, color: null,
         z: 0, vz: 0, susp: 0,
+        // Always-automatic gearbox, tyre temperature (0..1) and threshold brake lockup (0..1).
+        gear: 1, rpm: IDLE_RPM, shiftCut: 0, tyreTemp: 0.55, brakeLock: 0,
     };
 }
 
@@ -369,6 +379,8 @@ export function copyBody(src, dst) {
     d.style = src.style ?? 0; d.mass = src.mass ?? 1; d.inertia = src.inertia ?? YAW_INERTIA;
     d.color = src.color ?? null;
     d.z = src.z ?? 0; d.vz = src.vz ?? 0; d.susp = src.susp ?? 0;
+    d.gear = src.gear ?? 1; d.rpm = src.rpm ?? IDLE_RPM; d.shiftCut = src.shiftCut ?? 0;
+    d.tyreTemp = src.tyreTemp ?? 0.55; d.brakeLock = src.brakeLock ?? 0;
     return d;
 }
 
@@ -440,12 +452,14 @@ function bounce(car, proj, s, excess, st, kind = 'wall') {
 }
 
 /**
- * Advance one car by dt in two continuous sub-steps so fast closing cars do not tunnel past
- * barriers or road dividers. Mirrors PoCabinetPhysics.Step.
+ * Advance one car by dt in four continuous sub-steps (120 Hz internal integration at 30 Hz ticks)
+ * so kerbs, weight transfer, automatic gear shifts and fast contacts stay crisp. Mirrors PoCabinetPhysics.Step.
  */
 export function step(track, car, c, dt, grip, cond = DRY) {
     car.wallImpact = 0;
-    const subDt = dt * 0.5;
+    const subDt = dt * 0.25;
+    stepSub(track, car, c, subDt, grip, cond);
+    stepSub(track, car, c, subDt, grip, cond);
     stepSub(track, car, c, subDt, grip, cond);
     stepSub(track, car, c, subDt, grip, cond);
 }
@@ -479,6 +493,32 @@ function stepSub(track, car, c, dt, grip, cond) {
     const slope = seg >= 0 ? track.grade(seg) * roadDot : 0;
     const bank = seg >= 0 ? track.bankOf(seg) : 0;
 
+    // Always-automatic 6-speed gearbox + RPM torque curve.
+    let g = car.gear || 1;
+    const fwdV = Math.max(0, v);
+    const rpmIn = (gearIdx) => fwdV / GEAR_TOP_SPEED[gearIdx - 1] * REDLINE_RPM;
+    const prevG = g;
+    while (g < 6 && rpmIn(g) > SHIFT_UP_RPM) g++;
+    while (g > 1 && rpmIn(g) < SHIFT_DOWN_RPM && rpmIn(g - 1) < SHIFT_UP_RPM - 600) g--;
+    if (g > prevG) car.shiftCut = SHIFT_CUT_SECS;
+    car.gear = g;
+    let rpm = rpmIn(g);
+    if (g === 1 && fwdV < 20) rpm = Math.max(rpm, IDLE_RPM + throttle * 4200 * (1 - fwdV / 20));
+    car.rpm = Math.min(REDLINE_RPM, Math.max(IDLE_RPM, rpm));
+    const rpmNorm = Math.min(1, Math.max(0, (car.rpm - IDLE_RPM) / (REDLINE_RPM - IDLE_RPM)));
+    const gearBoost = 1.16 - (g - 1) * 0.05;
+    let torqueFactor = (0.78 + 0.28 * sin(rpmNorm * Math.PI)) * gearBoost;
+    if ((car.shiftCut || 0) > 0) {
+        car.shiftCut = Math.max(0, car.shiftCut - dt);
+        torqueFactor *= 0.2;
+    }
+
+    // Threshold braking & progressive front wheel lockup when stomping 100% brake while turning.
+    const lockTarget = !airborne && brake > 0.84 && v > 28
+        ? Math.min(1, (brake - 0.84) / 0.16 * (0.45 + 0.55 * Math.abs(steer)))
+        : 0;
+    car.brakeLock = (car.brakeLock || 0) + (lockTarget - (car.brakeLock || 0)) * Math.min(1, dt * 10);
+
     let v2;
     if (v < -0.01) {
         if (brake > 0 && throttle === 0) {
@@ -491,9 +531,11 @@ function stepSub(track, car, c, dt, grip, cond) {
         v2 = Math.max(-REVERSE_MAX, v - REVERSE_ACCEL * brake * dt);
     } else {
         const ratio = v / top;
-        let a = throttle * ACCEL * power * grip * Math.max(0, 1 - ratio * ratio)
-            - brake * BRAKE_DECEL
-            - COAST_DECEL * (1 - throttle);
+        const brakeEff = 1 - 0.14 * car.brakeLock;
+        const engineBrake = COAST_DECEL * (1 - throttle) * (1 + (6 - g) * 0.14);
+        let a = throttle * ACCEL * torqueFactor * power * grip * Math.max(0, 1 - ratio * ratio)
+            - brake * BRAKE_DECEL * brakeEff
+            - engineBrake;
         // Grass drags, gravel beaches the car, a raised kerb scrubs it.
         if (surf === SURF_GRASS && v > 25) a -= GRASS_DECEL;
         else if (surf === SURF_GRAVEL && v > 8) a -= GRAVEL_DECEL;
@@ -508,16 +550,34 @@ function stepSub(track, car, c, dt, grip, cond) {
     const speedAbs = Math.abs(v2);
     const lockScale = Math.min(1, speedAbs / STEER_FULL_SPEED);
     const omegaWanted = steer * STEER_RATE * lockScale * (v2 < 0 ? -1 : 1);
-    // Grip to turn with: banked load + dynamic longitudinal weight transfer + friction circle.
+    // Tyre temperature: warms under cornering/braking/sliding load, cools gently on straights.
+    const tempNow = car.tyreTemp ?? 0.55;
+    const heatIn = (Math.abs(steer) * (speedAbs / MAX_SPEED) * 0.08 + brake * 0.06 + (car.sliding ? 0.14 : 0) + car.brakeLock * 0.12) * dt;
+    const coolOut = (0.015 + 0.015 * (speedAbs / MAX_SPEED)) * Math.max(0, tempNow - 0.45) * dt;
+    car.tyreTemp = Math.min(1, Math.max(0.3, tempNow + heatIn - coolOut));
+    const tempDelta = car.tyreTemp - 0.8;
+    const tempGrip = 1.04 - 0.18 * tempDelta * tempDelta;
+    // Grip to turn with: banked load + dynamic longitudinal weight transfer + friction circle + lockup washout.
     const camber = omegaWanted > 0 ? -bank : bank;
-    const longLoad = Math.min(0.35, Math.max(-0.35, (v2 - v) / (ACCEL * dt + 1e-6)));
-    const loadFactor = Math.max(0.68, 1.0 - TRAIL_LOSS * brake * brake - Math.max(0, longLoad) * 0.04 + (brake > 0.05 && brake < 0.65 ? 0.04 : 0.0));
-    const omegaGrip = GRIP_ACCEL * grip * surfaceGrip * (1 + BANK_GRIP * Math.min(1, Math.max(-0.5, camber)))
+    const longLoad = Math.min(0.45, Math.max(-0.45, (v2 - v) / (ACCEL * dt + 1e-6)));
+    const trailBonus = brake > 0.06 && brake < 0.72 ? 0.08 : 0.0;
+    const loadFactor = Math.max(0.62, 1.0 - TRAIL_LOSS * brake * brake - Math.max(0, longLoad) * 0.06 + trailBonus - 0.28 * car.brakeLock);
+    const omegaGrip = GRIP_ACCEL * grip * surfaceGrip * tempGrip * (1 + BANK_GRIP * Math.min(1, Math.max(-0.5, camber)))
         * loadFactor / Math.max(speedAbs, 1);
-    const omega = Math.min(omegaGrip, Math.max(-omegaGrip, omegaWanted));
-    car.sliding = Math.abs(omegaWanted) > omegaGrip * 1.02 && speedAbs > 30;
+    // Progressive Pacejka-inspired tyre slip saturation past the peak instead of a hard cliff.
+    const absWanted = Math.abs(omegaWanted);
+    let omega;
+    if (absWanted <= omegaGrip) {
+        omega = omegaWanted;
+    } else {
+        const sr = absWanted / Math.max(omegaGrip, 1e-5);
+        const tail = sr < 1.45 ? 1.0 - 0.14 * ((sr - 1.0) / 0.45) * ((sr - 1.0) / 0.45) : 0.86;
+        omega = (omegaWanted > 0 ? 1 : -1) * omegaGrip * tail;
+    }
+    car.sliding = (absWanted > omegaGrip * 1.02 && speedAbs > 30) || car.brakeLock > 0.35;
     if (car.sliding) {
-        v2 = v2 > 0 ? Math.max(0, v2 - SCRUB_DECEL * dt) : Math.min(0, v2 + SCRUB_DECEL * dt);
+        const excess = Math.min(1.5, Math.max(0.35, absWanted / Math.max(omegaGrip, 1e-5) - 0.65));
+        v2 = v2 > 0 ? Math.max(0, v2 - SCRUB_DECEL * excess * dt) : Math.min(0, v2 + SCRUB_DECEL * excess * dt);
     }
 
     // What a contact left behind: the tyres scrub the sideways slide and the spin off.
@@ -845,9 +905,9 @@ export function resolveContacts(track, cars) {
     }
 }
 
-/** Columns of the starting grid: as many as the tarmac takes, at least two. */
-function gridColumns(track) {
-    return Math.max(2, Math.floor(track.halfWidth * 1.6 / GRID_COLUMN) + 1);
+/** Columns of the starting grid: realistic 2-wide F1/GT staggered formation. */
+function gridColumns() {
+    return 2;
 }
 
 /**
@@ -869,11 +929,13 @@ function gridBack(track, row) {
     return back;
 }
 
-/** Grid slot: rows across the tarmac, pole just behind the line. Mirrors PoCabinetPhysics.GridSlot. */
+/** Grid slot: staggered 2-by-2 F1/GT grid across the tarmac, pole just behind the line. Mirrors PoCabinetPhysics.GridSlot. */
 export function gridSlot(track, car, slot) {
     const cols = gridColumns(track);
-    const back = gridBack(track, Math.floor(slot / cols));
-    const lateral = (slot % cols - (cols - 1) / 2) * GRID_COLUMN;
+    const col = slot % cols;
+    const back = gridBack(track, Math.floor(slot / cols)) + (col === 1 ? GRID_STAGGER : 0);
+    const spacing = Math.max(GRID_COLUMN, track.halfWidth * 0.68);
+    const lateral = (col - (cols - 1) / 2) * spacing;
     const p = track.pointAt(track.length - back);
     car.x = p.x + -p.ty * lateral;
     car.y = p.y + p.tx * lateral;
@@ -1089,9 +1151,9 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
         if (splitBy(track, car, other)) continue;
         const dx = other.x - car.x, dy = other.y - car.y;
         const fwd = dx * hx + dy * hy, side = dy * hx - dx * hy;
-        if (fwd > -44 && fwd < 44) {
-            if (side > 12 && side < 30) right = true;
-            else if (side < -12 && side > -30) left = true;
+        if (fwd > -48 && fwd < 48) {
+            if (side > 11 && side < 34) right = true;
+            else if (side < -11 && side > -34) left = true;
         }
         // Blue flag: the nearest car close behind on the road, near its lane, that is really a
         // lap or more ahead and coming up on it.
@@ -1126,6 +1188,25 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
         const away = blue.lateral > car.lateral ? -1 : 1;
         if ((lateralTarget - car.lateral) * away < 0) lateralTarget = car.lateral;
         lateralTarget += away * hw * BLUE_STEP;
+    } else if (near === 0 && persona.aggression >= 0.5) {
+        // Defensive inside-line cover: if a same-lap rival is closing behind in slipstream
+        // and not alongside, make one defensive move toward the inside apex.
+        let pursuer = null, closestBehind = -90;
+        for (const other of field) {
+            if (other === car || other.wrecked) continue;
+            let d = other.along - car.along;
+            if (d > half) d -= track.length;
+            else if (d < -half) d += track.length;
+            if (d < -14 && d > closestBehind && Math.abs(other.distance - car.distance) < half
+                && roadSpeed(track, other) > own + 1.5) {
+                closestBehind = d;
+                pursuer = other;
+            }
+        }
+        if (pursuer && !left && !right) {
+            const apexLane = track.line[track.indexAt(car.along + look * 1.4)] * LINE_WEIGHT;
+            lateralTarget = 0.55 * apexLane + 0.45 * pursuer.lateral;
+        }
     }
     lateralTarget = Math.min(edge, Math.max(-edge, lateralTarget));
     // A lapse: off its line and out over the edge of the road.
@@ -1182,7 +1263,11 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // Being lapped: a lift to let the leader by.
     if (blue) target = target * BLUE_LIFT;
 
-    const throttle = v < target - 3 ? 1 : v < target ? 0.35 : 0;
+    let throttle = v < target - 3 ? 1 : v < target ? 0.35 : 0;
+    // Slight deterministic launch reaction spread off the grid so the pack launches organically.
+    if (car.distance < 0 && v < 8 && throttle > 0) {
+        throttle *= 0.72 + 0.28 * (((persona.seed || 1) * 37 % 100) / 100);
+    }
     const brake = v > limit + 4
         ? Math.min(1, Math.max(0.15, (v - limit) / 18 * (0.6 + persona.brakingAggression * 0.8)))
         : 0;

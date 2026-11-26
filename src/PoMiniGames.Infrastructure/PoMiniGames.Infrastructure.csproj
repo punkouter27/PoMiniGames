@@ -7,7 +7,6 @@
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
     <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
   </ItemGroup>
 </Project>

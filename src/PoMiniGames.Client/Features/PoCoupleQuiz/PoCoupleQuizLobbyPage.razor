@@ -45,12 +45,7 @@
                     {
                         <label class="lobby-inline-opt">
                             <span>Topic</span>
-                            <select aria-label="Topic" value="@TopicPack" @onchange="OnTopicPackChanged">
-                                @foreach (var p in TopicPacks)
-                                {
-                                    <option value="@p.Id">@p.Label</option>
-                                }
-                            </select>
+                            <PoSelect AriaLabel="Topic" Options="@TopicOptions" Value="@TopicPack" ValueChanged="OnTopicPackChanged" />
                         </label>
                     }
                     else
@@ -118,8 +113,10 @@
     // Repaints the host's picks for the guest as they change.
     private Task OnLobbyStateAsync(LobbyState<CoupleQuizLobbyPlayer> _) => Task.CompletedTask;
 
-    private Task OnTopicPackChanged(ChangeEventArgs e) =>
-        _lobby?.SendAsync("SetTopicPack", e.Value?.ToString() ?? "Everything") ?? Task.CompletedTask;
+    private static readonly IReadOnlyList<(string Value, string Text)> TopicOptions = [.. TopicPacks.Select(p => (p.Id, p.Label))];
+
+    private Task OnTopicPackChanged(string pack) =>
+        _lobby?.SendAsync("SetTopicPack", string.IsNullOrEmpty(pack) ? "Everything" : pack) ?? Task.CompletedTask;
 
     // Both browsers get the match's internal code. The game page claims the seat under the
     // name the lobby gave it (made unique if both players carry the same initials).

@@ -12,6 +12,7 @@ import { source as physicsSource } from './sand-playground-physics.glsl.js';
 import { source as renderSource } from './sand-playground-render.glsl.js';
 import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from './sand-playground-calibration.js';
 import { createStage } from '../platform/stage/stage.js';
+import { createSandWebGpuSolver } from './sand-playground-webgpu.js';
 import {
     W, H, AIR, SAND, CONCRETE, WATER, BEDROCK, MATBYTE, SAT_BYTE, BEDROCK_TOP, GRAVITY0, SLING_K, SLING_MAX,
     TNT_FUSE_MS, TNT_BLAST_R, TNT_SHATTER_R, BLAST_SOLID_BUDGET, BALLOON_R, LW, LH, NP, KIND, PAINT_TOOLS,
@@ -23,6 +24,11 @@ import { dailySeed, makeRng, gzip, toB64, fromB64, parseSections } from './sand-
 let GRAVITY = GRAVITY0;            // scaled by the Gravity setting (setEnv)
 
 let gl = null, canvas = null, overlay = null, octx = null;
+let gpuFluidSolver = null;
+export function attachWebGpuFluid(renderer) {
+    gpuFluidSolver = createSandWebGpuSolver(renderer, W, H);
+    return gpuFluidSolver;
+}
 let progSupport, progPressure, progRelax, progMove, progFall, progSurge, progRender;
 let progLight, progBright, progBlur, progComposite, progParticle;
 let progTemp;

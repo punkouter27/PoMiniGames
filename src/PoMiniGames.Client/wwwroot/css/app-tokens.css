@@ -65,7 +65,7 @@
   --accent-warning-soft: color-mix(in srgb, var(--po-warning) 16%, transparent);
   --accent-danger: var(--po-danger);
   --accent-danger-soft: color-mix(in srgb, var(--po-danger) 16%, transparent);
-  --accent-cyan: #22d3ee;
+  --accent-cyan: var(--po-cyan);
   --accent-amber: #fbbf24;
 
   /* ── Player identity ───────────────────────────────────────────────────

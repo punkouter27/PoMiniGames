@@ -31,13 +31,17 @@ import { holdQuality } from '../platform/visualRuntime.js';
 import { discRgb } from './fx.js';
 
 const COLS = 9;
-const CELLS = 81;
+const ROWS = 7;
+const CELLS = ROWS * COLS;
+const HALF_COL = (COLS - 1) / 2;
+const HALF_ROW = (ROWS - 1) / 2;
 /** Half the canvas, in cell pitches: the grid (4.5) + frame, feet and shadow room. */
 const WORLD_HALF = 6.6;
 const FOV = 24;
-const PLATE_HALF = 4.72;
-const SPAWN_Y = 5.7;
-const GRAVITY = 62;          // cell pitches / s²: a 9-row fall in ~0.55 s
+const PLATE_HALF_W = COLS / 2 + 0.22;
+const PLATE_HALF_H = ROWS / 2 + 0.22;
+const SPAWN_Y = HALF_ROW + 1.7;
+const GRAVITY = 62;          // cell pitches / s²: a 7-row fall in ~0.48 s
 const DISC_R = 0.42;
 const DISC_HALF_T = 0.15;
 /** A resting disc glows a little, so the tone mapper does not turn the yellow to olive. */
@@ -179,11 +183,11 @@ export async function mount(board, api) {
         transparent: true, opacity: 0.58, depthWrite: false,
     });
 
-    const plate = roundedRect(PLATE_HALF, PLATE_HALF, 0.35);
-    for (let r = 0; r < COLS; r++) {
+    const plate = roundedRect(PLATE_HALF_W, PLATE_HALF_H, 0.35);
+    for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
             const hole = new THREE.Path();
-            hole.absarc(c - 4, 4 - r, 0.455, 0, Math.PI * 2, true);
+            hole.absarc(c - HALF_COL, HALF_ROW - r, 0.455, 0, Math.PI * 2, true);
             plate.holes.push(hole);
         }
     }
@@ -193,7 +197,7 @@ export async function mount(board, api) {
     const front = new THREE.Mesh(frontGeo, frontMat);
     front.castShadow = true;
     front.renderOrder = 2;
-    const backGeo = new THREE.ExtrudeGeometry(roundedRect(PLATE_HALF, PLATE_HALF, 0.35), { depth: 0.2, ...bevel });
+    const backGeo = new THREE.ExtrudeGeometry(roundedRect(PLATE_HALF_W, PLATE_HALF_H, 0.35), { depth: 0.2, ...bevel });
     backGeo.translate(0, 0, -0.4);
     const back = new THREE.Mesh(backGeo, backMat);
     back.receiveShadow = true;
@@ -206,14 +210,14 @@ export async function mount(board, api) {
         scene.add(m);
         return m;
     };
-    addBox(0.34, PLATE_HALF * 2 + 0.6, 0.98, -(PLATE_HALF + 0.12), -0.1, 0);   // side rails
-    addBox(0.34, PLATE_HALF * 2 + 0.6, 0.98, PLATE_HALF + 0.12, -0.1, 0);
-    addBox(PLATE_HALF * 2 + 1, 0.5, 1.5, 0, -PLATE_HALF - 0.2, 0);             // base bar
-    addBox(0.6, 0.38, 2.0, -(PLATE_HALF - 0.4), -PLATE_HALF - 0.64, 0);        // feet
-    addBox(0.6, 0.38, 2.0, PLATE_HALF - 0.4, -PLATE_HALF - 0.64, 0);
+    addBox(0.34, PLATE_HALF_H * 2 + 0.6, 0.98, -(PLATE_HALF_W + 0.12), -0.1, 0);   // side rails
+    addBox(0.34, PLATE_HALF_H * 2 + 0.6, 0.98, PLATE_HALF_W + 0.12, -0.1, 0);
+    addBox(PLATE_HALF_W * 2 + 1, 0.5, 1.5, 0, -PLATE_HALF_H - 0.2, 0);             // base bar
+    addBox(0.6, 0.38, 2.0, -(PLATE_HALF_W - 0.4), -PLATE_HALF_H - 0.64, 0);        // feet
+    addBox(0.6, 0.38, 2.0, PLATE_HALF_W - 0.4, -PLATE_HALF_H - 0.64, 0);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 7), new THREE.ShadowMaterial({ opacity: 0.16 }));
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, -PLATE_HALF - 0.84, 0);
+    floor.position.set(0, -PLATE_HALF_H - 0.84, 0);
     floor.receiveShadow = true;
     scene.add(floor);
 
@@ -241,10 +245,10 @@ export async function mount(board, api) {
     function spawn(i, colorName, instant, silent) {
         const row = (i / COLS) | 0;
         const col = i % COLS;
-        const ty = 4 - row;
+        const ty = HALF_ROW - row;
         const mesh = new THREE.Mesh(discGeo, discMats[colorName]);
         mesh.castShadow = true; mesh.receiveShadow = true;
-        mesh.position.set(col - 4, instant ? ty : SPAWN_Y, 0);
+        mesh.position.set(col - HALF_COL, instant ? ty : SPAWN_Y, 0);
         scene.add(mesh);
         const d = { mesh, mode: instant ? 'rest' : 'fall', y: instant ? ty : SPAWN_Y, vy: 0, ty, row, col, color: colorName, bounces: 0, own: null };
         discs[i] = d;
@@ -252,9 +256,9 @@ export async function mount(board, api) {
     }
 
     function land(d, speedFrac) {
-        const h = Math.min(1, (SPAWN_Y - d.ty) / 10.3);
+        const h = Math.min(1, (SPAWN_Y - d.ty) / (SPAWN_Y + HALF_ROW + 0.6));
         camera.updateMatrixWorld();
-        const v = new THREE.Vector3(d.col - 4, d.ty - 0.3, 0.2).project(camera);
+        const v = new THREE.Vector3(d.col - HALF_COL, d.ty - 0.3, 0.2).project(camera);
         const r = host.getBoundingClientRect();
         try {
             api.landed({
@@ -290,8 +294,8 @@ export async function mount(board, api) {
         const objects = [];
         const first = cells[0];
         const last = cells[cells.length - 1];
-        const a = new THREE.Vector3(first.col - 4, 4 - first.row, 0.5);
-        const b = new THREE.Vector3(last.col - 4, 4 - last.row, 0.5);
+        const a = new THREE.Vector3(first.col - HALF_COL, HALF_ROW - first.row, 0.5);
+        const b = new THREE.Vector3(last.col - HALF_COL, HALF_ROW - last.row, 0.5);
         const len = a.distanceTo(b);
         const soft = outcome !== 'win';
         const bar = new THREE.Mesh(
@@ -308,7 +312,7 @@ export async function mount(board, api) {
         scene.add(orb); objects.push(orb);
         const halos = list.map(({ d }) => {
             const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: lit, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-            s.position.set(d.col - 4, d.ty, 0.6);
+            s.position.set(d.col - HALF_COL, d.ty, 0.6);
             s.renderOrder = 5;
             scene.add(s); objects.push(s);
             return s;
@@ -384,7 +388,7 @@ export async function mount(board, api) {
         const a = cells[0].getBoundingClientRect();
         const z = cells[CELLS - 1].getBoundingClientRect();
         if (a.width < 4) { host.style.visibility = 'hidden'; return; }
-        const pitch = ((z.left + z.width / 2) - (a.left + a.width / 2)) / 8;
+        const pitch = ((z.left + z.width / 2) - (a.left + a.width / 2)) / (COLS - 1);
         const cx = ((a.left + a.width / 2) + (z.left + z.width / 2)) / 2;
         const cy = ((a.top + a.height / 2) + (z.top + z.height / 2)) / 2;
         const size = pitch * WORLD_HALF * 2;
@@ -438,7 +442,7 @@ export async function mount(board, api) {
         stepGlow(dt);
 
         // Gentle tilt toward the active column; zero when nothing is active or motion is reduced.
-        const wantYaw = !reduce && targetCol >= 0 ? ((targetCol - 4) / 4) * 0.075 : 0;
+        const wantYaw = !reduce && targetCol >= 0 ? ((targetCol - HALF_COL) / HALF_COL) * 0.075 : 0;
         const wantPitch = !reduce && targetCol >= 0 ? 0.035 : 0;
         const ny = damp(tiltYaw, wantYaw, 5, dt);
         const np = damp(tiltPitch, wantPitch, 5, dt);

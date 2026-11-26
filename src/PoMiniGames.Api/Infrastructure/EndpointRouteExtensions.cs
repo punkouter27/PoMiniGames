@@ -18,6 +18,8 @@ using PoMiniGames.Features.PoCapitol;     // after-action report card PNG
 using PoMiniGames.Features.PoCabinet;     // score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
 using PoMiniGames.Features.PoMule;
+using PoMiniGames.Features.Mcp;
+using PoMiniGames.Features.Geo;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -48,6 +50,9 @@ internal static class EndpointRouteExtensions
         app.MapPoLiveness();
         // /api/diag.
         app.MapDiagEndpoints();
+        // Read-only MCP Streamable HTTP endpoint (/mcp) and cached real-world terrain proxy (/api/geo/terrain).
+        app.MapPoMiniGamesMcpEndpoints();
+        app.MapGeoTerrainEndpoints();
         // Browser-side error sink (js/platform/errorReporter.js). Deliberately NOT under /api: it is fed
         // by sendBeacon, which cannot carry the antiforgery header that scope requires.
         app.MapClientErrorEndpoints();

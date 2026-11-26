@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FFA graphics and spatial sound upgrade</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 "Segoe UI", sans-serif; background: #101725; color: #edf2f8; }
+    body { margin: 0; padding: 24px; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    section { padding: 16px; border: 1px solid #35445a; border-radius: 12px; background: #182337; }
+    img { width: 100%; border-radius: 8px; }
+    p { padding: 12px; border-left: 4px solid #ffd166; background: #222b38; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>FFA graphics, physics and spatial audio</h1>
+  <main>
+    <section>
+      <h2>Before</h2>
+      <img src="261108-ffa-spectacle-before.png" alt="FFA before enhanced post-processing and impact effects">
+      <p>Existing studio lighting and camera, without the new impact, material and collision systems.</p>
+    </section>
+    <section>
+      <h2>After</h2>
+      <img src="261108-ffa-spectacle-after.png" alt="FFA with material detail, contact shadows, impact particles and arena haze">
+      <p>Quality-adaptive WebGL particles, post-processing, material detail, wear and light shafts. Web Audio HRTF follows the camera.</p>
+    </section>
+    <section>
+      <h2>Studio polish</h2>
+      <img src="261108-ffa-spectacle-studio.png" alt="Polished FFA studio with sound controls and graphics explanations">
+      <p>Slide-out glass studio, featured-fighter highlights, press feedback and synthesized cues; mute and reduced-motion support.</p>
+    </section>
+    <section>
+      <h2>Physics and performance</h2>
+      <p>Swept contacts, mass-aware knockback and friction keep standing fighters apart and inside the ring. Survivors step over immovable knockouts.</p>
+      <p>Bounded particles and audio voices protect 16-fighter performance. Skin scattering, volumetric lighting and screen-space contact shading are approximations, not RTX or multi-bounce ray tracing.</p>
+    </section>
+  </main>
+</body>
+</html>

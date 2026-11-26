@@ -32,12 +32,10 @@
 
          Anything that adds a module script earlier than this line reintroduces
          the bug silently — the games just stop, with one console line. -->
-    <!-- Two three.js entries. "three" / "three/addons/" (r165) are left for two unused legacy
-         modules (platform/postFx.js, platform/3d/paperField.js); every engine renders with
-         WebGPURenderer and node materials (TSL), which need the three/webgpu + three/tsl
-         builds, so they import the pinned r186 copy as "three-eco/webgpu" / "three-eco/tsl" / "three-eco/addons/". The scope makes the
-         bare "three/webgpu" and "three/tsl" specifiers INSIDE that copy (three.tsl.js and the
-         addons import them) resolve to the same r186 files, so there is one instance of it.
+    <!-- Every 3D engine renders with WebGPURenderer and node materials (TSL), which need the
+         three/webgpu + three/tsl builds, so they import the pinned r186 copy as
+         "three-eco/webgpu" / "three-eco/tsl" / "three-eco/addons/". The scope makes the bare
+         "three/webgpu" and "three/tsl" specifiers INSIDE that copy resolve to the same r186 files.
          Bump the version and the integrity hashes together.
 
          "rapier" (@dimforge/rapier3d-compat: the WASM is inside the module) is PoCabinet's debris
@@ -58,15 +56,14 @@
     <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
         "cannon-es": "/lib/cannon-es/cannon-es.js",
         "yuka": "/lib/yuka/yuka.module.js",
         "rapier": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs",
         "transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js",
         "three-eco/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
         "three-eco/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
-        "three-eco/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+        "three-eco/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+        "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm"
       },
       "scopes": {
         "https://cdn.jsdelivr.net/npm/three@0.186.1/": {
@@ -76,47 +73,21 @@
         }
       },
       "integrity": {
-        "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js": "sha384-Qvl1RLjZOCDFOOH2bKcGnaDHMM8MVv3zVtMvhy3juQdiIOs6RgQ/7zYdM1FbpHzI",
         "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs": "sha384-oPyJtSnZbl4qLdnQQ+3vWOQFLDFyMOcSgLr1xxtO2B2JUahMwj6wRA6I7pbueGxx",
         "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js": "sha384-ypqDKlGaciPzMZFxk0iPx9blYGxbZIWTqZX7f6BuiicO9rTfnXfprLBev5KE5OfK",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js": "sha384-4BcMoAQ5pbGKlA/ACC52ZLD19HUU8F/mGnEtg8LEb6G0S5xckMOrpPtPHQMzWi0D",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "sha384-mdKeCwPEcbDvzaxwhm+MVuLoMou+E7jQqrs4tmu/n8HBYPGI1kZt0MkJxlMR4zFM",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js": "sha384-i76xepHrmVxDoGJBGuT2FUEUGw0jdaDjus4NJ40g1FtIyusteqsUxnSz8avnH130",
-        "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js": "sha384-i681B4DcPx08phYxUWUXAWtpILC5sB+eIKXSxbTTQK5ZP+MB1D2j4HOz41lkNLNI"
+        "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js": "sha384-i681B4DcPx08phYxUWUXAWtpILC5sB+eIKXSxbTTQK5ZP+MB1D2j4HOz41lkNLNI",
+        "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm": "sha384-u7nYEXR9bDKk5jSis6akij+/PDJMzDhh7Rb2NizHzbelZeamqL3qEIqm+1LoM0AG"
       }
     }
     </script>
 
     <link rel="modulepreload" href="_framework/blazor.webassembly.js" />
 
-    <!-- Motion and colour-safe resolution, inline and render-blocking ON PURPOSE: a game
-         engine that boots before Blazor must already see <html data-motion> and
-         <html data-colorsafe>. There is no theme attribute: light/dark follows the device
-         through prefers-color-scheme in css/po-tokens.css (Po standard, 2026-11-18). -->
-    <script>
-        (function () {
-            try {
-                // Resolving `prefers-reduced-motion`
-                // to a concrete value HERE is what lets the stylesheet carry one
-                // universal-selector guard instead of an attribute rule plus a
-                // duplicate @media copy of it. Either source wins — an explicit
-                // opt-in, or an OS that already asked for less motion. Turning the
-                // app toggle off therefore does not re-enable motion for someone
-                // whose system requested it. appPrefs.js keeps this live.
-                if (localStorage.getItem('pominigames:reduced-motion') === '1'
-                    || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-                    document.documentElement.setAttribute('data-motion', 'reduce');
-                }
-                // Colour-blind-safe palettes: stamped here so a game engine that
-                // boots before Blazor still sees it (appPrefs.applyColorSafe).
-                if (localStorage.getItem('pominigames:color-safe') === '1') {
-                    document.documentElement.setAttribute('data-colorsafe', '1');
-                }
-            } catch (e) {
-                // Private mode / storage disabled: the defaults stand.
-            }
-        })();
-    </script>
+    <!-- Motion and colour-safe resolution, render-blocking external script (no inline script for CSP). -->
+    <script src="js/platform/bootPrefs.js"></script>
 
     <!-- Radzen's theme loads once, FIRST, before any app stylesheet (Po standard, Profile A): the app's CSS
          below then wins every tie, so pages keep their own look. Light and dark follow the device; the ids are the
@@ -151,12 +122,10 @@
     <!-- game-shell.css is the SHARED game chrome (the end-of-game modal every
          game ends on). Loaded ahead of games.css so per-game rules can't win a
          specificity tie against it by accident. -->
-    <link rel="preload" href="css/game-shell.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <link rel="stylesheet" href="css/game-shell.css" />
     <!-- §GFX fx.css: platform effects layer (glass, animatable gradients,
-         compositor-only motion, adaptive-quality rules). Purely additive utility
-         classes — nothing in it restyles an existing element, so it is safe to
-         load async alongside the per-game sheets. -->
-    <link rel="preload" href="css/fx.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+         compositor-only motion, adaptive-quality rules). -->
+    <link rel="stylesheet" href="css/fx.css" />
     <!-- fight.css deleted 2026-08-07: 22 classes, none referenced by any markup.
          It was the stylesheet for the old PoFight game and did not follow that
          game through its rename to PoBrawl, which styles itself from
@@ -229,6 +198,11 @@
          and parsed code that one opt-out diagnostic ever calls. It is now
          imported at its point of use, FpsCounter, which still assigns a window
          global on evaluation. -->
+    <!-- Radzen's script, once, before Blazor boots (Radzen's own setup): dropdowns, sliders and select bars in
+         game pages, start cards and lobbies call it on first render. js/platform/radzenTheme.js finds it loaded and
+         adds nothing; the same URL keeps one cache entry (service-worker.published.js allowlists it). -->
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js?v=12.2.0"></script>
+    <script src="js/platform/radzenTopLayer.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>
 
     <!-- ── Game engines: route-gated, NOT loaded here ──────────────────────────
@@ -255,6 +229,8 @@
     <script type="module" src="js/platform/audioBus.js"></script>
     <script type="module" src="js/platform/richAudio.js"></script>
     <script type="module" src="js/platform/speechBus.js"></script>
+    <script type="module" src="js/platform/localTts.js"></script>
+    <script type="module" src="js/platform/localEmbeddings.js"></script>
     <!-- uiAudio.js binds the keyboard-only data-sonify listener (menu focus/select cues) at load;
          without this tag it only arrived with the first game that imported it, so the hub was silent. -->
     <script type="module" src="js/platform/uiAudio.js"></script>

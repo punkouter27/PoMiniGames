@@ -15,6 +15,7 @@ import { scenarioSun, daylightFactor } from './sun.js';
 import { createOverlay } from './overlay.js';
 import { createFluidGrid } from '../platform/3d/fluidGrid.js';
 import { createGpuFluidGrid } from '../platform/3d/fluidGridGpu.js';
+import { createGpuCrowdSolver } from './crowdGpu.js';
 import { createCloth } from './cloth.js';
 import { createGlass } from './glass.js';
 import { createDebris } from './debris.js';
@@ -100,6 +101,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     // ?capitolGl, or localStorage 'pominigames:pocapitol-gl', forces that backend, for comparing the two.
     const forceWebGL = !(await webgpuAvailable()) || /[?&]capitolGl/.test(location.search) || (() => { try { return Boolean(localStorage.getItem('pominigames:pocapitol-gl')); } catch { return false; } })();
     const renderer = await createRenderer(THREE, { api: 'webgpu', forceWebGL, antialias: false, tone: 'aces', exposure: 1.1 });
+    const isWebGPU = Boolean(renderer.backend?.isWebGPUBackend);
     renderer.info.autoReset = false;
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute('aria-label', 'PoCapitol third-person scene. Click to look around.');
@@ -123,7 +125,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     scene.add(sun);
     // The sun's second, close shadow map (cascade.js). Its light exists from the start, at zero
     // brightness, so the light count never changes and nothing recompiles when it is switched on.
-    const cascade = createNearCascade(scene, sun, { camera, enabled: (window.PoQuality?.tier?.() ?? 'high') !== 'low' });
+    const cascade = createNearCascade(scene, sun, { camera, enabled: isWebGPU && (window.PoQuality?.tier?.() ?? 'high') !== 'low' });
     let shadowFrame = 0;
     const sunDir = sunDirection(0);
     const placeSun = () => sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
@@ -425,9 +427,11 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             }
         }
         if (area.w < 10) continue;
-        const light = new THREE.PointLight('#ffe9bc', 24, 20, 1.8);
-        light.position.set(area.x, 6, area.z);
-        scene.add(light);
+        if (isWebGPU) {
+            const light = new THREE.PointLight('#ffe9bc', 24, 20, 1.8);
+            light.position.set(area.x, 6, area.z);
+            scene.add(light);
+        }
     }
     // Crypt: the compass star in the floor under the forest of columns.
     mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.03, 8), '#e9e1cf', 0, 0.13, 5);
@@ -535,7 +539,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const lamps = [-7, 7].map(x => {
         const lamp = new THREE.PointLight('#ffd9a0', 0, 30, 1.6);
         lamp.position.set(x, 5, 19);
-        scene.add(lamp);
+        if (isWebGPU) scene.add(lamp);
         return lamp;
     });
     // Grounds lamp posts along the forecourt. Their globes glow (and bloom) at dusk; they add
@@ -570,7 +574,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     // One light stands in for all eight heads: every extra light costs every lit pixel.
     const flood = new THREE.PointLight('#dfe9ff', 0, 70, 1.5);
     flood.position.set(0, 12, 38);
-    scene.add(flood);
+    if (isWebGPU) scene.add(flood);
 
     // Police vehicles drawn up off the lawn on both sides, light bars going. Plain white boxes
     // with a stripe: no make and no markings. One real light stands in for all the bars.
@@ -596,10 +600,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     }
     const strobe = new THREE.PointLight('#ff2a1c', 0, 55, 1.6);
     strobe.position.set(-40, 2.6, 31.5);
-    scene.add(strobe);
+    if (isWebGPU) scene.add(strobe);
 
     const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials, painted });
-    for (const light of architecturalDetail.interiorLights) scene.add(light);
+    if (isWebGPU) for (const light of architecturalDetail.interiorLights) scene.add(light);
 
     const architectureBatches = [];
     scene.updateMatrixWorld(true);
@@ -929,7 +933,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
     const muzzleLight = new THREE.PointLight('#ffe494', 0, 16, 2.0);
-    scene.add(muzzleLight);
+    if (isWebGPU) scene.add(muzzleLight);
     let recoilPitch = 0, recoilDolly = 0, retinalFlash = 0;
     // GPU bursts (sparks and dust solved in the vertex shader), wear that stays on the ground, and
     // two flare lights that blaze where a spark shower lands. The lights exist from the start at
@@ -973,6 +977,9 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             if (!grid) return;
             if (disposedScene) { grid.dispose(); return; }
             gpuGas = grid; gpuGasTexture = gasTextureFor(grid);
+            if (!scene.userData.gpuCrowd && renderer?.backend?.isWebGPUBackend) {
+                scene.userData.gpuCrowd = createGpuCrowdSolver(renderer, { count: CROWD_SIZE });
+            }
             if (postLevel >= 3) useGas(gpuGas, gpuGasTexture);
         }).catch(() => { /* resolves null on failure; nothing to do */ });
     }
@@ -993,7 +1000,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         } catch { return null; }
     })();
     const fogPushes = [];
-    const flares = [0, 1].map(() => { const light = new THREE.PointLight('#ffb35c', 0, 14, 1.8); scene.add(light); return light; });
+    const flares = [0, 1].map(() => { const light = new THREE.PointLight('#ffb35c', 0, 14, 1.8); if (isWebGPU) scene.add(light); return light; });
     const reacted = new WeakSet();
     function flare(x, y, z, intensity, color) {
         const light = flares[0].intensity <= flares[1].intensity ? flares[0] : flares[1];
@@ -1010,7 +1017,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     // The far crowd is photographed from the rigged figure, here, now that every light the scene
     // will ever have exists: the pictures are then lit and compiled exactly as the near crowd is.
     // A device on the lowest tier keeps the painted far crowd: the bake costs memory it does not have.
-    const impostors = figure && window.PoQuality?.tier?.() !== 'low' ? bakeImpostors(renderer, scene, figure, { detail: surfaceDetail }) : null;
+    const impostors = figure && isWebGPU && window.PoQuality?.tier?.() !== 'low' ? bakeImpostors(renderer, scene, figure, { detail: surfaceDetail }) : null;
     const farCrowd = createDistantCrowd(scene, farSpots, { time, shadowTexture: shadowBlob, atlas: impostors });
     const perchCrowd = createDistantCrowd(scene, perchSpots, { time, shadowTexture: shadowBlob, atlas: impostors });
     perchCrowd.setCount(PERCH_ALWAYS);
@@ -1023,7 +1030,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     beacon.material = marker.material;
 
     // OpenStreetMap 3D surrounding grounds and monumental structures
-    const campus = createCampus({ surfaces, surfaceDetail, osm });
+    const campus = createCampus({ surfaces, surfaceDetail, osm, isWebGPU });
     scene.add(campus.group);
 
     // Tactical Unit Inspector target selection ring

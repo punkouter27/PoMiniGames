@@ -79,7 +79,7 @@
             @* The only player setting left: the initials shown on the leaderboards. Everything
                else runs on fixed defaults (graphics high, rich audio on). *@
             <PoButton class="po-header__initials" data-no-press-sound
-                    aria-label="Change initials" title="Change initials" Click="OpenInitials">
+                    aria-label="@($"{InitialsLabel}: change initials")" title="Change initials" Click="OpenInitials">
                 @InitialsLabel
             </PoButton>
         </div>
@@ -92,14 +92,16 @@
         @Body
     </main>
 
-    @if (ToastService.Toasts.Count > 0)
+    @{ var actionToasts = ToastService.Toasts.Where(t => t.Action is not null).ToList(); }
+    @if (actionToasts.Count > 0)
     {
         <div class="toast-stack" role="log" aria-live="polite" aria-label="Notifications">
-            @foreach (var toast in ToastService.Toasts)
+            @foreach (var toast in actionToasts)
             {
                 @* data-toast-id: the after-render FX pass needs to burst from THIS
                    toast's box, and a selector on the class alone would always hit
-                   the oldest one in the stack. *@
+                   the oldest one in the stack. Plain non-action toasts are rendered by
+                   RadzenNotification below. *@
                 <div class="toast toast--@toast.Type.ToString().ToLowerInvariant()"
                      data-toast-id="@toast.Id" role="alert">
                     <span class="toast-msg">@toast.Message</span>
@@ -122,6 +124,7 @@
        space and no taps. *@
     <RadzenNotification />
     <RadzenDialog />
+    <RadzenTooltip />
     <BuildVersion />
     <BottomNav />
 

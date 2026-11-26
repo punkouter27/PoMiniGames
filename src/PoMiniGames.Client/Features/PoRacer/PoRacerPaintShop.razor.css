@@ -1,8 +1,0 @@
-.racer-paintshop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.paint-preview { width: 96px; height: 64px; flex: none; border-radius: 10px; background: var(--racer-well); }
-.paint-swatches { display: flex; gap: 8px; }
-/* --swatch is the one runtime value here: the colour the dot shows. */
-.paint-swatch { position: relative; width: 30px; height: 30px; border-radius: 50%; background: var(--swatch); border: 2px solid #ffffff55; cursor: pointer; }
-.paint-swatch.selected { border-color: var(--racer-ink); box-shadow: 0 0 0 3px var(--racer-accent-line); }
-.paint-swatch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.paint-swatch:focus-within { outline: 2px solid var(--racer-ink); outline-offset: 4px; }

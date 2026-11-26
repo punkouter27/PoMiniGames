@@ -10,6 +10,7 @@
 
 import * as THREE from 'three-eco/webgpu';
 import { PhysBody, TYPE } from './rapierWorld.js';
+import { createWorkerWorld } from '../platform/physics/workerWorld.js';
 import { createVoxelMaterial } from './materials.js';
 import { greedyBoxes } from './voxelboxes.js';
 import { materialFor, massOf, surfaceOf, MATERIAL_PRESETS } from './physics.js';
@@ -48,6 +49,10 @@ export class DebrisManager {
     this.fx = fx;           // { collapse(voxels, pos), impact(mass, pos, speed) } | null
     this.pieces = [];       // { mesh, body, voxels:count, color, scale, age, restTime, frozen, fragCooldown }
     this._pendingFragments = [];
+    this.workerWorld = null;
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('physics') === 'ammo') {
+      createWorkerWorld({ backend: 'ammo' }).then((w) => { this.workerWorld = w; }).catch(() => {});
+    }
 
     // Particle pool: one InstancedMesh of unit cubes, slots reused oldest-first.
     this.particleMesh = new THREE.InstancedMesh(

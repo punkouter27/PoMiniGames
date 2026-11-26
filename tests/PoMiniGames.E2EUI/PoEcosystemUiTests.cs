@@ -25,7 +25,7 @@ public class PoEcosystemUiTests
         // GameShell would correctly show its fallback.
         var options = BrowserLaunch.Options();
         if (!OperatingSystem.IsWindows())
-            options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+            options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions { ViewportSize = MobileViewport.Portrait });
 
@@ -44,7 +44,7 @@ public class PoEcosystemUiTests
         // Dismiss the start card with its one button, OK (data-intro-action), then wait for the engine to report
         // itself ready. The old "watch|start|play" name never matched OK, so the card stayed up, the engine never
         // started, and the 180 s ready wait timed out on every host (v4 audit 2026-11-24).
-        var start = page.Locator("dialog[open] [data-intro-action]").First;
+        var start = page.Locator("[data-po-dialog='intro'] [data-intro-action]").First;
         await start.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
         await start.ClickAsync(new LocatorClickOptions { Timeout = 15_000 });
 

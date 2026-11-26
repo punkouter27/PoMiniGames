@@ -9,7 +9,7 @@
 //   po-cf-drop-landed             -> the same, exact, when the matter.js drop in index.js finished
 //   .win-cell / .win-cell-static  -> win celebration (sweep + bloom along the line, confetti,
 //                                    crowd + brass; a softer variant when the CPU wins)
-//   81 discs and no win           -> a neutral chime
+//   63 discs and no win           -> a neutral chime
 //
 // Nothing here is a new engine. It composes the shared platform layers:
 //   impactBus (PoImpact)  trauma shake of the registered board, phone haptics (one gate)
@@ -29,8 +29,9 @@ import * as Dsp from '../platform/dsp.js';
 
 const BOARD_KEY = 'pominigames:connectfive:board';   // '2d' | '3d'
 const CSS_HREF = 'css/connectfive-fx.css';
-const CELLS = 81;
+const ROWS = 7;
 const COLS = 9;
+const CELLS = ROWS * COLS;
 /** Where the CSS keyframe drop (cf-slide-down, 0.55 s) reaches the board: the first contact, ~68% in. */
 const CSS_LAND_MS = 340;
 /** Physics owns the landing; the event normally cancels this. It only fires if the event never comes. */
@@ -174,7 +175,7 @@ export function landed({ col, row, color, h, x, y, silent } = {}) {
     if (!_started) return;
     const now = performance.now();
     _lastLandAt = now;
-    const fall = h != null ? h : Math.min(1, (row + 1.6) / 10.2);
+    const fall = h != null ? h : Math.min(1, (row + 1.6) / (ROWS + 1.2));
     const demo = pageMode() === 'demo';
     // One landing signal for extras.js (notes, block hit, board light), from every drop path.
     try { window.dispatchEvent(new CustomEvent('po-cf-landed', { detail: { col, row, color, fall, silent: !!silent } })); }

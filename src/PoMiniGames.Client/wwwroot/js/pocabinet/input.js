@@ -60,7 +60,7 @@ export function attachInput(opts) {
             // Another dialog on top (the app settings sheet opened from the pause menu):
             // Esc is that dialog's close, not a resume.
             const t = e.target;
-            if (t && t.closest && t.closest('dialog') && !t.closest('#pocabinetPause')) return;
+            if (t && t.closest && t.closest('dialog, [role="dialog"], .rz-dialog') && !t.closest('#pocabinetPause')) return;
             if (down && !e.repeat) { e.preventDefault(); o.onPause?.(); }
             return;
         }

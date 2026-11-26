@@ -317,11 +317,8 @@ sign-in: a player is a random browser id plus three initials.
 - `PageHeader` is the one page header: title, an optional meta line and an action slot,
   used by the hub, leaderboards and My Stats (/diag uses the standard System status layout). New top-level pages use it
   rather than their own head markup.
-- The main menu (`Features/Home/Index.razor`) fits one screen with no scrolling at 1366×768 and 375×667: the
-  game cards are cut into pages that fit the window (`js/platform/homePager.js` packs whole rows), turned by the
-  page buttons under the grid (Radzen buttons), PageUp/PageDown, the arrow keys on the pager, or a sideways swipe.
-  Every game is at most two presses away (its page, then its mode chip). Wide windows show two cards a row; short
-  phones drop the one-line description (it stays in the card's tooltip and on the start card).
+- The main menu (`Features/Home/Index.razor`) displays every game card in one scrolling grid (two cards per row on
+  wide windows, stacked on narrower viewports), with one chip per supported mode.
 - `GameShell` owns the title, Settings entry point, diagnostics and result dialog.
   Keep game artwork and HUDs game-specific, but do not override the shared dialogs'
   theme, typography or geometry.
@@ -454,11 +451,12 @@ scripts/                        Working scripts only — see scripts/README.md
   (`"   "`), paired with a persistent browser `playerId` sent via `X-Player-Id` /
   `X-Player-Initials` headers (and SignalR query params) and resolved by `UsePlayerIdentity()`
   (`Infrastructure/PlayerIdentityExtensions.cs`) on the server.
-- UI is native Blazor + plain CSS for thirteen of the games. PoMule was the first screen built
-  on Radzen (Material Dark), and Brawl HQ (`/pobrawl/hq`) is the second; the hub, settings,
-  leaderboards and the other games move to Radzen next. Until then each of those pages loads
-  the Radzen stylesheet itself and removes it on the way out (`wwwroot/js/platform/radzenTheme.js`,
-  sharing PoMule's element id). In-game HUDs stay custom CSS.
+- Controls are Radzen components: Radzen's theme is linked once, first, in `index.html`, and the
+  app's own wrappers in `Features/Shared/Shell/` keep each game's look (`PoButton`, `PoTextBox`
+  carry only the plain class `po-rz-plain`; `PoSelect` is a `RadzenDropDown` over (value, text)
+  pairs). Switches, checkboxes, select bars, sliders, grids, tabs and charts are Radzen's own.
+  The start, pause and end cards are still native `<dialog>`s (open item, AGENTS.md). In-game
+  HUDs and in-canvas UI stay custom CSS / JS.
 - **Each game is a Razor page plus a JavaScript engine, except PoMule**, whose rules are C# in
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and
@@ -505,19 +503,15 @@ JSON-formatting 1,400 floating-point values on the browser's WASM main thread.
 Streaming snapshots retain the existing SignalR wire format but are decoded in native
 JavaScript; only the four visible standings rows return to Blazor. All cars still feed
 interpolation, rendering, and audio, and the HUD's field size comes from the complete roster.
-Run `node --test tests\poracer-snapshot.test.mjs` for focused native snapshot coverage.
 PoRacer's weather is one draw per track and UTC day (`PoRacerWeather` in `PoMiniGames.Shared`,
 the same hash `js/platform/weather.js` uses for its overlay): 58% clear, 25% rain, 11% snow, 6% fog. The
 server races in it (grip 0.90 in rain, 0.80 in snow: less traction, longer braking, understeer
 that grows with speed, earlier slides; fog changes nothing but the view) and sends it in
 `PoRacerStaticWorld.Weather`, so the overlay draws what the sim ran. Laps set in the wet go on
 the same boards as dry ones and are slower; the medal times are dry-track times.
-Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
-
-Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course; see `scripts/pomarblerace/README.md`).
 `.github/workflows/deploy.yml` is the only workflow: on a push to `master` (or a manual run) it
-checks formatting, lints the Python scripts (ruff), builds, runs the Unit and Integration tiers,
-publishes the API, stages the documentation suite (`scripts/ci-package.ps1`), prepares the live
+checks formatting, builds, runs the Unit and Integration tiers,
+publishes the API, prepares the live
 site (`scripts/pre-deploy.ps1`), deploys to `vars.AZURE_WEBAPP_NAME` (`app-5ln5hfdrvof5u-f1win2`), and waits until `/health/live`
 answers with this commit's `X-Commit`. E2E tiers, Bicep, CSS and JS lint run locally
 (`scripts/ci-checks.ps1`). Provision or update Azure resources locally with

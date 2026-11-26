@@ -26,9 +26,34 @@ export function setView(sh, p) {
     // back up the slope and looks down it, so a descent reads as one.
     const h = Number(p.h) || 0;
     const rise = Math.tan(Number(p.pitch) || 0);
+    if (mode === 'hood' || mode === 'bumper') {
+        // First-person hood / bumper camera with look-to-apex yaw lead and brake-dive pitch.
+        sh._chaseInit = false;
+        const bumper = mode === 'bumper';
+        const dt = Number(p.dt) || 0.016;
+        const steer = Number(p.steer) || 0;
+        const brake = Number(p.brake) || 0;
+        const s01 = Math.min(1, Math.abs(Number(p.speed) || 0) / 560);
+        const kApex = 1 - Math.exp(-dt * 9);
+        const apexTarget = steer * (bumper ? 0.12 : 0.15) * (0.35 + 0.65 * s01);
+        sh._apexYaw = (sh._apexYaw || 0) + (apexTarget - (sh._apexYaw || 0)) * kApex;
+        const diveTarget = brake * (bumper ? 0.05 : 0.07) * s01;
+        sh._camDive = (sh._camDive || 0) + (diveTarget - (sh._camDive || 0)) * kApex;
+        const fwd = bumper ? 2.02 : 0.35;
+        const up = (bumper ? 0.68 : 1.28) - sh._camDive * 0.45;
+        const camX = x + fx * fwd;
+        const camZ = z + fz * fwd;
+        const camY = Math.max(h + rise * fwd + up, h + 0.45);
+        const lookH = heading + sh._apexYaw;
+        const lfx = Math.cos(lookH), lfz = Math.sin(lookH);
+        const ahead = bumper ? 14 : 16;
+        sh.camera.position.set(camX, camY, camZ);
+        sh.camera.lookAt(camX + lfx * ahead, camY + rise * ahead - sh._camDive * 1.4 - (bumper ? 0.15 : 0.35), camZ + lfz * ahead);
+        return;
+    }
     if (mode === 'chase' || mode === 'far') {
         const far = mode === 'far';
-        const s01 = Math.min(1, Math.abs(Number(p.speed) || 0) / 140);
+        const s01 = Math.min(1, Math.abs(Number(p.speed) || 0) / 560);
         const back = (far ? 13 : 7.4) + s01 * (far ? 2 : 1.6);
         const up = (far ? 5.2 : 2.35) + s01 * 0.25;
         const target = sh._v.set(x - fx * back, h - rise * back + up, z - fz * back);

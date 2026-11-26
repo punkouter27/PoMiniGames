@@ -74,42 +74,46 @@ function placed(ctx, dest, pan, holdMs) {
  */
 export async function playTone(freq, ms, gain, type, pan) {
     try {
-        // Global master mute (settings gear in the top bar; see SettingsService).
         if (AudioBus.isMuted()) return;
-        const ctx = await getCtx();
-        const bus = await out();
-        if (!ctx || !bus) return;
-        const dest = placed(ctx, bus, pan, ms);
-        const t0 = ctx.currentTime;
-        const dur = ms / 1000;
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = type || 'triangle';
-        osc.frequency.value = freq;
-        g.gain.setValueAtTime(0, t0);
-        g.gain.linearRampToValueAtTime(gain, t0 + 0.005);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        osc.connect(g).connect(dest);
-        osc.start(t0);
-        osc.stop(t0 + dur);
+        const dur = Math.max(0.015, (ms || 60) / 1000);
+        await Dsp.play({
+            wave: type || 'triangle',
+            freq,
+            dur,
+            attack: 0.004,
+            decay: dur * 0.85,
+            sustain: 0,
+            release: Math.min(0.06, dur * 0.35),
+            gain: gain ?? 0.06,
+            pan: pan ? Math.max(-1, Math.min(1, pan)) : 0,
+        }, 'ui');
     } catch { /* AudioContext unavailable — fail silently. */ }
 }
 
 /**
- * Play a chord (multiple tones fired simultaneously).
+ * Play a chord (multiple tones fired simultaneously on the AudioWorklet voice pool).
  * @param {number[]} freqs
  * @param {number} ms
  * @param {number} gain
  */
 export async function playChord(freqs, ms, gain) {
-    for (const f of freqs) {
-        playTone(f, ms, gain, 'triangle');
-    }
+    if (!freqs || !freqs.length || AudioBus.isMuted()) return;
+    const dur = Math.max(0.02, (ms || 90) / 1000);
+    await Dsp.playAll(freqs.map((f) => ({
+        wave: 'triangle',
+        freq: f,
+        dur,
+        attack: 0.005,
+        decay: dur * 0.85,
+        sustain: 0,
+        release: 0.04,
+        gain: gain ?? 0.05,
+    })), 'ui');
 }
 
 /**
- * Play a frequency sweep from fromHz → toHz over ms milliseconds.
- * Used for swipe-back feedback (downsweep = leaving the page).
+ * Play a frequency sweep from fromHz → toHz over ms milliseconds via the AudioWorklet.
+ * Used for swipe-back and hub launch transitions.
  * @param {number} fromHz
  * @param {number} toHz
  * @param {number} ms
@@ -118,40 +122,51 @@ export async function playChord(freqs, ms, gain) {
  */
 export async function playSweep(fromHz, toHz, ms, gain, type) {
     try {
-        const ctx = await getCtx();
-        const dest = await out();
-        if (!ctx || !dest) return;
-        const t0 = ctx.currentTime;
-        const dur = ms / 1000;
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = type || 'triangle';
-        osc.frequency.setValueAtTime(fromHz, t0);
-        osc.frequency.exponentialRampToValueAtTime(Math.max(toHz, 20), t0 + dur);
-        g.gain.setValueAtTime(0, t0);
-        g.gain.linearRampToValueAtTime(gain, t0 + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        osc.connect(g).connect(dest);
-        osc.start(t0);
-        osc.stop(t0 + dur);
+        if (AudioBus.isMuted()) return;
+        const dur = Math.max(0.02, (ms || 100) / 1000);
+        await Dsp.play({
+            wave: type || 'triangle',
+            freq: fromHz,
+            freqEnd: Math.max(toHz, 20),
+            sweep: dur,
+            dur,
+            attack: 0.008,
+            decay: dur * 0.85,
+            sustain: 0,
+            release: 0.03,
+            gain: gain ?? 0.05,
+        }, 'ui');
     } catch { /* fail silently */ }
 }
 
 /**
- * Play an arpeggio (sequential notes with individual durations).
- * Used for personal-best celebration.
+ * Play an arpeggio (sequential notes scheduled atomically on the AudioWorklet clock).
+ * Used for personal-best celebration and rank changes.
  * @param {number[]} freqs
  * @param {number[]} durationsMs
  * @param {number} gain
  */
 export async function playArpeggio(freqs, durationsMs, gain) {
-    let delay = 0;
+    if (!freqs || !freqs.length || AudioBus.isMuted()) return;
+    let delaySec = 0;
+    const items = [];
     for (let i = 0; i < freqs.length; i++) {
-        const f = freqs[i];
         const ms = durationsMs[i] || 80;
-        setTimeout(() => playTone(f, ms, gain, 'triangle'), delay);
-        delay += ms - 10; // small overlap so notes blend
+        const dur = Math.max(0.02, ms / 1000);
+        items.push({
+            wave: 'triangle',
+            freq: freqs[i],
+            dur,
+            delay: delaySec,
+            attack: 0.004,
+            decay: dur * 0.85,
+            sustain: 0,
+            release: 0.03,
+            gain: gain ?? 0.06,
+        });
+        delaySec += Math.max(0.01, (ms - 10) / 1000);
     }
+    await Dsp.playAll(items, 'ui');
 }
 
 /**
@@ -436,6 +451,37 @@ export function notifyCue(level = 'info', x) {
     return playTone(987.77, 120, 0.05, 'sine', pan);
 }
 
+/** Spatialized modal-resonator page-turn cue: rising right for next, falling left for previous. */
+export function pageTurnCue(dir = 1) {
+    const d = dir >= 0 ? 1 : -1;
+    const pan = d * 0.35;
+    const f0 = d > 0 ? 523.25 : 659.25;
+    const f1 = d > 0 ? 659.25 : 523.25;
+    return Dsp.playAll([
+        { wave: 'modal', freq: f0, dur: 0.055, attack: 0.003, decay: 0.05, gain: 0.04, pan: -pan * 0.4 },
+        { wave: 'modal', freq: f1, dur: 0.075, delay: 0.032, attack: 0.003, decay: 0.07, gain: 0.045, pan },
+    ], 'ui');
+}
+
+let _lastSliderAt = 0;
+/** Subtle pitch-mapped modal tick for slider / range drags (throttled to 35 ms). */
+export function sliderTickCue(ratio = 0.5, x) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - _lastSliderAt < 35) return Promise.resolve();
+    _lastSliderAt = now;
+    const r = Math.max(0, Math.min(1, Number(ratio) || 0));
+    const pan = screenPan(x, typeof window !== 'undefined' ? window.innerWidth : 0);
+    return Dsp.play({
+        wave: 'modal',
+        freq: 380 + r * 520,
+        dur: 0.03,
+        attack: 0.002,
+        decay: 0.028,
+        gain: 0.03,
+        pan,
+    }, 'ui');
+}
+
 // Delegated listener. Markup opts in with:
 //   data-sonify            — this element (and siblings with the same attr) is a list item
 //   data-sonify="countdown" with data-sonify-value="3"  — reads a countdown tick on change
@@ -536,6 +582,8 @@ if (typeof window !== 'undefined') {
         countdownCue,
         rankChangeCue,
         notifyCue,
+        pageTurnCue,
+        sliderTickCue,
         navPitch,
         screenPan,
     };

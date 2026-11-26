@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- po-dev.html — this app's developer window (this repo owns it). Opened by Tab via js/po-devwindow.js. -->
+<!-- po-dev.html — this app's consolidated developer window (Tab via js/po-devwindow.js, or pop-out from GameDebugOverlay). -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -21,6 +21,10 @@
     .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center;
            background: var(--po-surface); border: 1px solid var(--po-border); border-radius: var(--po-radius-sm); padding: 6px 10px; font-size: var(--po-text-sm); }
     .row code { font-family: var(--po-font-mono); color: var(--po-text-muted); font-size: var(--po-text-xs); }
+    canvas { display: block; width: 100%; height: 64px; border: 1px solid var(--po-border); border-radius: var(--po-radius-sm); }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; font-size: var(--po-text-sm); }
+    dt { color: var(--po-text-muted); }
+    dd { margin: 0; font-family: var(--po-font-mono); font-variant-numeric: tabular-nums; }
     ol { margin: 0; padding-left: 18px; font-family: var(--po-font-mono); font-size: var(--po-text-xs); display: grid; gap: 4px; }
     .empty { color: var(--po-text-muted); font-size: var(--po-text-sm); }
   </style>
@@ -51,7 +55,12 @@
       <div class="stat"><b id="longtasks">–</b><span>long tasks</span></div>
       <div class="stat"><b id="uptime">–</b><span>page open</span></div>
     </div>
+    <canvas id="dw-graph" width="600" height="64" aria-label="Frame rate over the last minute" role="img" hidden></canvas>
     <div class="meta" id="route"></div>
+  </section>
+  <section id="dw-game-section" hidden>
+    <h2>Game diagnostics</h2>
+    <dl id="dw-game"></dl>
   </section>
   <section>
     <h2>Recent errors</h2>

@@ -125,12 +125,12 @@ const impactTags = new Map();
 let lastKerbThud = 0;
 let wasRaisedKerb = false;
 
-// ── Virtual gearbox (render-only; physics.js has no gears) ──────────────────
+// ── Automatic 6-speed gearbox (matches physics.js GEAR_TOP_SPEED × KMH_PER_UNIT) ──
 const IDLE_RPM = 950;
 const REDLINE = 8200;
 const SHIFT_UP = 7700;
 const SHIFT_DOWN = 3700;
-const GEAR_TOP_KMH = [66, 108, 150, 192, 236, 292];
+const GEAR_TOP_KMH = [49, 79, 112, 146, 178, 211];
 
 const player = {
     gear: 1, rpm: IDLE_RPM, load: 0, throttle: 0, lastThrottle: 0,

@@ -55,6 +55,9 @@
     }
 
     // ─── Module state ─────────────────────────────────────────────────────
+    const ROWS = 7;
+    const COLS = 9;
+    const CELLS = ROWS * COLS;
     /** @type {Matter.Engine|null} Created once on init(), lives until reset(). */
     let _engine = null;
     /** @type {HTMLElement|null} The .cf-board element, measured on init(). */
@@ -113,24 +116,24 @@
     /**
      * Measure the live grid. Reads --cf-cell (set by ConnectFivePage.razor.css
      * via `clamp(…)` on the viewport) and the board's bounding rect to get
-     * viewport coordinates for each cell. The grid is 9x9 with `gap: 3px` and
+     * viewport coordinates for each cell. The grid is 9x7 with `gap: 3px` and
      * `padding: 10px` on the board frame.
      */
     function measureBoard(boardEl) {
         _board = boardEl;
         const cellEls = _board.querySelectorAll('.cf-cell');
-        if (cellEls.length < 81) return false;
+        if (cellEls.length < CELLS) return false;
 
         // ── Measure the CELLS, never the CSS variable ────────────────────
         // Parsing `--cf-cell` with
         //     parseFloat(getComputedStyle(board).getPropertyValue('--cf-cell'))
         // does not work: that property is declared as
-        //     clamp(28px, min(calc((100dvh - 310px)/9), calc((100dvw - 100px)/9)), 84px)
+        //     clamp(28px, min(calc((100dvh - 310px)/7), calc((100dvw - 100px)/9)), 84px)
         // and getPropertyValue hands back a custom property's TOKENS, unresolved
         // — the literal "clamp(28px, min(calc(..." string. parseFloat of that is
         // NaN, so a fallback would silently take over and the whole grid would be
         // modelled at the wrong cell size. A 9.55px error per row compounds to
-        // ~76px by row 8, i.e. MORE THAN A FULL ROW: discs stop in the wrong row,
+        // ~57px by row 6, i.e. MORE THAN A FULL ROW: discs stop in the wrong row,
         // and it is invisible at any viewport where the clamp happens to land
         // near the fallback.
         //
@@ -138,14 +141,14 @@
         // truth for size, pitch and origin at once — no variable parsing, no
         // assumptions about gap or padding, and correct at every viewport.
         const c0 = cellEls[0].getBoundingClientRect();
-        const c1 = cellEls[1].getBoundingClientRect();       // next column
-        const c9 = cellEls[9].getBoundingClientRect();       // next row
-        const cLast = cellEls[80].getBoundingClientRect();   // row 8, col 8
+        const c1 = cellEls[1].getBoundingClientRect();              // next column
+        const cNextRow = cellEls[COLS].getBoundingClientRect();     // next row
+        const cLast = cellEls[CELLS - 1].getBoundingClientRect();   // bottom-right cell
         const r = _board.getBoundingClientRect();
 
         const cellSize = c0.width;
         const strideX = (c1.left - c0.left) || cellSize;
-        const strideY = (c9.top - c0.top) || cellSize;
+        const strideY = (cNextRow.top - c0.top) || cellSize;
         const gap = strideY - cellSize;
         const gridLeft = c0.left;
         const gridTop = c0.top;
@@ -160,8 +163,8 @@
         // Pre-compute cell centres. Every matter.js body — the falling disc, the
         // column walls, the pile plank — is placed off these.
         const cells = [];
-        for (let row = 0; row < 9; row++) {
-            for (let col = 0; col < 9; col++) {
+        for (let row = 0; row < ROWS; row++) {
+            for (let col = 0; col < COLS; col++) {
                 cells.push({
                     row, col,
                     cx: gridLeft + col * strideX + cellSize / 2,
@@ -202,7 +205,7 @@
     function cellAt(row, col) {
         if (!_board) return null;
         const cells = _board.querySelectorAll('.cf-cell');
-        return cells.length < 81 ? null : cells[row * 9 + col];
+        return cells.length < CELLS ? null : cells[row * COLS + col];
     }
 
     // ─── Engine + walls ───────────────────────────────────────────────────
@@ -579,8 +582,8 @@
     function dropDisc(col, targetRow, color) {
         const decline = () => { suppressKeyframe(false); return false; };
         if (!enabled() || !_active || !_layout || !_engine) return decline();
-        if (typeof col !== 'number' || col < 0 || col > 8) return decline();
-        if (typeof targetRow !== 'number' || targetRow < 0 || targetRow > 8) return decline();
+        if (typeof col !== 'number' || col < 0 || col >= COLS) return decline();
+        if (typeof targetRow !== 'number' || targetRow < 0 || targetRow >= ROWS) return decline();
         // Cancel any in-flight drop. Two simultaneous drops would compete for
         // the clone element; the caller is responsible for not double-tapping.
         if (_drop) cancelDrop();

@@ -39,10 +39,14 @@
                     title="@(s == 0 ? "Pause (0)" : $"{s}× speed ({(s == 4 ? 3 : s)})")" aria-label="@(s == 0 ? "Pause" : $"{s} times speed")"
                     Click="() => OnSpeed.InvokeAsync(s)">@if (s == 0) { <span class="material-symbols-outlined" aria-hidden="true">pause</span> } else { @($"{s}×") }</PoButton>
         }
-        <PoButton class="poeco-pill" title="Fast-forward the island by 1 year" aria-label="Skip 1 year"
-                Click="() => OnFastForward.InvokeAsync(1)">+1y</PoButton>
-        <PoButton class="poeco-pill" title="Fast-forward the island by 5 years" aria-label="Skip 5 years"
-                Click="() => OnFastForward.InvokeAsync(5)">+5y</PoButton>
+        <RadzenSplitButton Text="+1y" Size="ButtonSize.ExtraSmall" class="poeco-ff-split"
+                           title="Fast-forward the island (click for +1 year, menu for +5 years)"
+                           aria-label="Fast-forward 1 year"
+                           Click="@(item => OnFastForward.InvokeAsync(item?.Value == "5" ? 5 : 1))">
+            <ChildContent>
+                <RadzenSplitButtonItem Text="+5 years" Value="5" />
+            </ChildContent>
+        </RadzenSplitButton>
     </div>
 
     <PoButton class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"

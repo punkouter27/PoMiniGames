@@ -184,7 +184,7 @@ public class OnlineModesUiTests
         // before the first streamed frame (v4 audit 2026-11-24). Elsewhere the SwiftShader allowance stands: the
         // three.js games need a GL context to get past GameShell's "needs 3D graphics" gate.
         if (!OperatingSystem.IsWindows())
-            options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+            options.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         return await playwright.Chromium.LaunchAsync(options);
     }
 

@@ -155,7 +155,7 @@
     pointer-events: none;
     opacity: 0;
     background: radial-gradient(ellipse at center,
-        color-mix(in srgb, var(--fx-accent, #66b6ff) 45%, #ffffff) 0%,
+        color-mix(in srgb, var(--fx-accent, #66b6ff) 45%, var(--po-white)) 0%,
         color-mix(in srgb, var(--fx-accent, #66b6ff) 30%, transparent) 55%,
         transparent 100%);
     mix-blend-mode: screen;
@@ -236,7 +236,7 @@
     inset: auto 0 -1px 0;
     height: 2px;
     pointer-events: none;
-    background: linear-gradient(90deg, transparent, var(--fx-accent, #6366f1) 30%, var(--fx-accent-2, #22d3ee) 70%, transparent);
+    background: linear-gradient(90deg, transparent, var(--fx-accent, #6366f1) 30%, var(--fx-accent-2, var(--po-cyan)) 70%, transparent);
     opacity: var(--audio-pulse, 0);
     will-change: opacity;
 }
@@ -248,7 +248,7 @@
 }
 
 /* The end-of-game card is read, not glanced at: the scene only tints it. */
-dialog.gps-modal[data-glass-live] { --glass-capture-tint: color-mix(in srgb, var(--color-surface) 86%, transparent); }
+.gps-modal[data-glass-live] { --glass-capture-tint: color-mix(in srgb, var(--color-surface) 86%, transparent); }
 
 /* ===== Hub glass ==============================================================
  * glassFx.ambient() (high tier, no reduced motion) shares one blurred thumbnail of the

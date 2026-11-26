@@ -20,7 +20,12 @@ public static class BrowserLaunch
             // On Windows, draw on the real GPU (ANGLE over D3D11) instead of SwiftShader: under the software
             // rasteriser the 3D games run at a few frames a second, so engines report ready late and time-budget
             // tests (Ecosystem, Mule) failed on a busy machine. Elsewhere Chromium's defaults stand.
-            Args = OperatingSystem.IsWindows() ? ["--use-angle=d3d11", "--ignore-gpu-blocklist"] : [],
+            // Web Audio plays into a fake output (--disable-audio-output): the host PC's audio device sometimes fails
+            // under headless Chromium ("The AudioContext encountered an error from the audio device"), and the error
+            // guard fails any test on that console error. Tests that set their own Args keep this flag too.
+            Args = OperatingSystem.IsWindows()
+                ? ["--disable-audio-output", "--use-angle=d3d11", "--ignore-gpu-blocklist"]
+                : ["--disable-audio-output"],
         };
     }
 }

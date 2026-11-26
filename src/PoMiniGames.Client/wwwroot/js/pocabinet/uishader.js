@@ -164,7 +164,7 @@ function createWebGL2Pass(canvas) {
 async function createWebGpuPass(canvas) {
     if (typeof navigator === 'undefined' || !navigator.gpu) return null;
     try {
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+        const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) return null;
         const device = await adapter.requestDevice();
         const context = canvas.getContext('webgpu');

@@ -9,6 +9,7 @@ import {
 import { RectAreaLightTexturesLib } from 'three-eco/addons/lights/RectAreaLightTexturesLib.js';
 import { createSoftGrid } from '../platform/softChain.js';
 import { spawnBatch } from '../platform/debrisField.js';
+import { createClothGrid, createImpactSoftBody } from '../platform/3d/softBody.js';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
@@ -83,6 +84,17 @@ export function buildArena(scene, quality = {}) {
   grid.material.opacity = 0.55;
   grid.material.transparent = true;
   scene.add(grid);
+
+  // XPBD hanging championship banner + reactive corner soft-body bag (driven by vfx.js hits).
+  const xpbdBanner = createClothGrid({ width: 5.5, height: 1.8, cols: 16, rows: 8, color: 0x1f4596 });
+  xpbdBanner.mesh.position.set(0, 6.8, -7.2);
+  scene.add(xpbdBanner.mesh);
+  scene.userData.xpbdBanner = xpbdBanner;
+
+  const softBag = createImpactSoftBody({ radius: 0.42, subdiv: 1, color: 0xb52b27, opacity: 0.96 });
+  softBag.mesh.position.set(-6.4, 1.4, -6.4);
+  scene.add(softBag.mesh);
+  scene.userData.softBag = softBag;
 
   // The apron: a strong blue skirt round the ring, as at a title fight.
   const ringMat = new THREE.MeshStandardNodeMaterial({

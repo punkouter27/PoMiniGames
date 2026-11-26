@@ -307,6 +307,7 @@ function createBodies(scene, t, capacity, { detail, flat = false, bake = false }
     const mesh = new THREE.SkinnedMesh(geometry, material);
     mesh.bind(skeleton, new THREE.Matrix4());
     mesh.frustumCulled = false;
+    mesh.visible = false;
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
 
@@ -388,7 +389,9 @@ function createBodies(scene, t, capacity, { detail, flat = false, bake = false }
                 skeleton.boneMatrices.fill(0, s * B * 16, (s + 1) * B * 16);
             }
             used = new Set();
-            geometry.setDrawRange(0, (top + 1) * t.indices);
+            const drawCount = (top + 1) * t.indices;
+            mesh.visible = drawCount > 0;
+            geometry.setDrawRange(0, drawCount);
             skeleton.boneTexture.needsUpdate = true;
         },
         dispose() { scene.remove(mesh); geometry.dispose(); material.dispose(); skeleton.dispose(); },

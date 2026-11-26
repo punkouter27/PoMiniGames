@@ -705,12 +705,17 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     floorBody.quaternion.set(q.x, q.y, q.z, q.w);
     addBody(floorBody);
 
+    // Keep the visual berm at WALL_HEIGHT (44), while extending the invisible containment
+    // wall collider higher and thicker on the outside (inner face stays at ±chW/2) so
+    // high-energy bounces or steep flare/pinch transitions never clear or slip past a wall.
+    const WALL_COLLIDER_HEIGHT = 120;
+    const WALL_COLLIDER_THICK = Math.max(TRACK.WALL_THICK, 3.0);
     for (const sgn of [-1, 1]) {
       const wpos = mid.clone()
-        .addScaledVector(rb, sgn * (chW / 2 + TRACK.WALL_THICK / 2))
-        .addScaledVector(up, TRACK.WALL_HEIGHT / 2 - TRACK.FLOOR_THICK / 2);
+        .addScaledVector(rb, sgn * (chW / 2 + WALL_COLLIDER_THICK / 2))
+        .addScaledVector(up, WALL_COLLIDER_HEIGHT / 2 - TRACK.FLOOR_THICK / 2);
       const wallBody = new CANNON.Body({ mass: 0, material: materials.surface });
-      wallBody.addShape(new CANNON.Box(new CANNON.Vec3(TRACK.WALL_THICK / 2, TRACK.WALL_HEIGHT / 2, segLen / 2)));
+      wallBody.addShape(new CANNON.Box(new CANNON.Vec3(WALL_COLLIDER_THICK / 2, WALL_COLLIDER_HEIGHT / 2, segLen / 2)));
       wallBody.position.set(wpos.x, wpos.y, wpos.z);
       wallBody.quaternion.set(q.x, q.y, q.z, q.w);
       addBody(wallBody);

@@ -98,20 +98,19 @@
     private PoRacerCarState? Player => Cars.FirstOrDefault(c => c.Id == PlayerId);
 
     /// <summary>
-    /// The four rows worth reading at speed: the leader, the car ahead, you, the car behind
-    /// (the top four when spectating). The full eight-row table covered the track on a desktop
-    /// and was hidden outright on a phone; this fits both.
+    /// Compact 3-row rival window: car ahead, you, car behind (top 3 when spectating).
+    /// Keeps the corner HUD readable at speed without crowding the driving line.
     /// </summary>
     private IEnumerable<PoRacerCarState> Rows()
     {
-        if (Cars.Count <= 4) return Cars.OrderBy(c => c.Position);
+        if (Cars.Count <= 3) return Cars.OrderBy(c => c.Position);
         var mine = Player?.Position ?? 2;
-        var want = new SortedSet<int> { 1, mine - 1, mine, mine + 1 };
-        for (var reach = 2; want.Count(p => p >= 1 && p <= Cars.Count) < Math.Min(4, Cars.Count); reach++)
+        var want = new SortedSet<int> { mine - 1, mine, mine + 1 };
+        for (var reach = 2; want.Count(p => p >= 1 && p <= Cars.Count) < Math.Min(3, Cars.Count); reach++)
         {
             want.Add(mine + reach);
             want.Add(mine - reach);
         }
-        return Cars.Where(c => want.Contains(c.Position)).OrderBy(c => c.Position).Take(4);
+        return Cars.Where(c => want.Contains(c.Position)).OrderBy(c => c.Position).Take(3);
     }
 }

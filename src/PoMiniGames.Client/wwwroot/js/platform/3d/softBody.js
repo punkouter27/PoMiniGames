@@ -445,3 +445,123 @@ export function createJellyShell(o) {
   };
   return api;
 }
+
+/**
+ * XPBD hanging cloth grid (banners, ring flags, barricade tarps) with wind gusts and radial blast
+ * impulses. Runs on the same SoftBody solver architecture with pinned top-row vertices.
+ * @param {{ width?: number, height?: number, cols?: number, rows?: number, color?: number, doubleSided?: boolean }} [o]
+ */
+export function createClothGrid(o = {}) {
+  const width = o.width ?? 4, height = o.height ?? 2;
+  const cols = Math.max(4, o.cols ?? 24), rows = Math.max(4, o.rows ?? 12);
+  const n = cols * rows;
+  const dx = width / (cols - 1), dy = height / (rows - 1);
+  const pos = new Float32Array(n * 3), prev = new Float32Array(n * 3);
+  const at = (i, j) => (j * cols + i) * 3;
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = at(i, j);
+      pos[k] = prev[k] = -width / 2 + i * dx;
+      pos[k + 1] = prev[k + 1] = -j * dy;
+      pos[k + 2] = prev[k + 2] = 0;
+    }
+  }
+  const indices = [];
+  const links = [];
+  const diag = Math.hypot(dx, dy);
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const a = j * cols + i;
+      if (i + 1 < cols) links.push(a * 3, (a + 1) * 3, dx);
+      if (j + 1 < rows) links.push(a * 3, (a + cols) * 3, dy);
+      if (i + 1 < cols && j + 1 < rows) {
+        links.push(a * 3, (a + cols + 1) * 3, diag);
+        links.push((a + 1) * 3, (a + cols) * 3, diag);
+        indices.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(pos, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', posAttr);
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardNodeMaterial({
+    color: o.color ?? 0x2a4d8f, roughness: 0.78, metalness: 0.05,
+    side: o.doubleSided === false ? THREE.FrontSide : THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+
+  const iters = o.iterations ?? 5;
+  function step(dt, windZ = 0, time = 0) {
+    const h = Math.min(0.033, Math.max(0.001, dt || 0.016));
+    const h2 = h * h, drag = 0.985;
+    for (let j = 1; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const k = at(i, j);
+        const x = pos[k], y = pos[k + 1], z = pos[k + 2];
+        const vx = (x - prev[k]) * drag, vy = (y - prev[k + 1]) * drag, vz = (z - prev[k + 2]) * drag;
+        prev[k] = x; prev[k + 1] = y; prev[k + 2] = z;
+        const gust = 0.6 + 0.4 * Math.sin(time * 2.1 + x * 0.9 + y * 0.6);
+        pos[k] = x + vx;
+        pos[k + 1] = y + vy - 9.81 * h2;
+        pos[k + 2] = z + vz + windZ * gust * h2;
+      }
+    }
+    for (let it = 0; it < iters; it++) {
+      for (let l = 0; l < links.length; l += 3) {
+        const a = links[l], b = links[l + 1], rest = links[l + 2];
+        const rx = pos[b] - pos[a], ry = pos[b + 1] - pos[a + 1], rz = pos[b + 2] - pos[a + 2];
+        const d = Math.hypot(rx, ry, rz) || 1e-6;
+        const diff = (d - rest) / d;
+        const pinA = a < cols * 3, pinB = b < cols * 3;
+        if (pinA && pinB) continue;
+        const wa = pinA ? 0 : (pinB ? 1 : 0.5);
+        const wb = pinB ? 0 : (pinA ? 1 : 0.5);
+        pos[a] += rx * diff * wa; pos[a + 1] += ry * diff * wa; pos[a + 2] += rz * diff * wa;
+        pos[b] -= rx * diff * wb; pos[b + 1] -= ry * diff * wb; pos[b + 2] -= rz * diff * wb;
+      }
+    }
+    posAttr.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
+
+  function blast(lx, ly, lz, strength = 12, radius = 3.5) {
+    const r2 = radius * radius;
+    for (let j = 1; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const k = at(i, j);
+        const dx0 = pos[k] - lx, dy0 = pos[k + 1] - ly, dz0 = pos[k + 2] - lz;
+        const d2 = dx0 * dx0 + dy0 * dy0 + dz0 * dz0;
+        if (d2 >= r2) continue;
+        const d = Math.sqrt(d2) || 0.01;
+        const f = (1 - d / radius) * strength * 0.016;
+        prev[k] -= (dx0 / d) * f;
+        prev[k + 1] -= (dy0 / d) * f;
+        prev[k + 2] -= (dz0 / d) * f;
+      }
+    }
+  }
+
+  return { mesh, geometry: geo, material: mat, step, blast, dispose() { geo.dispose(); mat.dispose(); } };
+}
+
+/**
+ * Direct-impulse XPBD soft-body prop (PoBrawl punching bags, PoCabinet deformable bumpers).
+ * @param {object} o { radius, subdiv=2, color, ...SoftBody options }
+ */
+export function createImpactSoftBody(o = {}) {
+  const shell = createJellyShell({ opacity: o.opacity ?? 0.95, ...o });
+  let pendingAx = 0, pendingAy = 0, pendingAz = 0;
+  return {
+    ...shell,
+    push(ix, iy, iz) { pendingAx += ix; pendingAy += iy; pendingAz += iz; },
+    stepImpact(dt) {
+      shell.body.step(dt, pendingAx, pendingAy, pendingAz);
+      pendingAx *= 0.25; pendingAy *= 0.25; pendingAz *= 0.25;
+    },
+  };
+}

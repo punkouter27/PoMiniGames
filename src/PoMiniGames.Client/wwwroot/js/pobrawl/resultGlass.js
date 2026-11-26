@@ -254,7 +254,7 @@ class ResultGlassMethods {
     const rg = this._rg;
     if (rg.g) {
       rg.t += dt;
-      const open = rg.dialog && rg.dialog.isConnected && rg.dialog.open;
+      const open = Boolean(rg.dialog && rg.dialog.isConnected && (rg.dialog.tagName !== 'DIALOG' || rg.dialog.open));
       if (!open && !rg.closing) rg.closing = 0.0001;
       if (rg.closing) {
         rg.closing += dt;
@@ -264,7 +264,7 @@ class ResultGlassMethods {
     }
     if (!rg.armed || this.phase !== 'result' || rg.want) return;
     if (++rg.poll % POLL_FRAMES) return;
-    const d = document.querySelector('dialog.gps-modal[open]');
+    const d = document.querySelector('.gps-modal[data-po-dialog="gameover"], dialog.gps-modal[open]');
     if (!d) return;
     rg.armed = false;
     // Low tier keeps the modal's own backdrop-filter; nothing to build.

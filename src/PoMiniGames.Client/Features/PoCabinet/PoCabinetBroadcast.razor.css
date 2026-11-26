@@ -13,7 +13,7 @@
 .pocabinet-bc {
     --bc-panel: rgba(8, 12, 24, 0.8);
     --bc-row: rgba(255, 255, 255, 0.06);
-    --bc-text: #ffffff;
+    --bc-text: var(--po-white);
     --bc-muted: rgba(255, 255, 255, 0.72);
     --bc-focus: #ffd23f;
     --bc-live: #ff3b3b;

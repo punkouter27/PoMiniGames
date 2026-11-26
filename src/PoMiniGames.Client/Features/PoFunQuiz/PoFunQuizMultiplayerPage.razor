@@ -54,12 +54,7 @@
                 {
                     <label class="lobby-inline-opt">
                         <span>Category</span>
-                        <select aria-label="Category" value="@HostCategory" @onchange="OnCategoryChanged">
-                            @foreach (var c in FunQuizCategories.All)
-                            {
-                                <option value="@c.Value">@c.Label</option>
-                            }
-                        </select>
+                        <PoSelect AriaLabel="Category" Options="@CategoryOptions" Value="@HostCategory" ValueChanged="OnCategoryChanged" />
                     </label>
                 }
                 else
@@ -197,9 +192,11 @@
     // Repaints the host's picks for the guest as they change.
     private Task OnLobbyStateAsync(LobbyState<FunQuizLobbyPlayer> _) => Task.CompletedTask;
 
-    private Task OnCategoryChanged(ChangeEventArgs e)
+    private static readonly IReadOnlyList<(string Value, string Text)> CategoryOptions = [.. FunQuizCategories.All.Select(c => (c.Value, c.Label))];
+
+    private Task OnCategoryChanged(string picked)
     {
-        var category = e.Value?.ToString() ?? FunQuizCategories.Default;
+        var category = string.IsNullOrEmpty(picked) ? FunQuizCategories.Default : picked;
         LocalStorageService.SetItem(FunQuizCategories.StorageKey, category);
         return _lobby?.SendAsync("SetOptions", category, HostQuestionCount) ?? Task.CompletedTask;
     }

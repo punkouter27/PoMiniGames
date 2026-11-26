@@ -14,7 +14,7 @@ public class ConnectFiveBoard
     public const int WinLength = ConnectFiveRules.BoardWinLength;
 
     // Flat Piece[Rows * Cols] storage rather than a jagged Piece[Rows][]:
-    // 81 contiguous pieces > 9 array headers, and one allocation per Place().
+    // 63 contiguous pieces > 7 array headers, and one allocation per Place().
     // Array.Copy is intrinsified by the JIT and runs at memory-bandwidth speed.
     private readonly Piece[] _cells;
 

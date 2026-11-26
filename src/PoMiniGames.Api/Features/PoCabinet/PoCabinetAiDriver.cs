@@ -38,22 +38,22 @@ namespace PoMiniGames.Features.PoCabinet;
 public static class PoCabinetAiDriver
 {
     /// <summary>Gap it keeps to the car ahead (centres; hulls touch at 39) and the braking it plans on.</summary>
-    private const double FollowGap = 44;
-    private const double FollowDecel = 80;
+    private const double FollowGap = 48;
+    private const double FollowDecel = 200;
     /// <summary>How far up the road it looks for traffic.</summary>
-    private const double Range = 170;
+    private const double Range = 320;
     /// <summary>A driver's lapses are drawn once per stretch of road this long, and last this far into it.</summary>
     private const double LapseStretch = 380;
     private const double LapseLength = 170;
     /// <summary>How far over its own pace a car lets a descent carry it before it brakes for it.</summary>
-    private const double RunOn = 30;
+    private const double RunOn = 75;
     /// <summary>How far ahead it starts picking its side of a road divider, and how wide it keeps of it.</summary>
-    private const double IslandLook = 320;
+    private const double IslandLook = 420;
     private const double IslandClear = 14;
     /// <summary>Braking points: the deceleration a driver plans on, from a cautious one's to (+ the
     /// late share) a late braker's. Well under <see cref="PoCabinetPhysics.BrakeDecel"/>.</summary>
-    private const double BrakePlan = 60;
-    private const double BrakePlanLate = 40;
+    private const double BrakePlan = 160;
+    private const double BrakePlanLate = 110;
     /// <summary>How much of the track's racing line a driver follows, and how far (a share of the half
     /// width) its own <c>LateralOffset</c> sets it off that line, so a hundred cars are not all on one
     /// line (the whole line packed the field onto the apexes and into each other).</summary>
@@ -133,10 +133,10 @@ public static class PoCabinetAiDriver
             if (SplitBy(track, car, other)) continue;
             double dx = other.X - car.X, dy = other.Y - car.Y;
             double fwd = dx * hx + dy * hy, side = dy * hx - dx * hy;
-            if (fwd > -44 && fwd < 44)
+            if (fwd > -48 && fwd < 48)
             {
-                if (side > 12 && side < 30) right = true;
-                else if (side < -12 && side > -30) left = true;
+                if (side > 11 && side < 34) right = true;
+                else if (side < -11 && side > -34) left = true;
             }
             // Blue flag: the nearest car close behind on the road, near its lane, that is really a
             // lap or more ahead and coming up on it.
@@ -198,6 +198,32 @@ public static class PoCabinetAiDriver
             if ((lateralTarget - car.Lateral) * away < 0) lateralTarget = car.Lateral;
             lateralTarget += away * hw * BlueStep;
         }
+        else if (count == 0 && personality.Aggression >= 0.5)
+        {
+            // Receding-horizon defensive cover (#8): if a same-lap rival is closing within 1.5 s
+            // behind and not alongside, make one legal defensive shift toward the inside apex.
+            PoCabinetCarBody? pursuer = null;
+            double closestBehind = -90;
+            for (int i = 0; i < field.Length; i++)
+            {
+                var other = field[i];
+                if (ReferenceEquals(other, car) || other.Wrecked) continue;
+                double d = other.Along - car.Along;
+                if (d > half) d -= track.Length;
+                else if (d < -half) d += track.Length;
+                if (d < -14 && d > closestBehind && Math.Abs(other.Distance - car.Distance) < half
+                    && RoadSpeed(track, other) > own + 1.5)
+                {
+                    closestBehind = d;
+                    pursuer = other;
+                }
+            }
+            if (pursuer is not null && !left && !right)
+            {
+                double apexLane = track.LineAt(track.IndexAt(car.Along + look * 1.4)) * LineWeight;
+                lateralTarget = 0.55 * apexLane + 0.45 * pursuer.Lateral;
+            }
+        }
         lateralTarget = Math.Min(edge, Math.Max(-edge, lateralTarget));
         // A lapse: off its line and out over the edge of the road.
         double lapsing = Lapse(personality, car.Distance);
@@ -255,6 +281,12 @@ public static class PoCabinetAiDriver
         if (blue is not null) target = target * BlueLift;
 
         double throttle = v < target - 3 ? 1 : v < target ? 0.35 : 0;
+        // Slight deterministic launch reaction spread off the grid so the pack launches organically.
+        if (car.Distance < 0 && v < 8 && throttle > 0)
+        {
+            int seed = personality.Seed > 0 ? personality.Seed : 1;
+            throttle *= 0.72 + 0.28 * (((seed * 37) % 100) / 100.0);
+        }
         double brake = v > limit + 4
             ? Math.Min(1, Math.Max(0.15, (v - limit) / 18 * (0.6 + personality.BrakingAggression * 0.8)))
             : 0;

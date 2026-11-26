@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo reel UI - before and after</title>
+<style>
+body { margin: 24px; font: 16px system-ui; color: #182331; background: #f0f4f8; }
+main { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+section { padding: 16px; border-radius: 16px; background: white; }
+.phone { position: relative; width: 320px; max-width: 100%; height: 360px; overflow: hidden; background: #e9edf2; }
+header { display: flex; justify-content: space-between; padding: 12px; background: white; white-space: nowrap; }
+.toolbar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px; border-radius: 24px; background: white; white-space: nowrap; }
+button { flex-shrink: 0; width: 36px; height: 36px; border: 1px solid #cbd3dd; border-radius: 50%; background: #f8fafc; }
+.after .toolbar { display: grid; grid-template-columns: repeat(5, 44px); border-radius: 16px; }
+.after .name { grid-column: span 3; }
+.after .count { grid-column: span 2; text-align: right; }
+.after button { width: 44px; height: 44px; }
+.tour { position: absolute; bottom: 16px; left: 16px; right: 16px; padding: 12px; background: white; border: 1px solid #bbb; border-radius: 12px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; font: 13px monospace; }
+.cards div { padding: 8px; background: white; }
+img { max-width: 100%; height: auto; }
+</style>
+<h1>Demo reel UI - before and after</h1>
+<p>Responsive mockups and annotated browser evidence from the local app.</p>
+<main>
+<section><h2>Before: narrow toolbar</h2><div class="phone">
+<header><strong>PoMiniGames</strong><span>Sand Playground</span></header>
+<div class="toolbar"><span>Sand Playground</span><span>paused</span><button>Prev</button><button>Play</button><button>Next</button><button>Mute</button><button>Exit</button></div>
+</div><p>Title and exit target extend beyond the viewport.</p></section>
+<section><h2>After: narrow toolbar</h2><div class="phone after">
+<header><strong aria-label="PoMiniGames">PM</strong><span>Sand Playground</span></header>
+<div class="toolbar"><span class="name">Sand Playground</span><span class="count">60s</span><button>Prev</button><button>Play</button><button>Next</button><button>Mute</button><button>Exit</button></div>
+</div><p>Two rows keep all five 44px touch targets visible.</p></section>
+<section><h2>Before: Ecosystem onboarding</h2><div class="phone">
+<div class="tour">Look around<p>Waiting for you to try it...</p><button>Next</button></div>
+<div class="toolbar">Ecosystem <button>Prev</button><button>Play</button><button>Next</button><button>Mute</button><button>Exit</button></div>
+</div><p>The tour and reel compete for the same bottom space.</p></section>
+<section><h2>After: unattended Ecosystem</h2><div class="phone after">
+<p style="padding:16px">The cinematic camera runs without an interactive tour.</p>
+<div class="toolbar"><span class="name">Ecosystem</span><span class="count">60s</span><button>Prev</button><button>Play</button><button>Next</button><button>Mute</button><button>Exit</button></div>
+</div><p>Regular standalone visits still offer onboarding; an explicitly opened tour clears the reel.</p></section>
+<section><h2>Before: Mule</h2><p>Eight tiny player columns share the full-width canvas, with the reel obscuring bottom stats on desktop.</p></section>
+<section><h2>After: Mule portrait</h2><div class="cards">
+<div>FARMER<br>$1039<br>F4 E1 S0 C0</div><div>INDUSTRIAL<br>$1197<br>F1 E1 S0 C0</div>
+<div>HOARDER<br>$1043<br>F5 E1 S0 C0</div><div>GAMBLER<br>$989<br>F2 E1 S0 C0</div>
+</div><p>The map stays intact; player cards use readable text above reserved reel space.</p></section>
+</main>
+<h2>Actual browser comparison</h2>
+<img src="261107-demo-ui.png" alt="Annotated before and after screenshots of toolbar, Ecosystem and Mule">
+</html>

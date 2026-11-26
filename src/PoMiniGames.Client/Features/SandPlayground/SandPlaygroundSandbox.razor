@@ -214,14 +214,14 @@
                                     Click="() => SetSunAsync(sk)">@sk</PoButton>
                         }
                     </div>
-                    <label class="sp-row">
+                    <div class="sp-row">
                         <span class="sp-dim">Wind</span>
-                        <input type="range" min="-100" max="100" step="10" value="@Wind" @oninput="OnWindAsync" />
-                    </label>
-                    <label class="sp-row" title="Past halfway it is a thunderstorm: lightning fuses dry sand to glass">
+                        <RadzenSlider TValue="int" Min="-100" Max="100" Step="10" Value="@Wind" Change="@OnWindAsync" HandleLabel="Wind" />
+                    </div>
+                    <div class="sp-row" title="Past halfway it is a thunderstorm: lightning fuses dry sand to glass">
                         <span class="sp-dim">Rain</span>
-                        <input type="range" min="0" max="100" step="10" value="@Rain" @oninput="OnRainAsync" />
-                    </label>
+                        <RadzenSlider TValue="int" Min="0" Max="100" Step="10" Value="@Rain" Change="@OnRainAsync" HandleLabel="Rain" />
+                    </div>
                     <div class="sp-row" title="Bombs, debris and falling concrete. Sand and water cells are unaffected.">
                         <span class="sp-dim">Gravity</span>
                         @foreach (var g in Gravities)

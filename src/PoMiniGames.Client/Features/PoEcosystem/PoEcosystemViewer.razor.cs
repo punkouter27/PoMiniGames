@@ -481,14 +481,10 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         }
     }
 
-    private Task OnPhotoFovInputAsync(ChangeEventArgs e)
+    private Task OnPhotoFovInputAsync(double fov)
     {
-        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fov))
-        {
-            _photoFov = Math.Clamp(fov, 30, 95);
-            return Interop.SetFovAsync(_photoFov).AsTask();
-        }
-        return Task.CompletedTask;
+        _photoFov = Math.Clamp(fov, 30, 95);
+        return Interop.SetFovAsync(_photoFov).AsTask();
     }
 
     private async Task CapturePostcardAsync()

@@ -368,8 +368,36 @@ export function createPostStack(lib, renderer, scene, camera, opts = {}) {
         } catch (err) { feat.streak = false; console.warn('[postStack] streak unavailable:', err?.message || err); }
     }
 
+    // ── gameplay vignette, danger desat & anticipation bloom (uniform-driven) ──
+    const uVignette = uniform(opts.vignette ?? 0);
+    const uDanger = uniform(0);
+    const uBloomBoost = uniform(0);
+    {
+        const dist = uv().sub(vec2(0.5, 0.5)).length();
+        const vigMask = clamp(dist.sub(0.32).mul(1.85), 0, 1);
+        const vigAmt = vigMask.mul(vigMask).mul(clamp(uVignette.add(uDanger.mul(0.45)), 0, 0.85));
+        const luma = dot(hdr.rgb, vec3(0.2126, 0.7152, 0.0722));
+        const desatRgb = mix(hdr.rgb, vec3(luma), clamp(uDanger.mul(0.55), 0, 0.65));
+        const dangerTint = mix(desatRgb, desatRgb.mul(vec3(1.08, 0.86, 0.86)), clamp(uDanger.mul(0.5), 0, 0.5));
+        const boosted = dangerTint.mul(float(1).add(clamp(uBloomBoost, 0, 0.35)));
+        hdr = vec4(boosted.mul(float(1).sub(vigAmt)), hdr.a);
+    }
+
     out.node = hdr;
     out.active = !!(feat.traa || feat.exposure || feat.flare || feat.streak || feat.ssgi || feat.ssr);
+    /** Drive per-frame gameplay post uniforms (vignette 0..1, danger 0..1, bloomBoost 0..0.35). */
+    out.setGameplayFx = ({ vignette, danger, bloomBoost } = {}) => {
+        const calm = reduceFlashing() || reducedMotion();
+        if (Number.isFinite(vignette)) uVignette.value = Math.max(0, Math.min(0.85, vignette));
+        if (Number.isFinite(danger)) uDanger.value = Math.max(0, Math.min(1, calm ? danger * 0.45 : danger));
+        if (Number.isFinite(bloomBoost)) uBloomBoost.value = Math.max(0, Math.min(0.35, calm ? bloomBoost * 0.25 : bloomBoost));
+    };
+    /** Apply an Anticipation.sample() envelope directly onto this stack. */
+    out.applyAnticipation = (env) => {
+        if (!env || !env.active) { uBloomBoost.value = 0; return; }
+        const calm = reduceFlashing() || reducedMotion();
+        uBloomBoost.value = Math.max(0, Math.min(0.35, (env.bloom || 0) * (calm ? 0.12 : 0.28)));
+    };
 
     // ── dynamic resolution ─────────────────────────────────────────────────
     let baseDpr = (typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 1) || 1;

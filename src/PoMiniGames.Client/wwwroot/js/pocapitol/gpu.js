@@ -12,7 +12,7 @@ export function gpuDevice() {
     if (!navigator.gpu) return Promise.resolve(null);
     pending ??= (async () => {
         try {
-            const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+            const adapter = await navigator.gpu.requestAdapter();
             if (!adapter) return null;
             const device = await adapter.requestDevice();
             device.lost.then(() => { pending = null; });

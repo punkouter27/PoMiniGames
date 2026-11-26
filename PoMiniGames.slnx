@@ -1,8 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/PoMiniGames.Shared/PoMiniGames.Shared.csproj" />
-    <Project Path="src/PoMiniGames.Domain/PoMiniGames.Domain.csproj" />
-    <Project Path="src/PoMiniGames.Infrastructure/PoMiniGames.Infrastructure.csproj" />
     <Project Path="src/PoMiniGames.Client/PoMiniGames.Client.csproj" />
     <Project Path="src/PoMiniGames.Api/PoMiniGames.Api.csproj" />
   </Folder>

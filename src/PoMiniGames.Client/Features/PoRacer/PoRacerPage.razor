@@ -91,10 +91,10 @@
                         </div>
                         @if (CanGhost)
                         {
-                            <label class="racer-ghost-toggle">
-                                <input type="checkbox" checked="@_ghost" @onchange="e => SetGhostAsync(e.Value is true)" />
-                                Ghost: race your best lap on this track
-                            </label>
+                            <div class="racer-ghost-toggle">
+                                <RadzenCheckBox TValue="bool" Value="@_ghost" Change="@((bool on) => SetGhostAsync(on))" AriaLabel="Ghost: race your best lap on this track" />
+                                <span aria-hidden="true" @onclick="() => SetGhostAsync(!_ghost)">Ghost: race your best lap on this track</span>
+                            </div>
                         }
                         @if (!IsDemo) { <PoRacerControls /> }
                     </div>

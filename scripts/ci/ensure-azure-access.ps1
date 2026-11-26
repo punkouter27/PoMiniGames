@@ -1,6 +1,6 @@
 # Makes Azure and GitHub match what PoMiniGames needs: the app identity's roles, the CI deploy identity, and the
 # repo variables the deploy workflow reads. Run by a subscription owner:  pwsh scripts/ci/ensure-azure-access.ps1
-$Repo = 'PoMiniGames'; $Branch = 'master'; $ResourceGroup = 'PoMiniGames'; $App = 'app-pominigames'
+$Repo = 'PoMiniGames'; $Branch = 'master'; $ResourceGroup = 'PoMiniGames'; $App = 'app-5ln5hfdrvof5u-f1win2'
 $Identity = 'system'          # 'system', or the name of a user-assigned identity in PoShared
 $KeyVaultAccess = $true
 $DeployResourceGroups = @('PoMiniGames')

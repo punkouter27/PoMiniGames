@@ -273,8 +273,9 @@
 
     private async Task StartAsync()
     {
-        if (_client is null) return;
+        if (_client is null || _started || _disposed) return;
         try { await _client.StartGameAsync(); }
+        catch (Exception) when (_started || _disposed) { /* gameStarted already tore down the lobby */ }
         catch (Exception) { Toasts.Show("Couldn't start. Try again.", ToastType.Warning); }
     }
 

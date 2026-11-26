@@ -25,6 +25,8 @@ import { WORLD_SCALE } from './util.js';
 import { disposeObject } from './meshes.js';
 import * as TSL from 'three-eco/tsl';
 import { loadSplat } from '../platform/3d/splats.js';
+import { getKtx2Loader } from '../platform/3d/textureLoader.js';
+import { getGltfLoader } from '../platform/3d/gltfLoader.js';
 
 export const COURT = {
     url: 'models/court.glb',
@@ -272,6 +274,8 @@ async function makeViewer(sh, group, url, place, onProgress) {
         return null;
     }
     cloud.object.userData.cloud = cloud;
+    if (sh.camera) cloud.warmSort?.(sh.camera);
+    if (sh.renderer) { getKtx2Loader(sh.renderer).catch(() => {}); getGltfLoader(sh.renderer).catch(() => {}); }
     return cloud.object;
 }
 
@@ -344,5 +348,8 @@ export function setRoomDetail(sh, detail) {
  */
 export function syncRoomSplat(sh) {
     const cloud = sh.roomSplat?.userData?.cloud;
-    if (cloud) cloud.uniforms.lift.value = COURT.splatLift;
+    if (!cloud) return;
+    cloud.uniforms.lift.value = COURT.splatLift;
+    const flash = sh.fx?.lightningFlash || 0;
+    cloud.setLighting?.({ flash });
 }

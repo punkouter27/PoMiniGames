@@ -81,7 +81,7 @@
     border: 1px solid rgba(168, 85, 247, 0.45);
     box-shadow: 0 6px 24px rgba(2, 6, 18, 0.5);
     backdrop-filter: blur(8px);
-    color: #e2e8f0;
+    color: var(--po-slate-light);
     text-align: center;
     transform: translateX(-50%);
     animation: mr-panel-in 0.28s var(--ease-standard, ease-out);
@@ -117,7 +117,7 @@
     font-size: var(--text-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #94a3b8;
+    color: var(--po-slate-muted);
 }
 
 .mr-prerace-line {
@@ -129,7 +129,7 @@
 .mr-prerace-hint {
     margin: 6px 0 0;
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: var(--po-slate-muted);
 }
 
 .mr-prerace-actions {
@@ -154,7 +154,7 @@
 .mr-progress i {
     display: block;
     height: 100%;
-    background: linear-gradient(90deg, #a855f7, #22d3ee);
+    background: linear-gradient(90deg, #a855f7, var(--po-cyan));
     transition: width 0.25s ease-out, opacity 0.4s ease;
 }
 
@@ -163,7 +163,7 @@
 .mr-countdown-num {
     display: inline-block;
     min-width: 1.1em;
-    color: #e2e8f0;
+    color: var(--po-slate-light);
     font-size: 1.05rem;
     font-variant-numeric: tabular-nums;
     animation: mr-tick 1s ease-out;
@@ -171,7 +171,7 @@
 
 @keyframes mr-tick {
     0% { transform: scale(1.35); color: #a855f7; }
-    100% { transform: scale(1); color: #e2e8f0; }
+    100% { transform: scale(1); color: var(--po-slate-light); }
 }
 
 .mr-chip-btn {
@@ -220,7 +220,7 @@
     background: rgba(8, 12, 24, 0.92);
     border: 1px solid rgba(253, 224, 71, 0.5);
     box-shadow: 0 6px 24px rgba(2, 6, 18, 0.55);
-    color: #e2e8f0;
+    color: var(--po-slate-light);
     font-size: 0.85rem;
     text-align: center;
     transform: translateX(-50%);
@@ -247,7 +247,7 @@
     height: 12px;
     vertical-align: middle;
     border-radius: 3px;
-    background: repeating-linear-gradient(115deg, #22d3ee 0 4px, #0e7490 4px 8px);
+    background: repeating-linear-gradient(115deg, var(--po-cyan) 0 4px, #0e7490 4px 8px);
     box-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
 }
 
@@ -266,7 +266,7 @@
     border: 1px solid rgba(34, 211, 238, 0.3);
     box-shadow: 0 4px 14px rgba(2, 6, 18, 0.45);
     backdrop-filter: blur(8px) saturate(1.15);
-    color: #e2e8f0;
+    color: var(--po-slate-light);
     font-family: var(--font-display);
     pointer-events: none;
 }
@@ -284,7 +284,7 @@
 
 .mr-place-field {
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: var(--po-slate-muted);
 }
 
 .mr-split {
@@ -358,7 +358,7 @@
 
 .mr-podium-time {
     margin-left: auto;
-    color: #94a3b8;
+    color: var(--po-slate-muted);
     font-variant-numeric: tabular-nums;
 }
 
@@ -375,7 +375,7 @@
 }
 
 .mr-medal-disc {
-    fill: var(--mr-medal, #94a3b8);
+    fill: var(--mr-medal, var(--po-slate-muted));
     stroke: rgba(2, 6, 18, 0.55);
     stroke-width: 1;
 }
@@ -405,7 +405,7 @@
     .mr-nudge-pads { display: flex; }
 }
 
-.mr-nudge-pad {
+::deep .mr-nudge-pad {
     pointer-events: auto;
     touch-action: none;
     -webkit-user-select: none;
@@ -422,7 +422,7 @@
     transition: transform 0.1s ease, background 0.1s ease;
 }
 
-.mr-nudge-pad:active { transform: scale(0.9); background: rgba(251, 146, 60, 0.25); }
+::deep .mr-nudge-pad:active { transform: scale(0.9); background: rgba(251, 146, 60, 0.25); }
 
 /* ── Setup options (inside the intro card; themed) ── */
 .mr-setup {
@@ -536,8 +536,8 @@
 
 .mr-skin--galaxy .mr-skin-ball {
     background:
-        radial-gradient(circle at 70% 40%, #fff 0 1px, transparent 2px),
-        radial-gradient(circle at 40% 70%, #fff 0 1px, transparent 2px),
+        radial-gradient(circle at 70% 40%, var(--po-white) 0 1px, transparent 2px),
+        radial-gradient(circle at 40% 70%, var(--po-white) 0 1px, transparent 2px),
         radial-gradient(circle at 55% 25%, #fde68a 0 1px, transparent 2px),
         radial-gradient(circle at 32% 30%, #f472b6 0%, #b91c1c 50%, #3b0a0a 100%);
     box-shadow: 0 0 10px rgba(236, 72, 153, 0.55), inset -3px -4px 7px rgba(0, 0, 0, 0.45);
@@ -570,7 +570,7 @@
     }
     .mr-place { top: 8px; left: 8px; }
     .mr-prerace:not(.mr-prerace--center) { top: 8px; }
-    .mr-nudge-pad { width: 50px; height: 50px; }
+    ::deep .mr-nudge-pad { width: 50px; height: 50px; }
 }
 
 /* ── Online: lobby card, series ── */
@@ -666,7 +666,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--po-white);
     transition: transform 150ms var(--ease-standard, ease-out);
 }
 
@@ -698,7 +698,7 @@
 
 ::deep .mr-seg-btn.is-on {
     background: #7c3aed;
-    color: #fff;
+    color: var(--po-white);
 }
 
 .mr-settings-track { margin-top: 8px; }
@@ -792,7 +792,7 @@
     }
     .mr-tutorial ul { gap: 2px; margin-bottom: 6px; }
     .mr-nudge-pads { bottom: 10px; }
-    .mr-nudge-pad { width: 48px; height: 48px; }
+    ::deep .mr-nudge-pad { width: 48px; height: 48px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -814,7 +814,7 @@
     .mr-opt:active:not(:disabled),
     ::deep .mr-seg-btn:active,
     .mr-chip-btn:active,
-    .mr-nudge-pad:active { transform: none; }
+    ::deep .mr-nudge-pad:active { transform: none; }
 }
 
 /* An engine failure: the shared error card, on an opaque backing so it reads over any frame. */
@@ -906,7 +906,7 @@
 }
 
 .mr-podium-card.is-me {
-    outline: 2px solid #22d3ee;
+    outline: 2px solid var(--po-cyan);
     outline-offset: 1px;
 }
 
@@ -914,7 +914,7 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: radial-gradient(circle at 32% 30%, #ffffff 0%, var(--dot, #ef4444) 45%, #0f172a 100%);
+    background: radial-gradient(circle at 32% 30%, var(--po-white) 0%, var(--dot, #ef4444) 45%, #0f172a 100%);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
@@ -1062,13 +1062,13 @@
 @keyframes mr-draw { to { stroke-dashoffset: 0; } }
 
 /* ── #5 touch pads and the effects switch press like real buttons ── */
-.mr-nudge-pad {
+::deep .mr-nudge-pad {
     position: relative;
     overflow: hidden;
     transition: transform 160ms cubic-bezier(.34, 1.56, .64, 1), background 120ms ease, box-shadow 160ms ease;
 }
 
-.mr-nudge-pad:active {
+::deep .mr-nudge-pad:active {
     box-shadow: 0 0 0 6px rgba(251, 146, 60, 0.18), inset 0 0 18px rgba(251, 146, 60, 0.35);
 }
 

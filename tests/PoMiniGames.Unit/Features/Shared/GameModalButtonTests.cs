@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -7,6 +8,8 @@ using Microsoft.JSInterop;
 using PoMiniGamesClient.Features.Shared;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Ui;
+using Radzen;
+using Radzen.Blazor;
 
 namespace PoMiniGames.Unit.Features.Shared;
 
@@ -77,11 +80,28 @@ public sealed class GameModalButtonTests
         services.AddSingleton(new ScreenFxService(js));
         services.AddSingleton(new OnlineStatusService(js));
         services.AddSingleton(new ApiService(new HttpClient { BaseAddress = new Uri("http://localhost/") }));
+        services.AddRadzenComponents();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(provider, NullLoggerFactory.Instance);
         return await renderer.Dispatcher.InvokeAsync(async () =>
-            (await renderer.RenderComponentAsync<T>(ParameterView.FromDictionary(parameters))).ToHtmlString());
+            (await renderer.RenderComponentAsync<DialogTestHost<T>>(
+                ParameterView.FromDictionary(new Dictionary<string, object?> { [nameof(DialogTestHost<T>.Parameters)] = parameters })))
+            .ToHtmlString());
+    }
+
+    private sealed class DialogTestHost<T> : ComponentBase where T : IComponent
+    {
+        [Parameter] public Dictionary<string, object?> Parameters { get; set; } = [];
+
+        protected override void BuildRenderTree(RenderTreeBuilder builder)
+        {
+            builder.OpenComponent<RadzenDialog>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<T>(1);
+            builder.AddMultipleAttributes(2, Parameters.Where(kv => kv.Value is not null).Select(kv => new KeyValuePair<string, object>(kv.Key, kv.Value!)));
+            builder.CloseComponent();
+        }
     }
 
     private sealed class FixedNavigation : NavigationManager

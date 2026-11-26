@@ -76,12 +76,7 @@ else
                     {
                         <label class="lobby-inline-opt">
                             <span>Fighter</span>
-                            <select aria-label="Fighter" value="@_pick" @onchange="OnFighterChangedAsync">
-                                @foreach (var fighter in RosterForPicker)
-                                {
-                                    <option value="@fighter.Id">@fighter.Name</option>
-                                }
-                            </select>
+                            <PoSelect AriaLabel="Fighter" Options="@FighterOptions" Value="@_pick" ValueChanged="OnFighterChangedAsync" />
                         </label>
                     }
                 }
@@ -271,9 +266,11 @@ else
     }
 
     // ── The pick ─────────────────────────────────────────────────────────────────
-    private async Task OnFighterChangedAsync(ChangeEventArgs e)
+    private static readonly IReadOnlyList<(string Value, string Text)> FighterOptions =
+        [.. RosterForPicker.Select(f => (f.Id, f.Name))];
+
+    private async Task OnFighterChangedAsync(string id)
     {
-        var id = e.Value?.ToString();
         if (string.IsNullOrWhiteSpace(id)) return;
         _pick = id;
         await RememberPickAsync();

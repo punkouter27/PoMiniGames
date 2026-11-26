@@ -100,12 +100,12 @@ public class LinkAuditUiTests
     /// <summary>The end card, read like the start card: its one action and no scrolling.</summary>
     private const string EndCardProblems = """
         () => {
-          const card = document.querySelector('dialog.gps-modal[open]');
+          const card = document.querySelector('.gps-modal[data-po-dialog="gameover"]');
           if (!card) return 'is not up';
           const out = [];
           if (card.scrollHeight > card.clientHeight + 1)
             out.push(`scrolls (${card.scrollHeight}px of content in ${card.clientHeight}px)`);
-          const acts = [...card.querySelectorAll('button')].filter(b => !b.closest('details, summary'));
+          const acts = [...card.querySelectorAll('button')].filter(b => !b.closest('details, summary, .rz-accordion'));
           const labels = acts.map(b => b.innerText.replace(/\s+/g, ' ').replace(/ Esc$/, '').trim());
           if (acts.length !== 1 || labels[0] !== 'Back to main menu' || !acts[0].hasAttribute('data-end-action'))
             out.push(`its buttons are [${labels.join(' | ')}], not one "Back to main menu"`);
@@ -297,7 +297,7 @@ public class LinkAuditUiTests
             await desk.WaitForTimeoutAsync(SettleMs);
             if (await desk.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
                 failures.Add($"{route}: at {Desktop.Width}×{Desktop.Height} the start card {problems}");
-            var intro = desk.Locator("dialog.gps-intro-overlay[open]");
+            var intro = desk.Locator(".gps-intro-overlay[data-po-dialog='intro']");
             if (await intro.CountAsync() > 0)
             {
                 var buttons = intro.Locator("button:enabled");
@@ -331,8 +331,8 @@ public class LinkAuditUiTests
         current = "/tictactoe/1player";
         await page.SetViewportSizeAsync(phone.Width, phone.Height);
         await page.GotoAsync(new Uri(origin, current).ToString());
-        await page.Locator("dialog[open] [data-intro-action]").ClickAsync();
-        var result = page.Locator("dialog.gps-modal[open]");
+        await page.Locator("[data-po-dialog='intro'] [data-intro-action]").ClickAsync();
+        var result = page.Locator(".gps-modal[data-po-dialog='gameover']");
         for (var move = 0; move < 36 && !await result.IsVisibleAsync(); move++)
         {
             var openCell = page.Locator(".ttt-cell:not(.disabled)").First;

@@ -11,6 +11,7 @@ import { createConfettiSim, SPLINTERS } from './confettiSim.js';
 import { MAT_HALF } from './constants.js';
 import { SeveredArm } from './ragdollPhysics.js';
 import { stepWorld } from './physics.js';
+import { createGpuParticles } from '../platform/3d/gpuParticles.js';
 
 // Scratch objects so the trail sampler and particle spawns allocate nothing.
 const _trailPos = new THREE.Vector3();
@@ -96,6 +97,13 @@ class VfxMethods {
     slot.power = p;
     slot.dur = 0.2 + 0.08 * p;
     slot.life = slot.dur;
+    // Platform GPU sparks (WebGPU depth-colliding compute or WebGL2 instanced fallback).
+    if (!this._gpuSparks && this.renderer && this.scene && this.camera) {
+      this._gpuSparks = createGpuParticles(this.renderer, this.scene, { camera: this.camera, collide: false });
+    }
+    this._gpuSparks?.emit(point, { x: 0, y: 2.5 + p * 3, z: 0 }, Math.round(14 + p * 28), 'sparks', { spread: 4.2 });
+    this.scene?.userData?.xpbdBanner?.blast?.(point.x, point.y, point.z, 8 + p * 12, 6);
+    this.scene?.userData?.softBag?.push?.(point.x * 80 * p, 60 * p, point.z * 80 * p);
   }
 
   /** Arm the afterimage pass for `secs` at `amount` (0..1 feedback damp). */
@@ -106,6 +114,9 @@ class VfxMethods {
   }
 
   _updateImpactFrames(dt) {
+    this._gpuSparks?.update(dt);
+    this.scene?.userData?.xpbdBanner?.step?.(dt, 1.4, performance.now() * 0.001);
+    this.scene?.userData?.softBag?.stepImpact?.(dt);
     for (const s of this._shockRings || []) {
       if (s.life <= 0) continue;
       s.life -= dt;

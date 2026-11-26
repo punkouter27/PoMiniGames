@@ -4,6 +4,7 @@
 import { PERSONALITIES } from './personalities.js';
 import { PlayerProfile, defaultStorage } from './playerProfile.js';
 import { NGramPredictor, ActionReader, SWING } from './predictor.js';
+import { predictIntentOnnx } from './onnxPredictor.js';
 import { archetypeFor, chooseStance, facts as tacticFacts, scoreTactics, pickWeighted } from './tactics.js';
 //
 // Three layers decide what the CPU does on a tick, in priority order:
@@ -1167,7 +1168,14 @@ export class AiController {
           * (0.25 + 0.75 * this.adapt))
         : 0,
     };
-    const predSwing = this._predSwing();
+    let predSwing = this._predSwing();
+    if (this.rung >= 10 && !this._onnxPending) {
+      this._onnxPending = true;
+      predictIntentOnnx(ctx).then((p) => {
+        if (p) this._onnxSwing = Math.min(1, (p.jab || 0) + (p.cross || 0) + (p.kick || 0));
+      }).catch(() => {}).finally(() => { this._onnxPending = false; });
+    }
+    if (typeof this._onnxSwing === 'number') predSwing = predSwing * 0.6 + this._onnxSwing * 0.4;
     const f = tacticFacts(ctx, mood, predSwing, turtle);
     const st = chooseStance(this.archetype, f);
     const scores = scoreTactics(base, ctx, f, st, 0.3 + 0.7 * this.adapt);

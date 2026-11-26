@@ -259,9 +259,13 @@
     {
         _lastResult = p;
         _phase = Phase.Results;
-        _announcement = p.MatchedPlayers.Contains(_playerName)
-            ? $"You matched. The answer was {p.KingAnswer}."
-            : $"No match. The answer was {p.KingAnswer}.";
+        _announcement = _isKing
+            ? p.MatchedPlayers.Count > 0
+                ? $"{string.Join(", ", p.MatchedPlayers)} matched your answer ({p.KingAnswer})."
+                : $"No one matched your answer ({p.KingAnswer})."
+            : p.MatchedPlayers.Contains(_playerName)
+                ? $"You matched. The answer was {p.KingAnswer}."
+                : $"No match. The answer was {p.KingAnswer}.";
         _ = InvokeAsync(StateHasChanged);
     }
 

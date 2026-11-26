@@ -258,7 +258,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         if (_paused && !_pauseShown)
         {
             _pauseShown = true;
-            await SafeJsAsync("PoCabinet.showModal", "pocabinetPause");
         }
 
         // Not in the demo: drawing the chart also stores the lap as the track's reference
@@ -1081,6 +1080,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         UnwireSessionHandlers();
         _gameCode = null;
         _localCarId = null;
+        _world = null;
+        _finalResult = null;
         // The next race renders new canvases (the section's @key): this one's WebGL context is gone.
         _raceSerial++;
     }

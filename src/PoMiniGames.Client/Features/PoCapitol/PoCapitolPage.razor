@@ -454,7 +454,7 @@
                         <div class="pc-aftermath">
                             <canvas id="pocapitol-aftermath" aria-label="Map of where the crowd stood during the attempt"></canvas>
                         </div>
-                        <div class="pc-report-chart">@((MarkupString)report.svg)</div>
+                        <div class="pc-report-chart">@SanitizeSvg(report.svg)</div>
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Street map">
                         <div class="pc-streetmap" data-state="@_mapState">
@@ -617,13 +617,13 @@
                 </RadzenTabsItem>
 
                 <RadzenTabsItem Text="Comfort">
-                    <label class="pc-small" for="pc-opt-sens">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</label>
-                    <input id="pc-opt-sens" class="pc-range" type="range" min="0.4" max="2.5" step="0.05" style="--p: @(((_prefs.sensitivity - 0.4) / 2.1 * 100).ToString("0", CultureInfo.InvariantCulture))%"
-                           value="@_prefs.sensitivity.ToString(CultureInfo.InvariantCulture)" @onchange="OnSensitivityChanged" />
+                    <span class="pc-small" aria-hidden="true">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</span>
+                    <RadzenSlider TValue="double" class="pc-range" Min="0.4m" Max="2.5m" Step="0.05" Value="@_prefs.sensitivity"
+                                  Change="@OnSensitivityChanged" HandleLabel="Camera sensitivity" />
 
-                    <label class="pc-small" for="pc-opt-fov">Field of view · @_prefs.fov°</label>
-                    <input id="pc-opt-fov" class="pc-range" type="range" min="50" max="85" step="1" style="--p: @(((_prefs.fov - 50) / 35.0 * 100).ToString("0", CultureInfo.InvariantCulture))%"
-                           value="@_prefs.fov" @onchange="OnFovChanged" />
+                    <span class="pc-small" aria-hidden="true">Field of view · @_prefs.fov°</span>
+                    <RadzenSlider TValue="int" class="pc-range" Min="50" Max="85" Value="@_prefs.fov"
+                                  Change="@OnFovChanged" HandleLabel="Field of view" />
 
                     <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
                     <RadzenSelectBar TValue="string" Value="@_prefs.motion" Change="@(async (string val) => await SavePrefsAsync(motion: val))" id="pc-opt-motion">
@@ -664,15 +664,17 @@
                             <li class="pc-key-row">
                                 <span class="pc-key-label" id="@($"pc-key-label-{action}")">@row.Label</span>
                                 <span class="pc-pad-glyph" title="Gamepad" aria-hidden="true">@PadGlyph(action)</span>
-                                <button type="button" class="pc-keycap @(listening ? "pc-keycap--listening" : null) @(_swapped == action ? "pc-keycap--swapped" : null)"
-                                        @key="@($"{action}-{row.Code}")"
-                                        aria-labelledby="@($"pc-key-label-{action}")" aria-describedby="@($"pc-key-now-{action}")"
-                                        @onclick="() => _listening = listening ? null : action"
-                                        @onkeydown="e => CaptureKeyAsync(action, e)"
-                                        @onkeydown:preventDefault="@listening" @onkeydown:stopPropagation="@listening"
-                                        @onfocusout="() => { if (_listening == action) _listening = null; }">
-                                    <span id="@($"pc-key-now-{action}")">@(listening ? "Press a key…" : DescribeKey(row.Code))</span>
-                                </button>
+                                @* The capture flags sit on a wrapper: a component cannot carry :preventDefault. *@
+                                <span class="pc-keycap-slot" @key="@($"{action}-{row.Code}")"
+                                      @onkeydown="e => CaptureKeyAsync(action, e)"
+                                      @onkeydown:preventDefault="@listening" @onkeydown:stopPropagation="@listening">
+                                    <PoButton class="@($"pc-keycap {(listening ? "pc-keycap--listening" : null)} {(_swapped == action ? "pc-keycap--swapped" : null)}")"
+                                              aria-labelledby="@($"pc-key-label-{action}")" aria-describedby="@($"pc-key-now-{action}")"
+                                              Click="() => _listening = listening ? null : action"
+                                              @onfocusout="() => { if (_listening == action) _listening = null; }">
+                                        <span id="@($"pc-key-now-{action}")">@(listening ? "Press a key…" : DescribeKey(row.Code))</span>
+                                    </PoButton>
+                                </span>
                             </li>
                         }
                     </ul>
@@ -780,4 +782,19 @@
         <a href="https://americanhistory.si.edu/press/releases/smithsonian-continues-collecting-artifacts-jan-6-capitol-attack-2" target="_blank" rel="noopener noreferrer">Smithsonian: flags and police equipment</a>
         <a href="https://nsarchive.gwu.edu/briefing-book/foia/2021-05-04/capitol-riot-documents-you-should-read-part-3" target="_blank" rel="noopener noreferrer">National Security Archive: shield testimony</a>
     </div>;
+
+    private static MarkupString SanitizeSvg(string? svg)
+    {
+        if (string.IsNullOrWhiteSpace(svg)) return default;
+        var trimmed = svg.Trim();
+        if (!trimmed.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<script", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<foreignObject", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("javascript:", StringComparison.OrdinalIgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"\bon[a-z]+\s*=", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            return default;
+        }
+        return new MarkupString(trimmed);
+    }
 }

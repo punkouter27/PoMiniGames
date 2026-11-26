@@ -1,4 +1,7 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http.Features;
 
 namespace PoMiniGames.Infrastructure;
@@ -63,6 +66,12 @@ internal static class AppPipelineExtensions
         // The 3D models' host when they are served from Blob Storage (UsePoMiniGamesModelRedirect):
         // the loaders fetch them, so the redirect target must be allowed by connect-src.
         var modelsOrigin = ModelsBaseUrl(app) is { } models ? " " + models.GetLeftPart(UriPartial.Authority) : "";
+        // Hash all inline <script> blocks in index.html once at startup (e.g. importmap and
+        // gamepadconnected module bootstrap) so script-src can drop 'unsafe-inline' without drift.
+        var inlineScriptHashes = ComputeInlineScriptCspHashes(app.Environment);
+        var scriptSrc = string.IsNullOrEmpty(inlineScriptHashes)
+            ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "
+            : $"script-src 'self' {inlineScriptHashes} 'wasm-unsafe-eval' https://cdn.jsdelivr.net; ";
         app.Use(async (ctx, next) =>
         {
             var headers = ctx.Response.Headers;
@@ -71,7 +80,7 @@ internal static class AppPipelineExtensions
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
             headers.ContentSecurityPolicy =
                 "default-src 'self'; " +
-                "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; " +
+                scriptSrc +
                 "style-src 'self' 'unsafe-inline'; " +
                 // iNaturalist hosts PoEcosystem's species photos (host/naturalist.js) on these two.
                 "img-src 'self' data: blob: https://*.wikimedia.org https://tile.openstreetmap.org https://inaturalist-open-data.s3.amazonaws.com https://static.inaturalist.org; " +
@@ -256,6 +265,27 @@ internal static class AppPipelineExtensions
     private static Uri? ModelsBaseUrl(WebApplication app) =>
         Uri.TryCreate(app.Configuration["PoMiniGames:Models:BaseUrl"], UriKind.Absolute, out var uri)
         && uri.Scheme == Uri.UriSchemeHttps ? uri : null;
+
+    private static string? ComputeInlineScriptCspHashes(IWebHostEnvironment env)
+    {
+        var webRoot = string.IsNullOrEmpty(env.WebRootPath)
+            ? Path.Combine(AppContext.BaseDirectory, "wwwroot")
+            : env.WebRootPath;
+        var indexPath = Path.Combine(webRoot, "index.html");
+        if (!File.Exists(indexPath)) return null;
+        var html = File.ReadAllText(indexPath, Encoding.UTF8);
+        var matches = Regex.Matches(html, @"<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+        if (matches.Count == 0) return null;
+        var hashes = new List<string>(matches.Count);
+        foreach (Match match in matches)
+        {
+            var body = match.Groups[1].Value;
+            if (string.IsNullOrEmpty(body)) continue;
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(body));
+            hashes.Add($"'sha256-{Convert.ToBase64String(hash)}'");
+        }
+        return hashes.Count > 0 ? string.Join(' ', hashes) : null;
+    }
 
     public static WebApplication UsePoMiniGamesStaticFiles(this WebApplication app)
     {

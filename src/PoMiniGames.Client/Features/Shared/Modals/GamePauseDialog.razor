@@ -1,20 +1,7 @@
 @namespace PoMiniGamesClient.Features.Shared
+@inject DialogService Dialogs
 @inject IJSRuntime JS
 @implements IAsyncDisposable
-
-@if (Native)
-{
-    <dialog id="@Id" class="game-pause-dialog @Class" aria-labelledby="@LabelledBy" aria-label="@Label" @attributes="AdditionalAttributes">
-        @ChildContent
-    </dialog>
-}
-else
-{
-    <div id="@Id" class="game-pause-dialog @Class" role="dialog" aria-modal="true" tabindex="-1"
-         aria-labelledby="@LabelledBy" aria-label="@Label" @ref="_root" @attributes="AdditionalAttributes">
-        @ChildContent
-    </div>
-}
 
 @code {
     [Parameter] public RenderFragment? ChildContent { get; set; }
@@ -22,33 +9,79 @@ else
     [Parameter] public string? Class { get; set; }
     [Parameter] public string? LabelledBy { get; set; }
     [Parameter] public string? Label { get; set; }
-    [Parameter] public bool Native { get; set; }
     [Parameter] public EventCallback OnResume { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
 
     private ElementReference _root;
     private IJSObjectReference? _module;
     private DotNetObjectReference<GamePauseDialog>? _self;
+    private bool _dialogOpen;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private RenderFragment PauseContent => @<div id="@Id" class="game-pause-dialog @Class" role="dialog" aria-modal="true" tabindex="-1"
+             aria-labelledby="@LabelledBy" aria-label="@Label" @ref="_root" @attributes="AdditionalAttributes">
+        @ChildContent
+        <PoDialogLifecycle OnMounted="OnDialogMountedAsync" />
+    </div>;
+
+    protected override void OnInitialized() => Dialogs.OnClose += OnDialogClosed;
+
+    protected override void OnParametersSet()
     {
-        if (!firstRender || Native) return;
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/gamePauseDialog.js");
-        _self = DotNetObjectReference.Create(this);
-        await _module.InvokeVoidAsync("attach", _root, OnResume.HasDelegate ? _self : null);
+        if (_dialogOpen) Dialogs.Refresh();
     }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return Task.CompletedTask;
+        _dialogOpen = true;
+        _ = Dialogs.OpenAsync(
+            Label ?? "Paused",
+            _ => PauseContent,
+            new DialogOptions
+            {
+                ShowTitle = false,
+                ShowClose = false,
+                CloseDialogOnEsc = false,
+                CloseDialogOnOverlayClick = false,
+                AutoFocusFirstElement = false,
+                CssClass = "po-rz-dialog po-rz-dialog--pause",
+                WrapperCssClass = "po-rz-dialog-wrapper po-rz-dialog-wrapper--pause",
+            });
+        return Task.CompletedTask;
+    }
+
+    private async Task OnDialogMountedAsync()
+    {
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/gamePauseDialog.js");
+            _self = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("attach", _root, OnResume.HasDelegate ? _self : null);
+        }
+        catch { /* torn down */ }
+    }
+
+    private void OnDialogClosed(dynamic? _) => _dialogOpen = false;
 
     [JSInvokable] public Task ResumeAsync() => OnResume.InvokeAsync();
 
     public async ValueTask DisposeAsync()
     {
-        if (_module is null) return;
-        try
+        Dialogs.OnClose -= OnDialogClosed;
+        if (_module is not null)
         {
-            await _module.InvokeVoidAsync("detach", _root);
-            await _module.DisposeAsync();
+            try
+            {
+                await _module.InvokeVoidAsync("detach", _root);
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            finally { _self?.Dispose(); }
         }
-        catch (JSDisconnectedException) { }
-        finally { _self?.Dispose(); }
+        if (_dialogOpen)
+        {
+            _dialogOpen = false;
+            Dialogs.Close();
+        }
     }
 }

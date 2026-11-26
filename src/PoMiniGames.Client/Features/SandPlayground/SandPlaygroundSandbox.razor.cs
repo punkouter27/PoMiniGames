@@ -451,15 +451,15 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         return SetEnvAsync("sun", sky.ToLowerInvariant());
     }
 
-    protected Task OnWindAsync(ChangeEventArgs e)
+    protected Task OnWindAsync(int wind)
     {
-        Wind = Math.Clamp(ParseInt(e), -100, 100);
+        Wind = Math.Clamp(wind, -100, 100);
         return SetEnvAsync("wind", Wind / 100.0);
     }
 
-    protected Task OnRainAsync(ChangeEventArgs e)
+    protected Task OnRainAsync(int rain)
     {
-        Rain = Math.Clamp(ParseInt(e), 0, 100);
+        Rain = Math.Clamp(rain, 0, 100);
         return SetEnvAsync("rain", Rain / 100.0);
     }
 

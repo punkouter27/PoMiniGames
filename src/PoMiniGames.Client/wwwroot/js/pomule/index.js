@@ -14,7 +14,6 @@ import { buildTouchControls, isTouchDevice } from './touch.js';
 import { KeyBridge, BUTTONS, pressed, stick } from '../platform/gamepadBus.js';
 import { createStage } from '../platform/stage/stage.js';
 import { clamp } from '../platform/2d/tween.js';
-import { ensure as ensureRadzen, remove as removeRadzen } from '../platform/radzenTheme.js';
 
 const TICK = 0.1;
 const HEADER = 23, PER = 16;
@@ -334,9 +333,6 @@ function sendMarketDir() {
 }
 
 window.PoMule = {
-  ensureRadzen,
-  removeRadzen,
-
   /**
    * @param opts { terrain, peaks, species, traits, colors, names: arrays; human: bool;
    *               speed: number; snapshot: the match's first snapshot }

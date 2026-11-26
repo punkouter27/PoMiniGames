@@ -12,7 +12,7 @@
 // so the master mute still silences it.
 //
 // LINES is plain data so the voicing script can import this file in node.
-import { isMuted, getVolume, getBusVolume } from '../platform/audioBus.js';
+import { context as getAudioContext, bus as getAudioBus, isMuted, duck } from '../platform/audioBus.js';
 
 /** The orders, by cue. The voices are stock Kokoro voices and imitate nobody. */
 export const LINES = {
@@ -27,31 +27,27 @@ export const LINES = {
     curfew: { text: 'A curfew is now in effect. Leave the grounds.', voice: 'am_michael' },
 };
 
-const HOWLER_URL = 'https://cdn.jsdelivr.net/npm/howler@2.2.4/dist/howler.min.js';
 const MANIFEST_URL = 'audio/pocapitol/hailer.json';
 /** No order within this many seconds of the last, so the loudhailer never talks over itself. */
 const GAP = 6;
 
 /**
+ * Unified on audioBus.js's single AudioContext + HRTF PannerNode (replaces Howler's second context
+ * so master mute, sfx volume, ducking, and the mastering compressor all apply uniformly).
  * @param onCaption  (text) => void: every line is captioned, spoken or not
  */
 export function createLoudhailer({ onCaption } = {}) {
-    let Howler = null, Howl = null, manifest = null, loading = null, disposed = false;
-    const sounds = new Map();
+    let manifest = null, loading = null, disposed = false, audioCtx = null;
+    const buffers = new Map();
+    const activeSources = new Set();
     let lastAt = -Infinity, nagAt = 40, said = new Set(), horn = null, enabled = true;
 
     function begin() {
         loading ??= (async () => {
             try {
-                const [{ loadLibrary }, response] = await Promise.all([
-                    import('../platform/engineLoader.js'),
-                    fetch(MANIFEST_URL),
-                ]);
+                const [ctx, response] = await Promise.all([getAudioContext(), fetch(MANIFEST_URL)]);
+                audioCtx = ctx;
                 manifest = response.ok ? await response.json() : null;
-                if (!manifest) return;
-                await loadLibrary(HOWLER_URL);
-                if (disposed) return;
-                ({ Howler, Howl } = window);
             } catch (error) {
                 console.warn('[PoCapitol] loudhailer unavailable; orders are captioned only.', error);
             }
@@ -59,15 +55,15 @@ export function createLoudhailer({ onCaption } = {}) {
         return loading;
     }
 
-    function sound(cue) {
+    async function loadBuffer(cue) {
         const file = manifest?.lines?.[cue];
-        if (!Howl || !file) return null;
-        let howl = sounds.get(cue);
-        if (!howl) {
-            howl = new Howl({ src: [`audio/pocapitol/${file}`], html5: false, preload: true });
-            sounds.set(cue, howl);
-        }
-        return howl;
+        if (!audioCtx || !file) return null;
+        if (buffers.has(cue)) return buffers.get(cue);
+        const res = await fetch(`audio/pocapitol/${file}`);
+        if (!res.ok) return null;
+        const decoded = await audioCtx.decodeAudioData(await res.arrayBuffer());
+        buffers.set(cue, decoded);
+        return decoded;
     }
 
     /** Say one line now, from where the nearest officer stands, if nothing was said just before. */
@@ -77,14 +73,29 @@ export function createLoudhailer({ onCaption } = {}) {
         said.add(cue); lastAt = elapsed;
         const line = LINES[cue];
         onCaption?.(line.text);
-        begin().then(() => {
-            const howl = sound(cue);
-            if (!howl || disposed) return;
-            const id = howl.play();
+        if (isMuted()) return;
+        begin().then(async () => {
+            const buf = await loadBuffer(cue);
+            const sfxBus = getAudioBus('sfx');
+            if (!buf || !audioCtx || !sfxBus || disposed) return;
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            const panner = audioCtx.createPanner();
+            panner.panningModel = 'HRTF';
+            panner.distanceModel = 'inverse';
+            panner.refDistance = 7;
+            panner.rolloffFactor = 0.9;
+            panner.maxDistance = 160;
             const at = horn ?? { x: 0, z: 0 };
-            howl.pos(at.x, 2.2, at.z, id);
-            howl.pannerAttr({ panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 7, rolloffFactor: 0.9, maxDistance: 160 }, id);
-        });
+            panner.positionX.value = at.x;
+            panner.positionY.value = 2.2;
+            panner.positionZ.value = at.z;
+            src.connect(panner).connect(sfxBus);
+            activeSources.add(src);
+            src.onended = () => activeSources.delete(src);
+            duck?.(0.35, Math.min(4, buf.duration));
+            src.start();
+        }).catch(() => { /* captioned fallback */ });
     }
 
     return {
@@ -108,15 +119,15 @@ export function createLoudhailer({ onCaption } = {}) {
             if (active) {
                 if (elapsed > 10) say('disperse', elapsed, { once: true });
                 if (elapsed > curfew) say('curfew', elapsed, { once: true });
-                // While the line is being leaned on, an order every half-minute or so.
                 if (pressure > 0.35 && elapsed > nagAt) { nagAt = elapsed + 28 + Math.random() * 20; say(Math.random() < 0.6 ? 'back' : 'chemical', elapsed); }
             }
-            if (!Howler) return;
-            Howler.mute(isMuted());
-            Howler.volume(getVolume() * getBusVolume('sfx'));
-            Howler.pos(x, 1.6, z);
-            // Howler's listener faces -z at yaw 0, as the game camera does.
-            Howler.orientation(-Math.sin(yaw), 0, -Math.cos(yaw), 0, 1, 0);
+            const listener = audioCtx?.listener;
+            if (!listener) return;
+            if (listener.positionX) {
+                listener.positionX.value = x; listener.positionY.value = 1.6; listener.positionZ.value = z;
+                listener.forwardX.value = -Math.sin(yaw); listener.forwardY.value = 0; listener.forwardZ.value = -Math.cos(yaw);
+                listener.upX.value = 0; listener.upY.value = 1; listener.upZ.value = 0;
+            }
         },
         /** Off: no orders at all (the synthesized horn in audio.js stays). */
         setEnabled(value) { enabled = Boolean(value); if (enabled) begin(); },
@@ -124,8 +135,9 @@ export function createLoudhailer({ onCaption } = {}) {
         reset() { said = new Set(); lastAt = -Infinity; nagAt = 40; },
         dispose() {
             disposed = true;
-            for (const howl of sounds.values()) howl.unload();
-            sounds.clear();
+            for (const src of activeSources) { try { src.stop(); } catch { /* ok */ } }
+            activeSources.clear();
+            buffers.clear();
         },
     };
 }

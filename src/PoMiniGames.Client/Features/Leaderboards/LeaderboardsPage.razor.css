@@ -28,7 +28,7 @@
     --rz-text-secondary-color: var(--color-text-secondary);
     --rz-base-background-color: var(--color-surface);
     --rz-primary: var(--color-accent);
-    --rz-on-primary: #fff;
+    --rz-on-primary: var(--po-white);
     --rz-input-background-color: var(--color-surface);
     --rz-input-value-color: var(--color-text-primary);
     --rz-input-placeholder-color: var(--color-text-secondary);
@@ -46,7 +46,7 @@
     --rz-selectbar-color: var(--color-text-secondary);
     --rz-selectbar-border: 1px solid var(--color-border);
     --rz-selectbar-selected-background-color: var(--color-accent);
-    --rz-selectbar-selected-color: #fff;
+    --rz-selectbar-selected-color: var(--po-white);
     --rz-selectbar-selected-border: 1px solid var(--color-accent);
     display: flex;
     align-items: center;
@@ -293,7 +293,7 @@
 }
 
 .lb-podium__card--gold::before   { background: linear-gradient(90deg, #fcd34d, var(--color-warning)); }
-.lb-podium__card--silver::before { background: linear-gradient(90deg, #e2e8f0, #94a3b8); }
+.lb-podium__card--silver::before { background: linear-gradient(90deg, var(--po-slate-light), var(--po-slate-muted)); }
 .lb-podium__card--bronze::before { background: linear-gradient(90deg, #fdba74, #ea580c); }
 
 .lb-podium__medal {
@@ -309,7 +309,7 @@
 }
 
 .lb-podium__card--gold .lb-podium__medal   { background: linear-gradient(135deg, #fcd34d, var(--color-warning)); color: #1e1b4b; }
-.lb-podium__card--silver .lb-podium__medal { background: linear-gradient(135deg, #e2e8f0, #94a3b8); color: #0f172a; }
+.lb-podium__card--silver .lb-podium__medal { background: linear-gradient(135deg, var(--po-slate-light), var(--po-slate-muted)); color: #0f172a; }
 .lb-podium__card--bronze .lb-podium__medal { background: linear-gradient(135deg, #fdba74, #ea580c); color: #1e1b4b; }
 
 .lb-podium__name {

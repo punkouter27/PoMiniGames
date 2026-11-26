@@ -24,7 +24,7 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
         var launch = BrowserLaunch.Options();
         // SwiftShader for headless WebGL — without it the GameShell falls back
         // to its "needs 3D graphics" panel and the racing canvas never mounts.
-        launch.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
+        launch.Args = ["--disable-audio-output", "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         launch.SlowMo = 0;
         await using var browser = await playwright.Chromium.LaunchAsync(launch);
 
@@ -43,8 +43,11 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
             await Assertions.Expect(page.Locator(".lobby__player")).ToHaveCountAsync(2, new() { Timeout = 30_000 });
             await Assertions.Expect(page.Locator(".lobby__player.is-host .app-chip--accent")).ToHaveTextAsync("host");
         }
-        (await host.Locator(".lobby__actions > .app-btn--primary").CountAsync()).Should().Be(1, "the first arrival hosts");
-        (await guest.Locator(".lobby__actions > .app-btn--primary").AllInnerTextsAsync()).Should().Equal(["Ready!"], "a later arrival is not the host");
+        // Retrying assertions: a roster update re-renders the action row, and a one-shot read taken during that
+        // render saw an empty row (red once in a full run on 2026-11-24). A guest that really lost its seat still fails.
+        // The first arrival hosts; a later arrival is not the host.
+        await Assertions.Expect(host.Locator(".lobby__actions > .app-btn--primary")).ToHaveCountAsync(1, new() { Timeout = 30_000 });
+        await Assertions.Expect(guest.Locator(".lobby__actions > .app-btn--primary")).ToHaveTextAsync(["Ready!"], new() { Timeout = 30_000 });
 
         pageErrors.Should().BeEmpty("neither browser may raise a JS error joining the lobby");
     }
