@@ -7,7 +7,7 @@
    they collapse and the tiles stay plain glass buttons.
    Online lobby: one player, one mark ("You"), and a face on every tile (Face) so the pick is
    by sight, not from a list of surnames.
-   Brawl Cup start card: the 16-slot field as a 4x4, read-only (Disabled), each tile captioned
+   Brawl Cup start card: the 8-slot field, read-only (Disabled), each tile captioned
    with its seed and Elo (Caption), and every open slot a BYE tile (ByeSlots) after the fighters.
    Styles: PoBrawlPage.razor.css (.pb-select-*); this component shares that CSS scope. *@
 <ul class="pb-select-grid @(Face is not null ? "pb-select-grid--faces" : "")" role="radiogroup" aria-label="Fighters">
@@ -81,7 +81,7 @@
     [Parameter] public bool Disabled { get; set; }
     /// <summary>A second line under each fighter's name (the Cup's seed and Elo); null or empty draws none.</summary>
     [Parameter] public Func<PoBrawlFighter, string?>? Caption { get; set; }
-    /// <summary>Open slots drawn as BYE tiles after the fighters (the tournament field's 4x4).</summary>
+    /// <summary>Open slots drawn as BYE tiles after the fighters.</summary>
     [Parameter] public int ByeSlots { get; set; }
 
     private readonly HashSet<string> _failed = [];

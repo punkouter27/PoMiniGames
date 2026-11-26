@@ -180,15 +180,15 @@
     margin-top: 10px;
 }
 
-/* The board: four bout rounds and the champion on a fixed grid, with a 1rem wire column between each.
+/* The board: three bout rounds and the champion on a fixed grid, with a 1rem wire column between each.
    Every bout row is 4.8rem with a 0.5rem gap, so a bout's centre sits at a known height;
    the page's Wires() draws its SVG paths to exactly these numbers (in 0.1rem units).
    Change them together. */
 .pt-bracket {
     display: grid;
     grid-template-columns:
-        minmax(7rem, 1fr) 1rem minmax(7rem, 1fr) 1rem minmax(7rem, 1fr) 1rem minmax(7rem, 1fr) 1rem minmax(8rem, 0.8fr);
-    grid-template-rows: auto repeat(8, 4.8rem);
+        minmax(7rem, 1fr) 1rem minmax(7rem, 1fr) 1rem minmax(7rem, 1fr) 1rem minmax(8rem, 0.8fr);
+    grid-template-rows: auto repeat(4, 4.8rem);
     row-gap: 0.5rem;
     align-items: center;
 }

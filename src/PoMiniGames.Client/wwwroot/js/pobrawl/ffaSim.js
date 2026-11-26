@@ -57,7 +57,9 @@ export class FfaSim {
   _strategy(f) {
     const profile = this.options.candidate && f.id !== this.options.candidate ? 'balanced' : this.profile;
     const global = FFA_PROFILES[profile] || FFA_PROFILES.balanced;
-    const style = getFfaAgentStrategy(f.id, this.options.agentPresets?.[f.id] || 'native');
+    const style = f.id === 'bob'
+      ? { pace: 1, guard: 1, weak: 0.2, aggression: 1, move: 1, retarget: 1 }
+      : getFfaAgentStrategy(f.id, this.options.agentPresets?.[f.id] || 'native');
     return { ...style, pace: style.pace * global.pace, guard: style.guard * global.guard,
       weak: style.weak * global.weak / FFA_PROFILES.balanced.weak };
   }

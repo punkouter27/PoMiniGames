@@ -1,4 +1,4 @@
-// pofighter/tournament.js — the 16-slot CPU tournament (bracket.js holds the rules).
+// pofighter/tournament.js — the 8-slot CPU tournament (bracket.js holds the rules).
 //
 // Every roster slot enters: the built-in fighters seeded by their Elo, then this browser's
 // Studio fighters (seeded at 1000, the board's seed), the rest BYE (no player). Between bouts the bracket is shown
@@ -20,7 +20,7 @@ const wait = (session, s) => new Promise(r => {
     session.cleanup.push(() => { clearTimeout(id); r(); });
 });
 
-/** The 16 slots: built-in fighters first, then Studio fighters ([{ id, name, portrait }]), then BYE. */
+/** The 8 slots: built-in fighters first, then Studio fighters ([{ id, name, portrait }]), then BYE. */
 export function slots(customs = []) {
     const entrants = [...ROSTER.map(f => ({ id: f.id, name: f.name })),
         ...customs.map(c => ({ id: c.id, name: c.name, portrait: c.portrait }))];
@@ -39,7 +39,7 @@ function renderBracket(el, bracket, current, championId) {
         const cls = ['pfb-side', f.empty ? 'pfb-side--empty' : '',
             m.winner && m.winner.id === f.id && !f.empty ? 'pfb-side--won' : '',
             m.winner && m.winner.id !== f.id ? 'pfb-side--out' : '',
-            championId && f.id === championId && m.round === 3 ? 'pfb-side--champ' : ''].join(' ');
+            championId && f.id === championId && m.round === ROUND_NAMES.length - 1 ? 'pfb-side--champ' : ''].join(' ');
         const src = f.empty ? '' : isBuiltIn(f.id) ? `data/pofighter/${f.id}-portrait.webp` : f.portrait ?? '';
         const portrait = src ? `<img src="${esc(src)}" alt="">` : '';
         return `<li class="${cls}">${portrait}<span>${esc(f.name)}</span>${f.seed && !f.empty ? `<small>${f.seed}</small>` : ''}</li>`;

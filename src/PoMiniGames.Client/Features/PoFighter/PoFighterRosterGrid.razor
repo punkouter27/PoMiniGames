@@ -2,8 +2,8 @@
 
 @* The arcade select screen. The built-in fighters (PoFighterRoster) come first in roster order,
    then this browser's Studio fighters (Customs, marked STUDIO).
-   - Full (the tournament field): 16 slots in a 4x4 grid, the rest BYE (no player) until a new fighter is
-     filmed and packed (scripts/pofighter/), since the bracket has 16 seats.
+   - Full (the tournament field): 8 slots in a 2x4 grid, the rest BYE (no player) until a new fighter is
+     filmed and packed (scripts/pofighter/), since the bracket has 8 seats.
    - Compact (every picker): only real fighters, larger tiles, and with OnCreate a last
      "Create" tile that opens the Studio.
    With OnSelect every real tile is a button (a picker, or the tournament field's dossier);
@@ -70,8 +70,8 @@
 </div>
 
 @code {
-    /// <summary>Always 16: the tournament bracket's size.</summary>
-    public const int Slots = 16;
+    /// <summary>Always 8: the tournament bracket's size.</summary>
+    public const int Slots = 8;
 
     /// <summary>The highlighted fighter id (the pick, P1's pick, or the current champion).</summary>
     [Parameter] public string? Selected { get; set; }
@@ -85,7 +85,7 @@
     /// <summary>With Compact: a last tile that opens the Studio.</summary>
     [Parameter] public EventCallback OnCreate { get; set; }
 
-    /// <summary>Only real fighters, larger tiles (pickers); off for the 16-seat tournament field.</summary>
+    /// <summary>Only real fighters, larger tiles (pickers); off for the 8-seat tournament field.</summary>
     [Parameter] public bool Compact { get; set; }
 
     /// <summary>Fighter id → Elo from the board; a fighter that has not fought shows none.</summary>

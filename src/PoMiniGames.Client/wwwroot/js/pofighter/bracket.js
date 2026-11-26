@@ -1,18 +1,18 @@
-// pofighter/bracket.js — the 16-slot single-elimination tournament. Pure: no DOM, no clock, so
+// pofighter/bracket.js — the 8-slot single-elimination tournament. Pure: no DOM, no clock, so
 // tests/pofighter-bracket.test.mjs drives it directly.
 //
-// Every roster slot enters. Real fighters are seeded by rating (best first) into the standard
-// 16-seed order, so the top two can only meet in the final; BYE slots (no player) take the bottom seeds
+// Real fighters are seeded by rating (best first) into the standard
+// 8-seed order, so the top two can only meet in the final; BYE slots (no player) take the bottom seeds
 // and forfeit — their opponent advances on a bye, and BYE vs BYE sends a BYE on (which
 // then forfeits to whoever it meets). Only bouts between two real fighters are fought.
 
-export const SIZE = 16;
-// Seed numbers (1 = best) in bracket order: 1v16, 8v9, 4v13, 5v12, 2v15, 7v10, 3v14, 6v11.
-export const SEED_ORDER = [1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11];
-export const ROUND_NAMES = ['Round of 16', 'Quarterfinals', 'Semifinals', 'Final'];
+export const SIZE = 8;
+// Seed numbers (1 = best) in bracket order: 1v8, 4v5, 2v7, 3v6.
+export const SEED_ORDER = [1, 8, 4, 5, 2, 7, 3, 6];
+export const ROUND_NAMES = ['Quarterfinals', 'Semifinals', 'Final'];
 
 /**
- * roster: [{ id, name, empty? }] (16 slots); ratings: { [id]: elo } (missing = 1000, the board's seed).
+ * roster: [{ id, name, empty? }] (8 slots); ratings: { [id]: elo } (missing = 1000, the board's seed).
  * Returns { rounds: [[match]], champion: null }, match = { a, b, winner, bye, round, index }.
  */
 export function createBracket(roster, ratings = {}) {
