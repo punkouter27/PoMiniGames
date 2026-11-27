@@ -2,7 +2,7 @@
 // fighters, renderer, post chain, blood, sweat, limb loss, charge strikes, daze, crowd, PA and
 // camera director as a 1v1 bout; this mixin adds what a crowded ring needs on top:
 //
-//   • a field of FFA_FIELD presidents (+ Bob when a human plays), spawned on a ring
+//   • FFA_FIELD fighters (including Bob when a human plays), spawned on a ring
 //   • every fighter picks a TARGET (the 1v1 "opp"); the AI controllers fight that target
 //   • a swing can land on whoever its limb touches, not only the target
 //   • NO count in the free-for-all: a fighter who goes down is out for good. A knockdown
@@ -22,7 +22,7 @@ import { getFfaAgentStrategy, getFfaAgentPresets } from './ffaAgents.js';
 import { createWikimediaFacts } from './ffaFacts.js';
 import { FfaSim } from './ffaSim.js';
 
-export const FFA_FIELD = 16;
+export const FFA_FIELD = 8;
 /** Seconds the champion holds the ring before the next round. */
 const RESULT_HOLD = 5;
 /** Spawn ring radius (RING_HALF is 5.2). */
@@ -63,8 +63,11 @@ class FfaModeMethods {
   /** Free-for-all bookkeeping. Called from start() before the first spawn. */
   _ffaInit() {
     const o = this.options;
-    if (!Array.isArray(o.fighters) || o.fighters.length !== FFA_FIELD) {
-      throw new Error(`Brawl FFA needs exactly ${FFA_FIELD} fighters.`);
+    const cpuCount = FFA_FIELD - (o.human ? 1 : 0);
+    if (!Array.isArray(o.fighters) || o.fighters.length !== cpuCount
+        || new Set(o.fighters.map((fighter) => fighter.id)).size !== cpuCount
+        || o.fighters.some((fighter) => fighter.id === 'bob')) {
+      throw new Error(`Brawl FFA needs ${cpuCount} distinct CPU fighters${o.human ? ' plus Bob' : ''}.`);
     }
     this.ffaHuman = !!o.human;
     this.ffaRoster = this.ffaHuman ? [...o.fighters, { id: 'bob', name: 'Bob' }] : [...o.fighters];
@@ -82,7 +85,7 @@ class FfaModeMethods {
       getItem: (key) => window.localStorage.getItem(key),
       setItem: (key, value) => window.localStorage.setItem(key, value),
     }, (message) => this._ffaNotify('OnFfaError', message),
-    this.ffaHuman ? 'pobrawl.ffa.player.seasons.v1' : undefined);
+    this.ffaHuman ? 'pobrawl.ffa.player.eight.seasons.v1' : 'pobrawl.ffa.eight.seasons.v1');
     this.ffaRound = this.seasons.state.totalRounds;
     this.factsEnabled = this.seasons.state.factsEnabled === true;
     this.facts = createWikimediaFacts({ onPresentation: (p) => this._ffaPresent(p) });
@@ -149,7 +152,7 @@ class FfaModeMethods {
   }
 
   /**
-   * Sixteen full rigs casting into the key light's shadow map doubles the draw calls. The two
+   * Full rigs casting into the key light's shadow map increase draw calls. The two
    * fighters the camera frames cast real shadows; the rest keep their contact blobs.
    */
   _ffaShadows() {
@@ -885,7 +888,7 @@ class FfaModeMethods {
 
   /** Headless rounds through ffaSim.js; the live ring keeps fighting meanwhile. */
   async _ffaSimulate(opts) {
-    const sim = new FfaSim({ fighters: this.options.fighters, ...opts });
+    const sim = new FfaSim({ fighters: this.ffaRoster, ...opts });
     let frame = 0;
     while (sim.phase === 'fighting' && frame < 60 * 180) {
       for (let batch = 0; batch < 60 && sim.phase === 'fighting'; batch++, frame++) sim.step(1 / 60);
@@ -907,7 +910,7 @@ class FfaModeMethods {
     try {
       for (let seed = 1; seed <= 16 && !this.disposed; seed++) {
         for (const row of totals) {
-          const candidate = this.options.fighters[seed - 1].id;
+          const candidate = this.options.fighters[(seed - 1) % this.options.fighters.length].id;
           const results = await this._ffaSimulate({ seed, profile: row.profile, candidate, agentPresets: presets });
           if (!results) return;
           const result = results.find((r) => r.id === candidate);

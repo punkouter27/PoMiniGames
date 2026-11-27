@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoCapitol: crowd and spectator expansion</title>
+<style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px; background: #101c29; color: #eee8da; font: 16px/1.5 system-ui, sans-serif; }
+    h1 { margin: 0 0 4px; font-size: 30px; }
+    .lede { color: #b7c5cf; margin: 0 0 24px; }
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    article { overflow: hidden; background: #182b3d; border: 1px solid #536274; border-radius: 12px; }
+    h2 { margin: 0; padding: 16px 20px; color: #e7c686; font-size: 18px; }
+    img { display: block; width: 100%; aspect-ratio: 1.44; object-fit: cover; }
+    ul { padding: 0 32px 0 40px; margin: 18px 0 22px; min-height: 132px; }
+    li { margin-bottom: 6px; }
+    .note { padding: 16px 20px; margin-top: 20px; background: #263745; border-left: 3px solid #d8b777; font-size: 14px; }
+    .flow { text-align: center; padding: 16px; color: #d7c18e; letter-spacing: 0.04em; }
+    @media (max-width: 700px) { .comparison { grid-template-columns: 1fr; } }
+</style>
+<h1>PoCapitol: a full crowd, and a camera that follows progress</h1>
+<p class="lede">Actual browser captures, annotated comparison. Solo remains playable; demo is an autonomous spectator mode.</p>
+<div class="comparison">
+    <article>
+        <h2>BEFORE - small companion group</h2>
+        <img src="261109-pocapitol-crowd-before.png" alt="Original solo scene at the entrance with a small group of simplified characters.">
+        <ul>
+            <li>One human and four following companions.</li>
+            <li>Solo-only controls and results.</li>
+            <li>Basic facade, dome, plain clothing and fictional defenders.</li>
+        </ul>
+    </article>
+    <article>
+        <h2>AFTER - 100 raiders in either mode</h2>
+        <img src="261109-pocapitol-crowd-after.png" alt="Expanded crowd with winter coats and flags; spectator HUD shows 100 raiders and its followed subject.">
+        <ul>
+            <li>Solo: one human + 99 autonomous NPCs; demo: 100 CPU raiders.</li>
+            <li>Leader-following camera, live counts, automatic replay; no demo stats.</li>
+            <li>Winter clothes, U.S./campaign flags, police helmets and shields.</li>
+            <li>Referenced dome, Rotunda and House motifs; instanced crowd/scenery.</li>
+        </ul>
+    </article>
+</div>
+<div class="flow">100 raiders &rarr; ordered progress &rarr; closest eligible leader &rarr; follow camera &rarr; replay</div>
+<div class="note"><strong>Historical boundary:</strong> Public references inform visible motifs, not a measured reconstruction.
+    Characters, crowd/equipment counts, police positions, combat and room connections are fictional.
+    The game does not claim that its outcome represents a historical victory.</div>
+</html>

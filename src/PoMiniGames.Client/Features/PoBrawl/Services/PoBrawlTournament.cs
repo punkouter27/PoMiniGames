@@ -4,7 +4,7 @@ using PoMiniGames.Domain.Services;
 namespace PoMiniGamesClient.Features.PoBrawl;
 
 /// <summary>
-/// One CPU-only, 16-slot, single-elimination Brawl tournament: the rating-seeded draw, byes,
+/// One CPU-only, 8-slot, single-elimination Brawl tournament: the rating-seeded draw, byes,
 /// the bouts, who advances where, and every fighter's Elo as the results come in.
 /// </summary>
 /// <remarks>
@@ -17,8 +17,8 @@ namespace PoMiniGamesClient.Features.PoBrawl;
 /// </para>
 /// <para>
 /// The draw follows the tournament standard: fighters are seeded by rating (best first) into
-/// the standard 16-seed order <see cref="SeedOrder"/> (1v16, 8v9, 4v13, 5v12, 2v15, 7v10,
-/// 3v14, 6v11), so the top two can only meet in the final. BYEs take the bottom seeds; a
+/// the standard 8-seed order <see cref="SeedOrder"/> (1v8, 4v5, 2v7, 3v6), so the top two
+/// can only meet in the final. BYEs take the bottom seeds; a
 /// BYE's opponent advances without a fight, and BYE vs BYE sends a BYE on.
 /// </para>
 /// <para>
@@ -30,11 +30,11 @@ namespace PoMiniGamesClient.Features.PoBrawl;
 public sealed class PoBrawlTournament
 {
     /// <summary>Slots in the bracket, including any BYEs needed to fill the field.</summary>
-    public const int Size = 16;
+    public const int Size = 8;
     public const string ByeId = "bye";
 
-    /// <summary>Seed numbers (1 = best) in bracket order: 1v16, 8v9, 4v13, 5v12, 2v15, 7v10, 3v14, 6v11.</summary>
-    public static readonly IReadOnlyList<int> SeedOrder = [1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11];
+    /// <summary>Seed numbers (1 = best) in bracket order: 1v8, 4v5, 2v7, 3v6.</summary>
+    public static readonly IReadOnlyList<int> SeedOrder = [1, 8, 4, 5, 2, 7, 3, 6];
 
     private static readonly PairwiseEloCalculator Elo = new(new PairwiseEloOptions());
 
@@ -55,13 +55,13 @@ public sealed class PoBrawlTournament
     /// <summary>The actual fighters in the draw; BYE slots are excluded.</summary>
     public IReadOnlyList<PoBrawlFighter> Field { get; }
 
-    /// <summary>All 16 opening-round slots in bracket order (<see cref="SeedOrder"/>), including BYE entries.</summary>
+    /// <summary>All 8 opening-round slots in bracket order (<see cref="SeedOrder"/>), including BYE entries.</summary>
     public IReadOnlyList<string> Entrants { get; }
 
     /// <summary>The fighters by seed, best first (index 0 is seed 1); BYEs are not listed.</summary>
     public IReadOnlyList<PoBrawlFighter> BySeed => [.. Field.OrderBy(f => _seed[f.Id])];
 
-    /// <summary>All 15 bracket bouts in play order: 8 opening round, 4 quarterfinals, 2 semifinals, final.</summary>
+    /// <summary>All 7 bracket bouts in play order: 4 quarterfinals, 2 semifinals, final.</summary>
     public IReadOnlyList<Bout> Bouts { get; }
 
     private PoBrawlTournament(IReadOnlyList<string> entrants, IReadOnlyDictionary<string, int> ratings)
@@ -80,13 +80,12 @@ public sealed class PoBrawlTournament
 
         var bouts = new List<Bout>(Size - 1);
         for (var i = 0; i < Size / 2; i++)
-            bouts.Add(new Bout(i, Round.RoundOf16, i, entrants[i * 2], entrants[i * 2 + 1]));
-        AddRound(bouts, Round.Quarterfinal, 8, 4);
-        AddRound(bouts, Round.Semifinal, 12, 2);
-        bouts.Add(new Bout(14, Round.Final, 0, null, null));
+            bouts.Add(new Bout(i, Round.Quarterfinal, i, entrants[i * 2], entrants[i * 2 + 1]));
+        AddRound(bouts, Round.Semifinal, 4, 2);
+        bouts.Add(new Bout(6, Round.Final, 0, null, null));
         Bouts = bouts;
 
-        foreach (var bout in Bouts.Take(8).Where(b => b.P1Id == ByeId || b.P2Id == ByeId).ToArray())
+        foreach (var bout in Bouts.Take(Size / 2).Where(b => b.P1Id == ByeId || b.P2Id == ByeId).ToArray())
             AdvanceBye(bout);
     }
 
@@ -117,7 +116,7 @@ public sealed class PoBrawlTournament
         return new PoBrawlTournament(entrants, ratings);
     }
 
-    /// <summary>A fighter's seed, 1 (best) to 16, or 0 for a BYE or a fighter not in the draw.</summary>
+    /// <summary>A fighter's seed, 1 (best) to 8, or 0 for a BYE or a fighter not in the draw.</summary>
     public int SeedOf(string? fighterId) => fighterId is not null && _seed.TryGetValue(fighterId, out var s) ? s : 0;
 
     /// <summary>
@@ -216,9 +215,8 @@ public sealed class PoBrawlTournament
         if (bout.Round == Round.Final) return;
         var nextStart = bout.Round switch
         {
-            Round.RoundOf16 => 8,
-            Round.Quarterfinal => 12,
-            _ => 14,
+            Round.Quarterfinal => 4,
+            _ => 6,
         };
         var next = Bouts[nextStart + bout.Slot / 2];
         if (bout.Slot % 2 == 0) next.P1Id = winner;
@@ -227,19 +225,18 @@ public sealed class PoBrawlTournament
             AdvanceBye(next);
     }
 
-    public enum Round { RoundOf16, Quarterfinal, Semifinal, Final }
+    public enum Round { Quarterfinal, Semifinal, Final }
 
     /// <summary>How many bouts a round holds.</summary>
     public static int BoutsIn(Round round) => round switch
     {
-        Round.RoundOf16 => 8,
         Round.Quarterfinal => 4,
         Round.Semifinal => 2,
         _ => 1,
     };
 
     /// <summary>One bout of the bracket. Pairings fill in as the earlier round finishes.</summary>
-    /// <param name="Index">0-14, play order.</param>
+    /// <param name="Index">0-6, play order.</param>
     /// <param name="Slot">Position inside its round, 0-based.</param>
     public sealed record Bout(int Index, Round Round, int Slot, string? P1Id, string? P2Id)
     {
@@ -259,17 +256,16 @@ public sealed class PoBrawlTournament
         public bool IsUpset => WinnerId is not null && !IsBye
             && (WinnerId == P1Id ? P1Expected : 1 - P1Expected) <= UpsetBelow;
 
-        /// <summary>"Round of 16 2 of 8", "Quarterfinal 1 of 4", or "Final".</summary>
+        /// <summary>"Quarterfinal 1 of 4", "Semifinal 1 of 2", or "Final".</summary>
         public string Label => Round == Round.Final ? "Final" : $"{GetRoundName(Round)} {Slot + 1} of {BoutsIn(Round)}";
 
-        /// <summary>Spaced uppercase banner heading for arena splash cards ("ROUND OF 16 · 1 OF 8").</summary>
+        /// <summary>Spaced uppercase banner heading for arena splash cards.</summary>
         public string BannerLabel => Round == Round.Final
             ? "FINAL"
             : $"{GetRoundName(Round).ToUpperInvariant()} · {Slot + 1} OF {BoutsIn(Round)}";
 
         private static string GetRoundName(Round round) => round switch
         {
-            Round.RoundOf16 => "Round of 16",
             Round.Quarterfinal => "Quarterfinal",
             Round.Semifinal => "Semifinal",
             _ => "Final",

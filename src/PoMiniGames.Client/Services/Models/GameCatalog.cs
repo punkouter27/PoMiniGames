@@ -138,7 +138,7 @@ public static class GameCatalog
             new(GameMode.Demo, "/pobrawl/ffa")
             {
                 ChipLabel = "Demo · FFA",
-                ChipDescription = "16-president free-for-all exhibition",
+                ChipDescription = "8-president free-for-all exhibition",
             },
             new(GameMode.OnePlayer, "/pobrawl/ffa/play")
             {

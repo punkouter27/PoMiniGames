@@ -32,13 +32,13 @@
         <div class="pb-intro">
             <GameIntro CueScope="pobrawl-ffa"
                        Title="@TitleContent"
-                       Objective="@(IsHuman ? "Play Bob against all 16 presidents. Last fighter standing wins." : "Sixteen presidents enter the ring at once. The last fighter standing wins.")"
+                       Objective="@(IsHuman ? "Play Bob against seven presidents. Last fighter standing wins." : "Eight presidents enter the ring at once. The last fighter standing wins.")"
                        HowToPlay="@HowItWorks"
                        Mode="@(IsHuman ? GameIntro.IntroMode.OnePlayer : GameIntro.IntroMode.Demo)"
                        DemoDelayMs="4000"
                        Wide="true"
                        Options="@SetupOptions"
-                       DialogLabel="Brawl FFA: sixteen-fighter battle royale"
+                       DialogLabel="Brawl FFA: eight-fighter battle royale"
                        CaptureKeys="false"
                        OnStart="StartAsync" />
         </div>
@@ -46,7 +46,7 @@
 
     <div class="pb-wrap @(IsHuman ? "pffa-player-mode" : "")">
         <div id="pobrawl-container" class="pb-canvas-host"
-             role="img" aria-label="@(IsHuman ? "Brawl FFA arena — you are Bob versus sixteen CPUs" : "Brawl FFA arena — sixteen presidents fight here")"></div>
+             role="img" aria-label="@(IsHuman ? "Brawl FFA arena — you are Bob versus seven CPUs" : "Brawl FFA arena — eight presidents fight here")"></div>
         @if (_introDone)
         {
             <aside class="pffa-board @(_engineError is not null ? "pffa-board--error" : "")" aria-label="Free-for-all standings">
@@ -82,14 +82,14 @@
                         </li>
                     }
                 </ol>
-                <p class="pffa-foot">Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds<br />@(IsHuman ? "17-player local ratings · separate from CPU seasons" : "Local FFA ratings · separate from 1v1 Elo")</p>
+                <p class="pffa-foot">Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds<br />@(IsHuman ? "8-player local ratings · separate from CPU seasons" : "Local FFA ratings · separate from 1v1 Elo")</p>
             </aside>
             <div class="pffa-tools">
                 <PoButton Click="ToggleMuteAsync" aria-pressed="@Settings.Muted" aria-label="@(Settings.Muted ? "Unmute FFA audio" : "Mute FFA audio")">@(Settings.Muted ? "Sound off" : "Sound on")</PoButton>
             </div>
             <aside class="pffa-broadcast" aria-label="Broadcast coverage">
                 <strong>@(_replaying ? "FINAL KO REPLAY" : _broadcast.FinalDuel ? "FINAL DUEL" : _champion is not null ? "CHAMPION" : IsHuman ? "BOB · YOU" : "DANGER CAM")</strong>
-                <span>@(_broadcast.Focus.Length > 0 ? $"{NameOf(_broadcast.Focus)} · {_broadcast.Health} HP · {_broadcast.Shot}" : IsHuman ? "Bob follow camera · 16 CPU opponents" : "Sixteen presidents · arena overview")</span>
+                <span>@(_broadcast.Focus.Length > 0 ? $"{NameOf(_broadcast.Focus)} · {_broadcast.Health} HP · {_broadcast.Shot}" : IsHuman ? "Bob follow camera · 7 CPU opponents" : "Eight presidents · arena overview")</span>
                 @if (IsHuman)
                 {
                     <small>@(_health.GetValueOrDefault("bob") > 0 ? "WASD move · F punch · G kick · R guard. Controller/touch supported." : "Bob is knocked out. Watch the finish; you rejoin next round.")</small>
@@ -187,13 +187,14 @@
     </div>;
 
     private bool IsHuman => Mode == "play";
+    private const int FieldSize = 8;
     private IReadOnlyList<PoBrawlFighter> Roster =>
-        IsHuman ? [.. PoBrawlRoster.Fighters, PoBrawlRoster.Bob] : PoBrawlRoster.Fighters;
+        IsHuman ? [.. PoBrawlRoster.Fighters.Take(FieldSize - 1), PoBrawlRoster.Bob] : [.. PoBrawlRoster.Fighters.Take(FieldSize)];
     private static readonly Dictionary<string, string> Names =
         PoBrawlRoster.Fighters.Append(PoBrawlRoster.Bob).ToDictionary(fighter => fighter.Id, fighter => fighter.Name, StringComparer.OrdinalIgnoreCase);
     private static RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl FFA</span>;
     private RenderFragment HowItWorks => @<ul>
-        <li>@(IsHuman ? "You are Bob, fighting all 16 CPU presidents from a player-follow camera." : "All 16 presidents fight in the ring together — no bracket and no player controls.")</li>
+        <li>@(IsHuman ? "You are Bob, fighting seven CPU presidents from a player-follow camera." : "Eight presidents fight in the ring together — no bracket and no player controls.")</li>
         @if (IsHuman) { <li>WASD move, F punch, G kick (hold to charge), R guard. Touch and controller controls are available.</li> }
         <li>Every fighter chooses a nearby rival, and a swing lands on whoever it touches.</li>
         <li>Go down and you are out: no count in the free-for-all. The last one standing takes the round.</li>
@@ -206,7 +207,7 @@
     private DotNetObjectReference<PoBrawlFfaPage>? _ref;
     private string? _champion;
     private string? _engineError;
-    private string _announcement = "Sixteen presidents enter the ring. Last one standing wins.";
+    private string _announcement = "Eight presidents enter the ring. Last one standing wins.";
     private int _round;
     private int _roundId;
     private int _recordedRound = -1;
@@ -268,7 +269,7 @@
     {
         if (_introDone) return;
         _introDone = true;
-        _announcement = IsHuman ? "Bob versus sixteen CPUs is starting." : "The 16-president free-for-all is starting.";
+        _announcement = IsHuman ? "Bob versus seven CPUs is starting." : "The 8-president free-for-all is starting.";
         StateHasChanged();
         var generation = ++_generation;
 
@@ -283,7 +284,7 @@
             await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref, new
             {
                 mode = "ffa",
-                fighters = PoBrawlRoster.Fighters.Select(fighter => new { id = fighter.Id, name = fighter.Name }).ToArray(),
+                fighters = Roster.Where(fighter => fighter.Id != "bob").Select(fighter => new { id = fighter.Id, name = fighter.Name }).ToArray(),
                 human = IsHuman,
                 muted = Settings.Muted,
             });

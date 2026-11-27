@@ -17,8 +17,8 @@
 
 @* The Brawl Cup (/pobrawl/demo — the app-wide Demo tab; /pobrawl/tournament, the old address,
    redirects here): the CPU-only knockout bracket. The literal routes win over PoBrawlPage's
-   /pobrawl/{Mode}. All current presidents enter the 16-slot draw, seeded by their fighter-board
-   rating (PoBrawlTournament.SeedOrder: 1v16, 8v9, …), remaining slots are BYEs on the bottom
+   /pobrawl/{Mode}. The top eight presidents enter the draw, seeded by their fighter-board
+   rating (PoBrawlTournament.SeedOrder: 1v8, 4v5, …), remaining slots are BYEs on the bottom
    seeds, and every real bout plays out
    in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
    picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
@@ -45,7 +45,7 @@
         <div class="pb-intro">
             <GameIntro CueScope="pobrawl-cup"
                        Title="@TitleContent"
-                       Objective="Sixteen slots, one belt. The CPU fights every bout — BYEs advance without fighting."
+                       Objective="Eight slots, one belt. The CPU fights every bout — BYEs advance without fighting."
                        HowToPlay="@HowItWorks"
                        Mode="GameIntro.IntroMode.Demo"
                        DemoDelayMs="4000"
@@ -225,7 +225,7 @@
     </div>;
 
     private static RenderFragment HowItWorks => @<ul>
-        <li>🎲 All sixteen presidents are seeded by Elo (1 v 16, 8 v 9, …); open slots, if any, are BYEs on the bottom seeds</li>
+        <li>🎲 The top eight presidents are seeded by Elo (1 v 8, 4 v 5, …); open slots, if any, are BYEs on the bottom seeds</li>
         <li>🤖 The CPU plays each bout through to one champion; BYEs advance without a fight</li>
         <li>📈 Every result moves both fighters' Elo · ⏩ 2×/4× and 🗂 Bracket on the arena's bar</li>
         <li>⏱ Results stay up for 5 seconds before the next bout starts automatically</li>
@@ -233,22 +233,21 @@
 
     private RenderFragment DrawPreview => @<div class="pt-draw">
         <div class="pt-draw-head">
-            <span class="pt-draw-title">16-player bracket</span>
+            <span class="pt-draw-title">8-player bracket</span>
         </div>
         @if (_cup is not null)
         {
-            @* The field as a 4x4 of the 16 slots, by seed: an open slot is a BYE tile. *@
+            @* The field's eight slots, by seed: an open slot is a BYE tile. *@
             <div class="pt-field" aria-label="The field, by seed">
                 <PoBrawlFighterGrid Fighters="@_cup.BySeed" ByeSlots="@(PoBrawlTournament.Size - _cup.Field.Count)"
                                     Caption="@FieldCaption" Disabled="true" />
             </div>
             <details>
             <summary>Preview the draw</summary>
-            <div class="pt-menu-bracket" aria-label="16-player tournament bracket">
-                @PreviewRound("Round of 16", _cup.Bouts.Take(8))
-                @PreviewRound("Quarterfinals", _cup.Bouts.Skip(8).Take(4))
-                @PreviewRound("Semifinals", _cup.Bouts.Skip(12).Take(2))
-                @PreviewRound("Final", _cup.Bouts.Skip(14).Take(1))
+            <div class="pt-menu-bracket" aria-label="8-player tournament bracket">
+                @PreviewRound("Quarterfinals", _cup.Bouts.Take(4))
+                @PreviewRound("Semifinals", _cup.Bouts.Skip(4).Take(2))
+                @PreviewRound("Final", _cup.Bouts.Skip(6).Take(1))
             </div>
             </details>
             <p class="pt-draw-note">@(_ratingsLoaded ? $"{_cup.Field.Count} fighters · {PoBrawlTournament.Size} slots · BYEs advance automatically · Elo starts from the global fighter board." : "Loading ratings from the fighter board…")</p>
@@ -280,7 +279,7 @@
         }
     </span>;
 
-    // The board: four tournament rounds and the belt in five columns on a fixed
+    // The board: three tournament rounds and the belt on a fixed
     // grid (every row the same height), joined by SVG wires drawn to that grid's rem
     // geometry. Each bout lists its corners with the Elo they carry now and what this bout
     // moved it by. The bout just decided (_freshIndex) plays its result in: the loser's
@@ -289,34 +288,29 @@
     // styles are the end state, so reduced motion simply shows the result.
     // Under 640 px the board stacks into one column and the wires go.
     private RenderFragment Bracket => @<div class="pt-bracket">
-        <h3 class="pt-col-head" style="grid-column:1">Round of 16</h3>
-        @for (var i = 0; i < 8; i++)
+        <h3 class="pt-col-head" style="grid-column:1">Quarterfinals</h3>
+        @for (var i = 0; i < 4; i++)
         {
             @Slot(_cup!.Bouts[i], 1, i + 2, 1)
         }
-        @for (var i = 0; i < 4; i++)
+        @for (var i = 0; i < 2; i++)
         {
             @Wires(2, 2 + i * 2, 2, i * 2, i * 2 + 1)
         }
-        <h3 class="pt-col-head" style="grid-column:3">Quarterfinals</h3>
-        @for (var i = 0; i < 4; i++)
+        <h3 class="pt-col-head" style="grid-column:3">Semifinals</h3>
+        @for (var i = 0; i < 2; i++)
         {
-            @Slot(_cup!.Bouts[8 + i], 3, 2 + i * 2, 2)
+            @Slot(_cup!.Bouts[4 + i], 3, 2 + i * 2, 2)
         }
-        @Wires(4, 2, 4, 8, 9)
-        @Wires(4, 6, 4, 10, 11)
-        <h3 class="pt-col-head" style="grid-column:5">Semifinals</h3>
-        @Slot(_cup!.Bouts[12], 5, 2, 4)
-        @Slot(_cup!.Bouts[13], 5, 6, 4)
-        @Wires(6, 2, 8, 12, 13)
-        <h3 class="pt-col-head" style="grid-column:7">Final</h3>
-        @Slot(_cup!.Bouts[14], 7, 2, 8)
-        @Wires(8, 2, 8, 14, -1)
-        <h3 class="pt-col-head" style="grid-column:9">Champion</h3>
-        <div class="pt-slot" style="grid-column:9;grid-row:2 / span 8">
+        @Wires(4, 2, 4, 4, 5)
+        <h3 class="pt-col-head" style="grid-column:5">Final</h3>
+        @Slot(_cup!.Bouts[6], 5, 2, 4)
+        @Wires(6, 2, 4, 6, -1)
+        <h3 class="pt-col-head" style="grid-column:7">Champion</h3>
+        <div class="pt-slot" style="grid-column:7;grid-row:2 / span 4">
             @if (_cup!.ChampionId is { } champ)
             {
-                <div class="pt-champ @(_freshIndex == 14 ? "pt-champ--fresh" : "")"><span aria-hidden="true">🏆</span> @Name(champ)</div>
+                <div class="pt-champ @(_freshIndex == 6 ? "pt-champ--fresh" : "")"><span aria-hidden="true">🏆</span> @Name(champ)</div>
             }
             else
             {

@@ -25,7 +25,7 @@
    /pofighter/demo is the attract-mode demo (js/pofighter/demo.js): Kim and Nick, both CPU, best
    of three, forever; no start card, and any key or tap returns to the main menu. Every completed
    match is rated on the live fighter Elo board (DemoBoutFinished, PoFighterDemoElo).
-   /pofighter/tournament is the 16-slot CPU tournament (js/pofighter/tournament.js); each bout
+   /pofighter/tournament is the 8-slot CPU tournament (js/pofighter/tournament.js); each bout
    between built-in fighters posts to the fighter Elo board (POST /api/pofighter/elo).
    Studio fighters (made in the practice room, kept in this browser's IndexedDB) join every
    grid after the built-in ones; the start cards show the picked fighter's dossier. *@
@@ -41,7 +41,7 @@
     {
         <GameIntro CueScope="pofighter"
                    Title=@TitleContent
-                   Objective="Tournament: all 16 slots enter, CPU vs CPU, best of three per bout. Slots with no player are BYEs."
+                   Objective="Tournament: eight slots enter, CPU vs CPU, best of three per bout. Slots with no player are BYEs."
                    Mode="GameIntro.IntroMode.Demo"
                    Options="@TournamentField"
                    OnStart="@(() => _introDismissed = true)" />
