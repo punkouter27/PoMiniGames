@@ -419,6 +419,11 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>The crash card's Retry: a clean teardown and a fresh mount on new canvases.</summary>
     protected async Task RetryRaceAsync()
     {
+        if (_engineLoadFailed)
+        {
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
+        }
         await TeardownRaceAsync();
         _raceError = null;
         _status = null;
@@ -434,6 +439,11 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         try { await JS.InvokeVoidAsync("localStorage.setItem", PoCabinetUiSettings.StorageKey, Settings.ToJson()); }
         catch { /* storage unavailable: the low tier still applies */ }
         await JS.InvokeVoidAsync("PoQuality.setSessionTier", "low");
+        if (_engineLoadFailed)
+        {
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
+        }
         await TeardownRaceAsync();
         _raceError = null;
         _status = null;
@@ -649,8 +659,20 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private async Task EnsureEngineAsync()
     {
         var ready = await JS.InvokeAsync<bool>("loadEngine", "pocabinet");
-        if (!ready) throw new InvalidOperationException("pocabinet engine failed to load");
+        if (ready) return;
+        // The browser holds a failed module import failed until the page reloads (a CDN blip
+        // on three.js is the usual cause), so both of the crash card's retries reload it.
+        _engineLoadFailed = true;
+        var why = "";
+        try { why = await JS.InvokeAsync<string>("loadEngineError", "pocabinet"); }
+        catch (JSException) { /* an older loader: the plain message below */ }
+        throw new InvalidOperationException(string.IsNullOrWhiteSpace(why)
+            ? "The game's code did not download. Retry reloads the page."
+            : $"The game's code did not download ({why}). Retry reloads the page.");
     }
+
+    /// <summary>True once the engine's code failed to download: a retry has to reload the page.</summary>
+    private bool _engineLoadFailed;
 
     /// <summary>
     /// Mount the scene, dialogue bubble, minimap and environment against the static

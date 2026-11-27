@@ -140,6 +140,13 @@ export function loadLibrary(src) {
  *   state", not as a reason to throw — a failed engine load is a broken network
  *   or a missing asset, and the page above it is still navigable.
  */
+const _errors = new Map();
+
+/** Why `name` last failed to load ('' if it never did), for an error card. */
+export function loadEngineError(name) {
+    return _errors.get(name) || '';
+}
+
 export async function loadEngine(name) {
     const entry = REGISTRY[name];
     if (!entry) {
@@ -179,6 +186,10 @@ export async function loadEngine(name) {
             return true;
         })().catch((err) => {
             console.error(`[engineLoader] ${name} failed to load:`, err);
+            // Why, for the page's error card (loadEngineError). An import that failed is held
+            // failed by the browser for the life of the page (every module it pulls in, the CDN
+            // ones included), so only a reload retries it; the card's Retry does that.
+            _errors.set(name, String(err?.message || err || 'unknown error').slice(0, 240));
             // Drop the rejected promise so a retry is a real retry.
             _pending.delete(name);
             return false;
@@ -237,4 +248,5 @@ export function isWebGlAvailable() {
 // loaded with type="module" (so it has its own scope). Publish the entry points
 // the pages call.
 window.loadEngine = loadEngine;
+window.loadEngineError = loadEngineError;
 window.isWebGlAvailable = isWebGlAvailable;

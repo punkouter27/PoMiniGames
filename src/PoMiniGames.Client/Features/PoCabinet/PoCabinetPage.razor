@@ -326,7 +326,7 @@
     private RenderFragment CrashCard(string? message) => @<div class="pocabinet-crash">
         <div class="pocabinet-crash__card">
             <ErrorState Title="The race view stopped" OnRetry="RetryRaceAsync" RetryLabel="Retry">
-                <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and the plain court instead of the court scan.</p>
+                <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and a lighter scan.</p>
                 @if (!string.IsNullOrWhiteSpace(message))
                 {
                     <p class="pocabinet-crash__detail pocabinet-muted">@message</p>
