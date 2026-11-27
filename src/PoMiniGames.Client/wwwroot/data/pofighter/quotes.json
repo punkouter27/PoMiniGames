@@ -13,6 +13,13 @@
     "You were loud, {foe}. I was faster.",
     "Bow out next time. It saves us both the trouble."
   ],
+  "matt": [
+    "The alley's mine after dark, {foe}. Find another way home.",
+    "I warmed up on the walk over. You never stood a chance.",
+    "Green jacket, clean record. Remember both, {foe}.",
+    "You swing like you're asking permission, {foe}.",
+    "Big guy, quick feet. Nobody ever sees it coming."
+  ],
   "default": [
     "Is that all you brought, {foe}?",
     "Train harder. I'll still be here.",

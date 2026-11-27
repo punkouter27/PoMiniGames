@@ -1,8 +1,9 @@
 // pofighter/demo.js — two CPU fighters on the canvas with the arcade HUD (versus.js holds the
 // rules). runVersus() plays either the endless attract-mode demo or one tournament bout;
-// startDemo() is the demo: Kim vs Nick, best of three, forever. Every completed match (never one
-// left early) is rated on the live fighter Elo board through eloRef.DemoBoutFinished, once per
-// match, and the win card shows both fighters' new Elo and its change.
+// startDemo() is the demo: two built-in fighters picked at random, best of three, forever.
+// Every completed match (never one left early) is rated on the live fighter Elo board through
+// eloRef.DemoBoutFinished, once per match, and the win card shows both fighters' new Elo and
+// its change.
 //
 // Any key, tap or gamepad button leaves the demo through exitRef.invokeMethodAsync('ExitDemo')
 // (the page navigates home). The page passes no exitRef while the kiosk reel is running, since
@@ -861,14 +862,19 @@ export function runVersus(root, session, fighters, opts = {}) {
     return done;
 }
 
-/** The attract-mode demo: Kim (left) vs Nick, best of three, rematches forever. */
+/**
+ * The attract-mode demo: two built-in fighters drawn at random each time it opens, best of
+ * three, rematches forever (the corners swap every match).
+ */
 export async function startDemo(root, exitRef, session, eloRef = null) {
     const roster = await loadRoster();
     if (session.stopped || !roster) return false;
-    const kim = roster.find(f => f.id === 'kim'), nick = roster.find(f => f.id === 'p1');
+    const left = roster[Math.floor(Math.random() * roster.length)];
+    const rest = roster.filter(f => f !== left);
+    const right = rest[Math.floor(Math.random() * rest.length)];
     const onMatch = eloRef
         ? (r, matchNo) => eloRef.invokeMethodAsync('DemoBoutFinished', matchNo, r.winnerId, r.loserId, r.isDraw)
         : null;
-    runVersus(root, session, [kim, nick], { loop: true, exitRef, onMatch });
+    runVersus(root, session, [left, right], { loop: true, exitRef, onMatch });
     return true;
 }

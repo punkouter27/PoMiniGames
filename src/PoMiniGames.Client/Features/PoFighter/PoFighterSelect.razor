@@ -1,0 +1,102 @@
+@using PoMiniGames.Shared.Games
+
+@* The fighter select screen every PoFighter start card shows: a classic arcade layout in the game's
+   own look. The picked fighter stands large on the left (gold, facing right), whoever they meet
+   stands large on the right (blue, mirrored to face them), "VS" between, and the portrait grid
+   (PoFighterRosterGrid) underneath moves the cursor.
+   - Arcade: the right side is the first rung of the ladder (arcade.js ladderFor).
+   - Practice: the right side is the bag.
+   - Tournament: the two top seeds; nothing to pick, the grid shows the field.
+   Left / Right arrow keys step the cursor from inside the grid (OnKeyDown) and, through the
+   card's OnKey, from the OK button (the page calls Step). The big art is
+   data/pofighter/<id>-select.webp (scripts/pofighter/portrait.py); a Studio fighter has only
+   its small portrait, which is shown instead. *@
+<div class="pfs" @onkeydown="OnKeyDown">
+    @if (!string.IsNullOrEmpty(Heading))
+    {
+        <div class="pfs-head" aria-hidden="true"><span>@Heading</span></div>
+    }
+    <div class="pfs-stage" role="group" aria-label="@StageLabel">
+        @Corner(Left, "p1")
+        <span class="pfs-vs" aria-hidden="true">VS</span>
+        @Corner(Opponent, "p2")
+    </div>
+    <PoFighterRosterGrid Label="@Label" Compact="@Compact" ShowRandom="@ShowRandom" Selected="@Selected" Ratings="@Ratings"
+                         Customs="@Customs" OnSelect="OnSelect" OnCreate="OnCreate" />
+</div>
+
+@code {
+    /// <summary>The picked fighter id: the left corner and the grid's gold cursor.</summary>
+    [Parameter] public string? Selected { get; set; }
+
+    /// <summary>Who stands in the right corner; an empty corner shows a "?".</summary>
+    [Parameter] public PoFighterSide? Opponent { get; set; }
+
+    /// <summary>The left corner's flag: "1P" for a pick, "Seed 1" in the tournament.</summary>
+    [Parameter] public string LeftTag { get; set; } = "1P";
+
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+    [Parameter] public EventCallback OnCreate { get; set; }
+    [Parameter] public bool Compact { get; set; } = true;
+    [Parameter] public bool ShowRandom { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, int>? Ratings { get; set; }
+    [Parameter] public IReadOnlyList<PoFighterCustom>? Customs { get; set; }
+    [Parameter] public string Label { get; set; } = "Choose your fighter";
+
+    /// <summary>The slanted bar over the screen ("Select your fighter"); none when empty.</summary>
+    [Parameter] public string? Heading { get; set; }
+
+    private PoFighterSide? Left => SideFor(Selected, LeftTag, Ratings, Customs);
+
+    private string StageLabel => $"{Left?.Name ?? "No fighter"} versus {Opponent?.Name ?? "an unknown opponent"}";
+
+    /// <summary>A corner for a roster or Studio fighter; null when the id is neither.</summary>
+    public static PoFighterSide? SideFor(string? id, string tag, IReadOnlyDictionary<string, int>? ratings,
+        IReadOnlyList<PoFighterCustom>? customs)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        if (PoFighterRoster.IsRateable(id))
+        {
+            var note = ratings is not null && ratings.TryGetValue(id, out var elo) ? $"Elo {elo}" : "Unrated";
+            return new(PoFighterRoster.DisplayName(id), tag, $"data/pofighter/{PoFighterRoster.Canonicalize(id)}-select.webp", note);
+        }
+        return customs?.FirstOrDefault(c => c.Id == id) is { } c ? new(c.Name, tag, c.Portrait, "Studio") : null;
+    }
+
+    /// <summary>The id <paramref name="delta"/> tiles along the grid from <paramref name="current"/>, wrapping.</summary>
+    public static string? Step(string? current, int delta, IReadOnlyList<PoFighterCustom>? customs)
+    {
+        string[] ids = [.. PoFighterRoster.Fighters.Select(f => f.Id), .. (customs ?? []).Select(c => c.Id)];
+        if (ids.Length == 0) return current;
+        var at = Array.FindIndex(ids, id => string.Equals(id, current, StringComparison.OrdinalIgnoreCase));
+        return at < 0 ? ids[0] : ids[((at + delta) % ids.Length + ids.Length) % ids.Length];
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (!OnSelect.HasDelegate) return;
+        var delta = e.Key switch { "ArrowLeft" => -1, "ArrowRight" => 1, _ => 0 };
+        if (delta != 0 && Step(Selected, delta, Customs) is { } next) await OnSelect.InvokeAsync(next);
+    }
+
+    private static RenderFragment Corner(PoFighterSide? side, string corner) => @<figure class="pfs-side pfs-side--@corner">
+        <div class="pfs-art">
+            @if (side is { Art.Length: > 0 })
+            {
+                <img @key="side.Art" src="@side.Art" alt="" />
+            }
+            else
+            {
+                <span class="pfs-art-mark @(side is null ? null : "material-symbols-outlined")" aria-hidden="true">@(side?.Icon ?? "?")</span>
+            }
+        </div>
+        <figcaption class="pfs-plate">
+            <span class="pfs-tag">@(side?.Tag ?? "CPU")</span>
+            <strong class="pfs-name">@(side?.Name ?? "???")</strong>
+            @if (!string.IsNullOrEmpty(side?.Note))
+            {
+                <span class="pfs-note">@side.Note</span>
+            }
+        </figcaption>
+    </figure>;
+}

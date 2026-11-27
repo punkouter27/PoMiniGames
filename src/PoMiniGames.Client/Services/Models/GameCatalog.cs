@@ -215,7 +215,7 @@ public static class GameCatalog
             },
             new(GameMode.Demo, "/pofighter/demo")
             {
-                ChipDescription = "Kim vs Nick, both CPU, best of three, arcade style",
+                ChipDescription = "Two fighters, both CPU, best of three, arcade style",
             },
         ]),
 

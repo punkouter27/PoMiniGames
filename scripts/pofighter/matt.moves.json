@@ -1,0 +1,22 @@
+{
+  "fighter": "matt",
+  "source": "PXL_20261127_210512874.mp4",
+  "sourceFps": 30,
+  "ground": "feet",
+  "standPx": 373,
+  "res": 1.75,
+  "colorMatch": true,
+  "scaleFrom": "idle",
+  "moves": {
+    "idle":      { "from": 108,  "to": 132,  "step": 2, "anchor": "world", "loop": "pingpong", "refFrame": 124 },
+    "walkF":     { "from": 216,  "to": 230,  "step": 2, "anchor": "track", "loop": "loop" },
+    "walkB":     { "from": 282,  "to": 298,  "step": 2, "anchor": "track", "loop": "loop" },
+    "crouch":    { "from": 422,  "to": 446,  "step": 3, "anchor": "world", "loop": "hold" },
+    "jump":      { "frames": [510, 512, 514, 516, 518, 520, 522, 524, 526, 528, 530, 532, 534, 550, 556], "anchor": "world", "loop": "once", "ground": "hold", "rate": 1.2 },
+    "punchMid":  { "from": 610,  "to": 632,  "step": 2, "anchor": "world", "loop": "once", "attack": true, "advance": true, "rate": 1.25 },
+    "kick":      { "from": 796,  "to": 822,  "step": 2, "anchor": "world", "loop": "once", "attack": true, "advance": true, "rate": 1.25 },
+    "victory":   { "from": 1086, "to": 1112, "step": 2, "anchor": "track", "speed": 0, "loop": "pingpong" },
+    "ko":        { "frames": [1210, 1216, 1222, 1228, 1234, 1240, 1246, 1252, 1258, 1264, 1270, 1276, 1282, 1288, 1294, 1300, 1306], "anchor": "world", "loop": "hold", "rate": 3 },
+    "getUp":     { "frames": [1332, 1338, 1344, 1350, 1356, 1362, 1368, 1374, 1380, 1386, 1392, 1398, 1404, 1410, 1416, 1422], "anchor": "world", "loop": "once", "rate": 3.6, "anchorFrame": 1422 }
+  }
+}

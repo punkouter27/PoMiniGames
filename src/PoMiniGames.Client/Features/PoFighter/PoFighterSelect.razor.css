@@ -1,0 +1,250 @@
+/* The fighter select screen: a slanted header, two large corners (gold = the pick, blue = who
+   they meet, mirrored to face them) with "VS" between, and the portrait grid underneath.
+   Sized in vh as well as rem so the card never scrolls on a short screen (LinkAuditUiTests). */
+.pfs {
+    display: grid;
+    gap: 0.45rem;
+    width: min(100%, 34rem);
+    margin-inline: auto;
+}
+
+.pfs-head {
+    display: flex;
+    justify-content: center;
+}
+
+.pfs-head span {
+    display: inline-block;
+    padding: 0.15rem 1.4rem;
+    transform: skewX(-14deg);
+    background: linear-gradient(90deg, transparent, var(--pf-navy-deep) 12%, var(--pf-navy-deep) 88%, transparent);
+    border-block: 2px solid var(--pf-gold);
+    color: var(--pf-gold);
+    font: italic 900 clamp(0.95rem, 3.6vw, 1.3rem) / 1.2 'Arial Black', Impact, system-ui, sans-serif;
+    letter-spacing: 0.08em;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.75);
+    text-transform: uppercase;
+}
+
+.pfs-stage {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem;
+    border-radius: 0.35rem;
+    background:
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+        linear-gradient(180deg, rgba(10, 12, 30, 0.9), rgba(23, 28, 56, 0.9));
+    box-shadow: inset 0 0 0 1px rgba(255, 210, 63, 0.25);
+    color: white;
+}
+
+.pfs-side {
+    --pfs-colour: var(--pf-gold);
+    --pfs-glow: rgba(255, 210, 63, 0.3);
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+    margin: 0;
+}
+
+.pfs-side--p2 {
+    --pfs-colour: var(--pf-p2);
+    --pfs-glow: rgba(79, 195, 255, 0.3);
+}
+
+.pfs-art {
+    position: relative;
+    height: clamp(5.5rem, 21vh, 10.5rem);
+    overflow: hidden;
+    border: 3px solid var(--pfs-colour);
+    border-radius: 0.2rem;
+    background:
+        radial-gradient(90% 70% at 50% 100%, var(--pfs-glow), transparent 70%),
+        linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18), inset 0 -3px 0 rgba(0, 0, 0, 0.45), 0 0 14px var(--pfs-glow);
+}
+
+.pfs-art img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center bottom;
+    animation: pfs-in 220ms cubic-bezier(.2, .9, .3, 1) both;
+}
+
+/* The right corner faces the left one: every fighter is drawn facing right. */
+.pfs-side--p2 .pfs-art img {
+    scale: -1 1;
+    animation-name: pfs-in-right;
+}
+
+@keyframes pfs-in {
+    from {
+        opacity: 0;
+        translate: -18% 0;
+    }
+}
+
+@keyframes pfs-in-right {
+    from {
+        opacity: 0;
+        translate: 18% 0;
+    }
+}
+
+.pfs-art-mark {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--pfs-colour);
+    font: italic 900 clamp(2.5rem, 12vh, 5rem) / 1 'Arial Black', Impact, system-ui, sans-serif;
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+}
+
+.pfs-art-mark.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-style: normal;
+    font-weight: 400;
+}
+
+.pfs-plate {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.1rem 0.4rem;
+    border-block: 2px solid var(--pfs-colour);
+    background: linear-gradient(90deg, var(--pf-navy-deep), rgba(23, 28, 56, 0.55));
+    text-align: left;
+}
+
+.pfs-side--p2 .pfs-plate {
+    flex-direction: row-reverse;
+    background: linear-gradient(270deg, var(--pf-navy-deep), rgba(23, 28, 56, 0.55));
+    text-align: right;
+}
+
+.pfs-tag {
+    flex: none;
+    align-self: center;
+    padding: 0 0.3rem;
+    border-radius: 0.2rem;
+    background: var(--pfs-colour);
+    color: var(--pf-ink);
+    font-size: 0.65rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    animation: pfs-blink 0.9s steps(2, jump-none) infinite;
+}
+
+@keyframes pfs-blink {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.pfs-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--pfs-colour);
+    font: italic 900 clamp(0.9rem, 3.4vw, 1.25rem) / 1.25 'Arial Black', Impact, system-ui, sans-serif;
+    letter-spacing: 0.04em;
+    text-overflow: ellipsis;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.pfs-note {
+    flex: none;
+    color: var(--pf-text);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.pfs-vs {
+    color: var(--pf-gold);
+    font: italic 900 clamp(1.3rem, 6vw, 2.4rem) / 1 'Arial Black', Impact, system-ui, sans-serif;
+    text-shadow: 3px 3px 0 var(--pf-red), 5px 5px 0 rgba(0, 0, 0, 0.6);
+    animation: pfs-vs 1.6s ease-in-out infinite;
+}
+
+@keyframes pfs-vs {
+    50% {
+        scale: 1.12;
+    }
+}
+
+/* The grid under the corners is the cursor's strip: one row of small square tiles, so the two
+   large pictures stay the subject (the roster grid's own tiles are twice this size). */
+.pfs ::deep .pfr-grid--compact {
+    grid-template-columns: repeat(auto-fit, minmax(3rem, 4.4rem));
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.45rem;
+}
+
+.pfs ::deep .pfr-grid--compact .pfr-name {
+    padding-inline: 0.1rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+}
+
+.pfs ::deep .pfr-random-mark {
+    font-size: 1.7rem;
+}
+
+.pfs ::deep .pfr-tile--create .pfr-empty-mark {
+    font-size: 1.3rem;
+}
+
+.pfs ::deep .pfr-elo {
+    display: none;
+}
+
+/* A phone: the note drops under the name so neither is cut. */
+@media (max-width: 520px) {
+    .pfs ::deep .pfr-grid--compact {
+        grid-template-columns: repeat(auto-fit, minmax(2.75rem, 3.6rem));
+        gap: 0.3rem;
+        padding: 0.35rem;
+    }
+
+    .pfs-plate,
+    .pfs-side--p2 .pfs-plate {
+        flex-wrap: wrap;
+        gap: 0 0.3rem;
+    }
+
+    .pfs-note {
+        flex-basis: 100%;
+    }
+
+    .pfs-art {
+        height: clamp(5rem, 17vh, 8rem);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pfs-art img,
+    .pfs-tag,
+    .pfs-vs {
+        animation: none;
+    }
+}
+
+:root[data-motion="reduce"] .pfs-art img,
+:root[data-motion="reduce"] .pfs-tag,
+:root[data-motion="reduce"] .pfs-vs {
+    animation: none;
+}

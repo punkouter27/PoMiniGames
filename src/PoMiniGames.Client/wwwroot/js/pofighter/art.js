@@ -10,6 +10,7 @@ import { getCustomFighter, listCustomFighters } from './studio.js';
 export const ROSTER = [
     { id: 'p1', name: 'Nick' },
     { id: 'kim', name: 'Kim' },
+    { id: 'matt', name: 'Matt' },
 ];
 export const isBuiltIn = id => ROSTER.some(f => f.id === id);
 

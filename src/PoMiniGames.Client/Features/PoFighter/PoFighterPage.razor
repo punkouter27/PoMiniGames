@@ -22,13 +22,14 @@
    /pofighter/1player is the practice room (js/pofighter/index.js): a punching bag, nothing scored.
    /pofighter/arcade is 1P vs the CPU (js/pofighter/arcade.js): every other fighter in turn, then
    your Shadow; difficulty on the start card; the run is recorded in local stats.
-   /pofighter/demo is the attract-mode demo (js/pofighter/demo.js): Kim and Nick, both CPU, best
-   of three, forever; no start card, and any key or tap returns to the main menu. Every completed
+   /pofighter/demo is the attract-mode demo (js/pofighter/demo.js): two built-in fighters drawn
+   at random, both CPU, best of three, forever; no start card, and any key or tap returns to the main menu. Every completed
    match is rated on the live fighter Elo board (DemoBoutFinished, PoFighterDemoElo).
    /pofighter/tournament is the 8-slot CPU tournament (js/pofighter/tournament.js); each bout
    between built-in fighters posts to the fighter Elo board (POST /api/pofighter/elo).
    Studio fighters (made in the practice room, kept in this browser's IndexedDB) join every
-   grid after the built-in ones; the start cards show the picked fighter's dossier. *@
+   grid after the built-in ones. Every start card is the select screen (PoFighterSelect): the
+   pick large on the left, who they meet large on the right, the portrait grid underneath. *@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
@@ -43,6 +44,7 @@
                    Title=@TitleContent
                    Objective="Tournament: eight slots enter, CPU vs CPU, best of three per bout. Slots with no player are BYEs."
                    Mode="GameIntro.IntroMode.Demo"
+                   Wide="true"
                    Options="@TournamentField"
                    OnStart="@(() => _introDismissed = true)" />
     }
@@ -58,6 +60,7 @@
                    MapLabel="Difficulty"
                    @bind-MapId="_difficulty"
                    Options="@ArcadePicker"
+                   OnKey="OnSelectKey"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else if (IsArcade)
@@ -89,7 +92,7 @@
     {
         <div class="pf-room pf-demo" @ref="_room">
             <canvas class="pf-canvas" data-pf-canvas
-                    aria-label="Demo: Kim and Nick, both computer-controlled, fight best of three. Press any key to leave."></canvas>
+                    aria-label="Demo: two computer-controlled fighters, best of three. Press any key to leave."></canvas>
             @if (_failed)
             {
                 <div class="pf-error"><ErrorState HeadingLevel="2" Title="The demo could not be loaded">Check your connection and reopen the game.</ErrorState></div>
@@ -103,7 +106,9 @@
                    Objective="Practice room: try every move on the bag."
                    Controls="@ControlsContent"
                    Mode="GameIntro.IntroMode.OnePlayer"
+                   Wide="true"
                    Options="@FighterPicker"
+                   OnKey="OnSelectKey"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else
@@ -325,19 +330,42 @@
     private static readonly IReadOnlyList<IntroMap> DifficultyMaps =
         [new("easy", "Easy"), new("normal", "Normal"), new("hard", "Hard")];
 
-    // Practice: the grid ends with a Create tile that opens the Studio once the room is up.
-    private RenderFragment FighterPicker => @<div>
-        <PoFighterRosterGrid Label="Choose your fighter" Compact="true" Selected="@_fighterId" Ratings="@_ratings"
-                             Customs="@_customFighters" OnSelect="@(id => _fighterId = id)"
-                             OnCreate="@(() => { _studioOnStart = true; _introDismissed = true; })" />
-        <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
-    </div>;
+    // Practice: the bag in the far corner; the grid ends with a Create tile that opens the Studio
+    // once the room is up.
+    private RenderFragment FighterPicker => @<PoFighterSelect Heading="Select your fighter" Selected="@_fighterId"
+        Ratings="@_ratings" Customs="@_customFighters" Opponent="@BagSide" OnSelect="@(id => _fighterId = id)"
+        OnCreate="@(() => { _studioOnStart = true; _introDismissed = true; })" />;
 
-    private RenderFragment ArcadePicker => @<div>
-        <PoFighterRosterGrid Label="Choose your fighter" Heading="Select your fighter" ShowRandom="true" Compact="true" Selected="@_fighterId" Ratings="@_ratings"
-                             Customs="@_customFighters" OnSelect="@(id => _fighterId = id)" />
-        <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
-    </div>;
+    // Arcade: the far corner is the first rung of the ladder the pick will climb.
+    private RenderFragment ArcadePicker => @<PoFighterSelect Heading="Select your fighter" ShowRandom="true" Selected="@_fighterId"
+        Ratings="@_ratings" Customs="@_customFighters" Opponent="@FirstRung" OnSelect="@(id => _fighterId = id)" />;
+
+    private static readonly PoFighterSide BagSide = new("Bag", "Target", null, null, "sports_mma");
+
+    private static readonly int SeedElo = new PoMiniGames.Domain.Services.PairwiseEloOptions().SeedElo;
+
+    private IEnumerable<(string Id, string Name)> Field() =>
+        PoMiniGames.Shared.Games.PoFighterRoster.Fighters.Select(f => (f.Id, f.Name))
+            .Concat(_customFighters.Select(c => (c.Id, c.Name)));
+
+    private int EloOf(string id) => _ratings.TryGetValue(id, out var elo) ? elo : SeedElo;
+
+    /// <summary>The arcade's first opponent: the others by Elo, lowest first, then by name (arcade.js ladderFor).</summary>
+    private PoFighterSide? FirstRung => Field()
+        .Where(f => !string.Equals(f.Id, _fighterId, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(f => EloOf(f.Id)).ThenBy(f => f.Name, StringComparer.Ordinal)
+        .Select(f => PoFighterSelect.SideFor(f.Id, "CPU", _ratings, _customFighters))
+        .FirstOrDefault();
+
+    /// <summary>The tournament's seeding: by Elo, highest first, then by name (bracket.js createBracket).</summary>
+    private string[] Seeds => [.. Field().OrderByDescending(f => EloOf(f.Id)).ThenBy(f => f.Name, StringComparer.Ordinal).Select(f => f.Id)];
+
+    /// <summary>Left / Right on a start card: step the select screen's cursor.</summary>
+    private void OnSelectKey(KeyboardEventArgs e)
+    {
+        var delta = e.Key switch { "ArrowLeft" => -1, "ArrowRight" => 1, _ => 0 };
+        if (delta != 0 && PoFighterSelect.Step(_fighterId, delta, _customFighters) is { } next) _fighterId = next;
+    }
 
     // The on-screen pad, the same in the practice room and the arcade. The walk buttons' names
     // differ: the practice fighter always faces the bag, the arcade one faces the foe.
@@ -356,11 +384,21 @@
         </div>
     </text>;
 
-    private RenderFragment TournamentField => @<div>
-        <PoFighterRosterGrid Label="Tournament field" Ratings="@_ratings" Customs="@_customFighters"
-                             Selected="@_fieldPick" OnSelect="@(id => _fieldPick = id)" />
-        <PoFighterDossier Fighter="@CardFor(_fieldPick)" Rating="@RatingFor(_fieldPick)" />
-    </div>;
+    // Tournament: the field in its eight slots, the two top seeds in the corners (a tile moves
+    // the left corner to that fighter, facing the best of the rest).
+    private RenderFragment TournamentField
+    {
+        get
+        {
+            var seeds = Seeds;
+            var left = seeds.FirstOrDefault(id => id == _fieldPick) ?? seeds.FirstOrDefault();
+            var right = seeds.FirstOrDefault(id => id != left);
+            string Tag(string? id) => $"Seed {Array.IndexOf(seeds, id) + 1}";
+            return @<PoFighterSelect Heading="Tournament field" Label="Tournament field" Compact="false" Selected="@left" LeftTag="@Tag(left)"
+                Ratings="@_ratings" Customs="@_customFighters" Opponent="@PoFighterSelect.SideFor(right, Tag(right), _ratings, _customFighters)"
+                OnSelect="@(id => _fieldPick = id)" />;
+        }
+    }
 
     private RenderFragment Summary => @<p>@_summary</p>;
 

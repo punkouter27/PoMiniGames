@@ -280,7 +280,10 @@
     /// <summary>Fired once when the intro is dismissed and play should begin.</summary>
     [Parameter] public EventCallback OnStart { get; set; }
 
-    /// <summary>Raw keydowns while the intro is up (used by TwoPlayer selection).</summary>
+    /// <summary>
+    /// Raw keydowns while the intro is up (TwoPlayer selection). In 1P and demo only the arrow
+    /// keys are passed on, for a setup that is a cursor (PoFighter's select screen).
+    /// </summary>
     [Parameter] public EventCallback<KeyboardEventArgs> OnKey { get; set; }
 
     /// <summary>
@@ -490,7 +493,16 @@
         {
             await StartAsync();
         }
+        else if (IsCursorKey(e))
+        {
+            await OnKey.InvokeAsync(e);
+        }
     }
+
+    // 1P with a host that listens (PoFighter's select screen): the arrow keys reach it from the
+    // card and from the focused OK button, so the stick moves the cursor and Enter starts.
+    private bool IsCursorKey(KeyboardEventArgs e) =>
+        OnKey.HasDelegate && e.Key is "ArrowLeft" or "ArrowRight" or "ArrowUp" or "ArrowDown";
 
     private Task HandleControlKey(KeyboardEventArgs e) =>
         e.Key == "Escape" ? CancelAsync() : Task.CompletedTask;
@@ -500,7 +512,9 @@
     // HandleKey and the card could not be cancelled (LinkAuditUiTests, v4 audit 2026-11-24). In 2P the key
     // bubbles to HandleKey, which cancels there.
     private Task HandleOkKey(KeyboardEventArgs e) =>
-        Mode != IntroMode.TwoPlayer ? HandleControlKey(e) : Task.CompletedTask;
+        Mode == IntroMode.TwoPlayer ? Task.CompletedTask
+        : IsCursorKey(e) ? OnKey.InvokeAsync(e)
+        : HandleControlKey(e);
 
     private Task CancelAsync()
     {

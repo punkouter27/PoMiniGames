@@ -14,6 +14,7 @@ public static class PoFighterRoster
     [
         new("p1", "Nick"),
         new("kim", "Kim"),
+        new("matt", "Matt"),
     ];
 
     private static readonly Dictionary<string, string> NamesById =

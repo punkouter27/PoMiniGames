@@ -21,7 +21,7 @@ export const STAGES = Object.freeze({
     street: { id: 'street', name: 'Neon Alley' },
 });
 
-const HOME = { p1: 'rooftop', kim: 'dojo' };
+const HOME = { p1: 'rooftop', kim: 'dojo', matt: 'street' };
 const SPARE = ['street', 'gym', 'dojo', 'rooftop'];
 
 /** A fighter's home stage id: built-in fighters have one, a Studio fighter gets one from its id. */

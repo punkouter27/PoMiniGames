@@ -2,8 +2,9 @@
 
 Offline tools that turn a video of one performer into `wwwroot/data/pofighter/<id>.webp` (sprite
 sheet) and `<id>.json` (frame rects, anchors, reach). Each built-in fighter has a moves file here
-(`p1.moves.json` is Nick, `kim.moves.json` is Kim) and an entry in `ROSTER` in
-`wwwroot/js/pofighter/art.js`; work in `artifacts/pofighter/<id>/` instead of `v2/` for a new one. Nothing here runs in CI; every intermediate
+(`p1.moves.json` is Nick, `kim.moves.json` is Kim, `matt.moves.json` is Matt) and an entry in
+`ROSTER` in `wwwroot/js/pofighter/art.js`; work in `artifacts/pofighter/<id>/` instead of `v2/` for a
+new one (Nick's and Matt's 2026-11-27 shoots are in `artifacts/pofighter/nick/` and `matt/`). Nothing here runs in CI; every intermediate
 stays under `artifacts/pofighter/` (gitignored). The video itself is never committed.
 
 ## Filming: the shot list
@@ -67,17 +68,32 @@ phone gives a 373-unit fighter, so a sharper fighter needs 4K footage, not a big
 ## After packing: portrait, roster, voices
 
 - `python -I scripts/pofighter/portrait.py src/PoMiniGames.Client/wwwroot/data/pofighter <id>` writes
-  `<id>-portrait.webp`, the 4x4 select grid's tile.
+  `<id>-portrait.webp` (the select grid's tile and the health bar's portrait) and `<id>-select.webp`
+  (the body from the waist up: the large corner art on the select screen, `PoFighterSelect`).
 - Add the fighter to `ROSTER` in `wwwroot/js/pofighter/art.js` (the game) **and** to `PoFighterRoster`
   in `src/PoMiniGames.Shared/Games/PoFighterRoster.cs` (the Elo board accepts only listed ids); give
   it a procedural voice in `VOICES` in `wwwroot/js/pofighter/voice.js` (pitch, wave, formant).
 - Voice clips: `wwwroot/audio/pofighter/<id>/<mood>-<level>.wav` (moods angry, happy, hurt, insult,
   celebrate; levels 1-5), then `pwsh scripts/pofighter/voices.ps1` trims each new clip's silence, normalises it to -16 LUFS and writes it as mono 24 kHz (ffmpeg; the original goes to `scripts/pofighter/voices-raw/<id>/`, `-Force` reprocesses from there, `-NoProcess` skips it) and rewrites `voices.json` (every fighter × mood × level with its file, `exists` and the fighter's procedural voice profile; a cell with no clip plays the procedural imitation in `js/platform/emotionVoice.js`). `-Game pobrawl` does the same for PoBrawl's presidents (`wwwroot/audio/pobrawl/<id>/`, originals in `scripts/pobrawl/voices-raw/`).
 
+## How long a cut takes, and the lighter model
+
+On the owner's laptop (Snapdragon X, x64 Python under emulation, 2026-11-27) one picture takes about
+90 s with `birefnet-general`, 35 s with `--model birefnet-general-lite` and 10 s with
+`isnet-general-use`. The lite model's outline is close to the full one's (fists, shoes and hair are
+all kept; the full model draws a little more finger detail), so Nick's and Matt's 2026-11-27 sheets
+(128 and 127 pictures) were cut with it; rerunning `cutout.py` without `--model` into an empty cut
+folder and packing again replaces them with no other change. DirectML on that laptop's GPU runs out
+of memory on BiRefNet, so the CPU is the only route there.
+
+A fixed phone (a tripod) makes everything easier: `camera.py` then measures no pan or zoom, and
+`"scaleFrom": "idle"` gives every move the stance's size.
+
 ## A quicker draft cut
 
 `cutout.py --model isnet-general-use` cuts a picture in about 9 s instead of about 70 s (BiRefNet), with softer
-edges. Kim's sheet was first packed from such a draft (`artifacts/pofighter/kim/cutisnet`); the
+edges; on a performer filmed small and far (Nick's 2026-11-27 shoot) it drops fists and the kicking
+foot, so check a punch and a kick before trusting a draft. Kim's sheet was first packed from such a draft (`artifacts/pofighter/kim/cutisnet`); the
 BiRefNet cut (`kim/cut`, resumable) replaces it with no code change. Two of Kim's traps: a pink bag
 behind the squat (cleared by colour) and a blanket the person model picked instead of her in a few
 camera-swing frames (dropped from `getUp` and `ko` with explicit `frames` lists).

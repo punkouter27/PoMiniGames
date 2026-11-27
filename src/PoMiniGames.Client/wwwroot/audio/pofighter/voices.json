@@ -1,7 +1,7 @@
 {
   "schema": "po-voice-manifest/1",
   "game": "pofighter",
-  "generated": "2026-11-23T04:05:54Z",
+  "generated": "2026-11-27T21:54:55Z",
   "root": "src/PoMiniGames.Client/wwwroot/audio/pofighter",
   "emotions": [
     "angry",
@@ -316,6 +316,157 @@
           {
             "level": 5,
             "file": "kim/celebrate-5.wav",
+            "exists": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "matt",
+      "name": "Matt",
+      "voice": {
+        "pitchHz": 104,
+        "formantScale": 0.92,
+        "breath": 0.14,
+        "rasp": 0.42,
+        "vibratoHz": 4.8,
+        "vibratoDepth": 0.018,
+        "tempo": 0.96,
+        "timbre": "adult-male"
+      },
+      "clips": {
+        "angry": [
+          {
+            "level": 1,
+            "file": "matt/angry-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "matt/angry-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "matt/angry-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "matt/angry-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "matt/angry-5.wav",
+            "exists": false
+          }
+        ],
+        "happy": [
+          {
+            "level": 1,
+            "file": "matt/happy-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "matt/happy-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "matt/happy-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "matt/happy-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "matt/happy-5.wav",
+            "exists": false
+          }
+        ],
+        "hurt": [
+          {
+            "level": 1,
+            "file": "matt/hurt-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "matt/hurt-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "matt/hurt-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "matt/hurt-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "matt/hurt-5.wav",
+            "exists": false
+          }
+        ],
+        "insult": [
+          {
+            "level": 1,
+            "file": "matt/insult-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "matt/insult-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "matt/insult-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "matt/insult-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "matt/insult-5.wav",
+            "exists": false
+          }
+        ],
+        "celebrate": [
+          {
+            "level": 1,
+            "file": "matt/celebrate-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "matt/celebrate-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "matt/celebrate-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "matt/celebrate-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "matt/celebrate-5.wav",
             "exists": false
           }
         ]
