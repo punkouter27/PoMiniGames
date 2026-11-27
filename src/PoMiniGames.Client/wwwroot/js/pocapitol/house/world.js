@@ -3,8 +3,9 @@
 // Capitol's other map (../world.js) is a crowd of 512 against five police lines on an invented
 // floor plan. This one is a first-person shooter in a real house: the player is a police officer
 // with the same machine gun, five concussion grenades and two smoke grenades the solo raider
-// carries there, and eleven armed raiders hold the five rooms. Clear every room, then hold the
-// house against the second wave that comes back in by the way the officer did.
+// carries there. They start in the bedroom (the room with the toys and the miniatures bench,
+// which nobody holds), and eleven armed raiders hold the other four rooms. Clear every room,
+// then hold the house against the second wave that comes in by the entry passage.
 //
 // The state has the shape ../world.js gives its own, so the things that read one read the other:
 // crowd.js draws `companions` (the raiders, with the demo's `armed` flag so they hold guns and
@@ -319,7 +320,7 @@ function hurt(state, amount, fromX, fromZ) {
 }
 
 /**
- * The second wave. Once the five rooms are clear there is a breath, then the rest come in one at
+ * The second wave. Once the rooms are clear there is a breath, then the rest come in one at
  * a time by the entry passage and go straight for the officer. Nobody appears in plain view:
  * while the officer is watching the way in from close by, the next one waits outside (not for
  * ever: after WAVE_HOLD seconds they come anyway).
@@ -329,7 +330,7 @@ function stepWave(state, nav) {
     if (!room.wave || state.objective !== room.index || state.waveIn >= room.total) return;
     if (state.waveAt < 0) { state.waveAt = state.elapsed + WAVE_AFTER; return; }
     if (state.elapsed < state.waveAt) return;
-    const p = state.player, door = nav.start;
+    const p = state.player, door = nav.entry;
     const watched = Math.hypot(p.x - door.x, p.z - door.z) < 4.5 && nav.clearLine(p.x, p.z, door.x, door.z, 1.4);
     if (watched && state.elapsed < state.waveAt + WAVE_HOLD) return;
     const id = RAIDER_IDS[state.nextId++ % RAIDER_IDS.length];

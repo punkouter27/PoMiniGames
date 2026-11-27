@@ -191,11 +191,13 @@ export function createNav(data) {
     const sx = data.start.x, sz = -data.start.y;
     const lookX = data.start.lookX - sx, lookZ = -data.start.lookY - sz;
     const start = { x: sx, z: sz, yaw: Math.atan2(-lookX, -lookZ) };
+    // Where the second wave comes into the house: the end of the entry passage.
+    const entry = data.entry ? { x: data.entry.x, z: -data.entry.y } : { x: sx, z: sz };
 
     return {
         cell, cols, rows, x0, z0: -(y0 + rows * cell), x1: x0 + cols * cell, z1: -y0,
         walk, walkable, heightAt, ray, clearLine, move, nearestWalkable, field, downhill, walkDistance,
-        rooms, roomAt, start,
+        rooms, roomAt, start, entry,
         /** Grid cell of a point as [column, row from the top of a plan drawn with +x right and -z up]. */
         plan(x, z) { return [(x - x0) / cell, rows - (-z - y0) / cell]; },
         /** Is plan cell (column, row-from-top) walkable? For drawing the map. */

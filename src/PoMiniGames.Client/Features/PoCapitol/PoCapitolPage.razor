@@ -54,7 +54,7 @@
                 {
                     <GameIntro CueScope="pocapitol"
                                Title="@TitleContent"
-                               Objective="@(House ? "A scanned house, five rooms, eleven armed raiders and more on the way. You are the officer sent in to clear it." : "One afternoon, five police lines. Play it as the crowd, the line, the commander, or an observer.")"
+                               Objective="@(House ? "You start in the toy room of a scanned house. Eleven armed raiders hold the other rooms, and more are on the way." : "One afternoon, five police lines. Play it as the crowd, the line, the commander, or an observer.")"
                                Controls="@(House ? HouseControls : IntroControls)"
                                HowToPlay="@(House ? HouseRules : IntroRules)"
                                Options="@(House ? HouseOptions : IntroOptions)"
@@ -398,6 +398,10 @@
     private RenderFragment HouseHud => @<div class="pc-hud">
         <div class="pc-hud-top">
             <div class="pc-hud-row">
+                @if (_demo)
+                {
+                    <span class="pc-rec-pill" aria-hidden="true"><i></i>DEMO</span>
+                }
                 <span class="pc-hud-clock" aria-label="@($"Time {Clock}")">@Clock</span>
                 @* A pip per room and one more for the second wave. *@
                 <div class="pc-progress" role="img" aria-label="@($"{Math.Min(_milestone, HouseRooms.Length)} of {HouseRooms.Length} rooms clear{(HouseWave ? ", second wave under way" : "")}")">
@@ -873,8 +877,8 @@
     </div>;
 
     private RenderFragment HouseRules => @<div>
-        <p>The house is a real one, walked through with a camera and rebuilt as a 3D scan: the walls, the furniture and the doorways are where they were. Eleven armed raiders hold its five rooms: the hall, the bedroom, the dining room, the kitchen and the living room.</p>
-        <p>You come in by the entry passage with a machine gun, five concussion grenades and two smoke grenades. Shots bring whoever is in earshot; smoke hides you; a grenade stays in its room. Health comes back if you stay out of fire for a few seconds. Clear every room, then hold the house: a second wave comes back in by the entry passage.</p>
+        <p>The house is a real one, walked through with a camera and rebuilt as a 3D scan: the walls, the furniture and the doorways are where they were. You start in the bedroom, among the shelves of toys and the miniatures bench; nobody is in there with you. Eleven armed raiders hold the other four rooms: the hall, the dining room, the kitchen and the living room.</p>
+        <p>You are a police officer with a machine gun, five concussion grenades and two smoke grenades. Go room to room and shoot every one of them. Shots bring whoever is in earshot; smoke hides you; a grenade stays in its room. Health comes back if you stay out of fire for a few seconds. Clear every room, then hold the house: a second wave comes back in by the entry passage.</p>
         <p><strong>Fiction.</strong> Adult themes; no injury is shown.</p>
     </div>;
 

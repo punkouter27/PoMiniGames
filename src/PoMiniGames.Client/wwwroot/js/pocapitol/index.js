@@ -611,7 +611,7 @@ function notify(g) {
 }
 
 function start(difficulty, demo = false, role = 'raider') {
-    if (house) { house.play.start(difficulty); return; }
+    if (house) { house.play.start(difficulty, demo); return; }
     if (!game) throw new Error('PoCapitol is not loaded.');
     game.state = createAttempt(difficulty, demo, role);
     game.yaw = role === 'police' && !demo ? Math.PI : 0;

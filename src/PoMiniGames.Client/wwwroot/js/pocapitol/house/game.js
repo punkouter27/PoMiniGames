@@ -5,10 +5,14 @@
 // pause / dispose, the same OnUpdate record to the page, the same stored comfort settings and
 // key bindings (prefs.js), the same touch buttons and gamepad layout. What differs is the view
 // (first person, the mouse aims up and down as well as round) and the rules (world.js here).
+//
+// The demo is the same game with autopilot.js at the controls: it plays an attempt through,
+// waits six seconds on the result and starts another, and nothing is saved.
 
 import { createHouseScene } from './scene.js';
 import { loadNav } from './nav.js';
 import { createHouseAttempt, advance, fire, throwPlayerGrenade, setPaused, summary } from './world.js';
+import { createAutopilot } from './autopilot.js';
 import { createAudio } from '../audio.js';
 import { createUiFx } from '../ui.js';
 import { matches } from '../prefs.js';
@@ -133,6 +137,7 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
         notifyAt: 0, notifying: false, message: '', planAt: 0,
         events: new AbortController(), audio: null, ui: null, mode, tier,
         frames: [], longFrames: 0, initMs: 0, selfUnlock: -1e9,
+        demo: false, pilot: createAutopilot(nav), restartAt: 0, difficulty: 'standard',
     };
     // The level's own scan (the full 48 MB one, off the low tier) streams in behind the start card.
     view.applyLevel(levelFor(mode, tier, webgpu));
@@ -188,7 +193,8 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
             return;
         }
         if (matches(getPrefs(), 'pause', e.code) && !e.repeat) { pause(g.state.status === 'active'); e.preventDefault(); return; }
-        if (!live() || e.target.closest?.('button, a, summary, [role="radio"]')) return;
+        // The demo plays itself: only pause and Esc are the watcher's.
+        if (g.demo || !live() || e.target.closest?.('button, a, summary, [role="radio"]')) return;
         if ((e.code === 'KeyG' || e.code === 'KeyH') && !e.repeat) { if (lob(e.code === 'KeyH' ? 'smoke' : 'concussion')) e.preventDefault(); return; }
         if (e.code === 'ArrowLeft' || e.code === 'ArrowRight'
             || ['forward', 'back', 'left', 'right', 'push', 'sprint'].some(action => matches(getPrefs(), action, e.code))) {
@@ -196,8 +202,9 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
         }
     });
     listen(window, 'keyup', e => g.keys.delete(e.code));
-    listen(window, 'blur', () => { clearInput(); pause(true); });
-    listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); pause(true); } });
+    // A player who looks away is paused; the demo carries on, as the Capitol's does.
+    listen(window, 'blur', () => { clearInput(); if (!g.demo) pause(true); });
+    listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (!g.demo) pause(true); } });
     // With the pointer locked the browser keeps Esc for itself: a release the game did not ask
     // for, with the tab still focused, is read as that Esc (as on the Capitol map).
     listen(document, 'pointerlockchange', () => {
@@ -214,7 +221,7 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
         look(e.movementX, e.movementY, 0.0022);
     });
     listen(view.canvas, 'pointerdown', e => {
-        if (!live()) return;
+        if (!live() || g.demo) return;
         if (e.pointerType === 'touch') {
             g.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
             view.canvas.setPointerCapture(e.pointerId);
@@ -243,6 +250,7 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
     // The page's touch buttons name an action; the key injected is whatever it is bound to now.
     const touchHeld = new WeakMap();
     listen(host.parentElement, 'pointerdown', e => {
+        if (g.demo) return;
         const thrower = e.target.closest('[data-capitol-throw]');
         if (thrower) { e.preventDefault(); lob(thrower.dataset.capitolThrow); return; }
         const button = e.target.closest('[data-capitol-action]');
@@ -275,7 +283,7 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
         // last room is the wave) and its "integrity" how many raiders are left in it. The crowd
         // is everyone, the second wave included, and whoever is not down yet is still standing.
         reference.invokeMethodAsync('OnUpdate', Math.round(s.health), s.milestone, s.elapsed, s.status,
-            s.total, g.message, s.total - s.stats.down, 1, 0, false, s.outcome, 1,
+            s.total, g.message, s.total - s.stats.down, 1, 0, g.demo, s.outcome, 1,
             room ? room.index : -1, room ? room.left : 0, LEVEL_LABEL[view.level()] ?? 'Auto', 0, s.playerGrenades, s.playerSmoke)
             .catch(error => {
                 if (g.disposed) return;
@@ -297,10 +305,20 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
             const pad = connectedPads()[0];
             const edges = g.edges.update(pad);
             if (g.started && edges.includes(9)) pause(g.state.status === 'active');
-            if (edges.includes(2)) lob('concussion');
-            if (edges.includes(3)) lob('smoke');
+            if (!g.demo && edges.includes(2)) lob('concussion');
+            if (!g.demo && edges.includes(3)) lob('smoke');
+            // The demo's result stays up for six seconds, then it plays again.
+            if (g.started && g.demo && g.restartAt && now >= g.restartAt) begin(g.difficulty, true);
             const s = g.state;
-            if (live()) {
+            // Whether the attempt moves on this frame: what it throws up is heard and acted on once.
+            const stepped = live();
+            if (stepped && g.demo) {
+                const auto = g.pilot.step(s, dt);
+                g.yaw = auto.yaw; g.pitch = auto.pitch;
+                advance(s, nav, { x: auto.x, z: auto.z, sprint: auto.sprint }, dt);
+                if (auto.fire) fire(s, nav, view.aim(g.yaw, g.pitch));
+                if (auto.lob) throwPlayerGrenade(s, nav, view.aim(g.yaw, g.pitch), auto.lob);
+            } else if (stepped) {
                 const left = pad ? stick(pad) : { x: 0, y: 0 };
                 const right = pad ? stick(pad, 0.2, 1) : { x: 0, y: 0 };
                 g.yaw -= ((g.keys.has('ArrowRight') ? 1 : 0) - (g.keys.has('ArrowLeft') ? 1 : 0) + right.x) * dt * 2.2;
@@ -311,6 +329,8 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
                 const z = -strafe * Math.sin(g.yaw) - forward * Math.cos(g.yaw);
                 advance(s, nav, { x, z, sprint: held('sprint') || pressed(pad, 10) }, dt);
                 if (g.firing || held('push') || pressed(pad, 7)) fire(s, nav, view.aim(g.yaw, g.pitch));
+            }
+            if (stepped) {
                 for (const event of s.events) {
                     g.audio?.event(event);
                     if (event.type === 'grenade') {
@@ -327,8 +347,9 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
                     if (!g.ended) {
                         g.ended = true;
                         g.ui?.wipe?.('pass');
-                        track('end', { mode: 'house', outcome: s.outcome, seconds: Math.round(s.elapsed) });
+                        track('end', { mode: g.demo ? 'house-demo' : 'house', outcome: s.outcome, seconds: Math.round(s.elapsed) });
                         g.notifyAt = 0;
+                        if (g.demo) g.restartAt = now + 6000;
                     }
                     if (document.pointerLockElement === view.canvas) releasePointer();
                 }
@@ -360,6 +381,22 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
             reference.invokeMethodAsync('OnEngineError', error.message).catch(() => {});
         }
     }
+    /** A new attempt: the player's, or the demo's own. */
+    function begin(difficulty, demo) {
+        g.demo = Boolean(demo);
+        // The demo plays the standard game: all seventeen raiders, and the autopilot usually wins.
+        g.difficulty = g.demo ? 'standard' : difficulty === 'story' ? 'story' : 'standard';
+        g.state = createHouseAttempt(nav, g.difficulty, (Date.now() & 0x7fffffff) || 1);
+        g.yaw = nav.start.yaw; g.pitch = 0; clearInput(); g.pilot.reset();
+        g.started = true; g.ended = false; g.message = ''; g.notifyAt = 0; g.restartAt = 0;
+        track('start', { mode: g.demo ? 'house-demo' : 'house', difficulty: g.difficulty, level: view.level() });
+        g.ui?.wipe?.('reveal');
+        // Made on the first start. A player's follows a click; the demo's may not, and then the
+        // browser keeps it silent until there is one, like every other demo here.
+        g.audio ??= createAudio({ setting: 'house' });
+        if (!g.demo) view.canvas.focus();
+    }
+
     stage.on('frame', loop);
     stage.start();
     g.initMs = Math.round(nowMs() - bootAt);
@@ -368,16 +405,8 @@ export async function createHouseGame({ host, reference, figure, getPrefs, mode 
     return {
         map: 'house', view, nav,
         get state() { return g.state; },
-        start(difficulty) {
-            g.state = createHouseAttempt(nav, difficulty === 'story' ? 'story' : 'standard', (Date.now() & 0x7fffffff) || 1);
-            g.yaw = nav.start.yaw; g.pitch = 0; clearInput();
-            g.started = true; g.ended = false; g.message = ''; g.notifyAt = 0;
-            track('start', { mode: 'house', difficulty: g.state.difficulty, level: view.level() });
-            g.ui?.wipe?.('reveal');
-            // Made on the first start, which follows a click: browsers keep audio shut until then.
-            g.audio ??= createAudio({ setting: 'house' });
-            view.canvas.focus();
-        },
+        get demo() { return g.demo; },
+        start(difficulty, demo = false) { begin(difficulty, demo); },
         pause,
         setGraphics(next) {
             g.mode = next;

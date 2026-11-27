@@ -45,8 +45,11 @@ public partial class PoCapitolPage : IAsyncDisposable
     /// <summary>The start card's Map dropdown: the Capitol grounds scenario, or the scanned house.</summary>
     private static readonly IReadOnlyList<IntroMap> MapChoices = [new("capitol", "Capitol grounds"), new("house", "House")];
 
-    /// <summary>The House map's rooms, in the order they are cleared (scripts/pocapitol/house-nav.py ROOMS).</summary>
-    private static readonly string[] HouseRooms = ["Hall", "Bedroom", "Dining room", "Kitchen", "Living room"];
+    /// <summary>
+    /// The House map's rooms to clear, in order (scripts/pocapitol/house-nav.py ROOMS). The bedroom
+    /// is not one of them: the player starts there and nobody holds it.
+    /// </summary>
+    private static readonly string[] HouseRooms = ["Hall", "Dining room", "Kitchen", "Living room"];
 
     private static readonly string[] KeyChoices =
         ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyI", "KeyJ", "KeyK", "KeyL", "KeyF", "KeyR", "Space", "ShiftLeft", "ControlLeft", "KeyP"];
@@ -131,9 +134,9 @@ public partial class PoCapitolPage : IAsyncDisposable
 
     /// <summary>
     /// The House map is what is loaded: one officer clearing a scanned house, first person. It has
-    /// no roles and no clock of the day; the demo is always the Capitol.
+    /// no roles and no clock of the day. In the demo an autopilot is that officer.
     /// </summary>
-    private bool House => !_demo && _map == "house";
+    private bool House => _loadedMap == "house";
 
     private bool Playing => House || (!_demo && _role is not ("observer" or "commander"));
 
@@ -155,7 +158,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     private (int Minute, string Time, string Text) OnTheDay =>
         Timeline.Last(entry => entry.Minute <= Math.Max(Timeline[0].Minute, 12 * 60 + 50 + (int)_elapsed));
 
-    /// <summary>The engine's "line" one past the last room: the five rooms are clear and the second wave is on.</summary>
+    /// <summary>The engine's "line" one past the last room: every room is clear and the second wave is on.</summary>
     private bool HouseWave => House && _lineIndex == HouseRooms.Length;
 
     private string HudEyebrow => House ? (HouseWave ? "SECOND WAVE" : $"ROOM {Math.Min(_milestone + 1, HouseRooms.Length)} / {HouseRooms.Length}")
@@ -308,9 +311,8 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (_demo) Kiosk.SetCurrent("pocapitol-demo");
         if (_ready)
         {
-            // The demo is the Capitol's: coming to it from the House map builds the Capitol first.
-            if (_demo && _loadedMap == "capitol") await StartAsync();
-            else
+            // Either way the scene is built again: the demo draws its own map, and coming back
+            // from it the player's own choice is the one to load.
             {
                 try
                 {
@@ -343,15 +345,23 @@ public partial class PoCapitolPage : IAsyncDisposable
                 throw new InvalidOperationException("The 3D assets could not be downloaded. Check your connection and retry.");
             _reference ??= DotNetObjectReference.Create(this);
             _map = await Engine.GetMapAsync();
-            var map = _demo ? "capitol" : _map;
+            _loadedMap = "";
+            // The demo draws one of the maps at random each time it is opened (owner, 2026-11-27);
+            // a player gets the one they picked on the start card.
+            var map = _demo ? MapChoices[Random.Shared.Next(MapChoices.Count)].Id : _map;
             try { await Engine.InitAsync("pocapitol-scene", _reference, map); }
             catch (JSException ex) when (map == "house")
             {
                 // The House map draws a scan this server may not have (it ships with PoCabinet's
-                // House Party): say so, and open the Capitol instead of an error page.
+                // House Party): open the Capitol instead of an error page, and tell a player so.
+                // The demo's draw is not the player's choice, so it is not what is remembered.
                 Logger.LogWarning(ex, "PoCapitol House map could not load; falling back to the Capitol");
-                _mapNote = "The House map could not load here. This is the Capitol grounds.";
-                _map = map = await Engine.SetMapAsync("capitol");
+                map = "capitol";
+                if (!_demo)
+                {
+                    _mapNote = "The House map could not load here. This is the Capitol grounds.";
+                    _map = await Engine.SetMapAsync("capitol");
+                }
                 await Engine.InitAsync("pocapitol-scene", _reference, map);
             }
             _loadedMap = map;

@@ -18,10 +18,11 @@ What it writes (wwwroot/models/pocapitol/house-nav.json, ~40 KB):
                              (the scan is only read up to there, so door heads stay open), a
                              table 0.75 m, a sofa 0.8 m.
   walk                       base64 bit per cell: a person (radius 0.22 m) can stand here;
-  rooms                      the rooms in the order the house is cleared, each with its rectangles
-                             (x0, x1, y0, y1), the centre of its floor and the spots raiders stand
-                             at (in the open, far from each other);
-  start                      where the player comes in, and the point they face.
+  rooms                      the rooms to clear, in order, each with its rectangles (x0, x1, y0,
+                             y1), the centre of its floor and the spots raiders stand at (in the
+                             open, far from each other and from the player's start);
+  start                      where the player starts (the bedroom), and the point they face;
+  entry                      the end of the entry passage, where the second wave comes in.
 
 How: every gaussian is spread over its own footprint (a wall is a few big flat gaussians, so
 counting centres leaves holes in it) into 5 cm voxels, weighted by its opacity. A column is as
@@ -65,16 +66,20 @@ JOIN = 0.5                                  # m: consecutive frames this close a
 
 # The rooms, in the order they are cleared: (id, name, raiders, rectangles (x0, x1, y0, y1)).
 # A cell belongs to the first room one of whose rectangles holds it; raiders stand in a room's
-# first rectangle. The hall's second rectangle is the entry passage the player comes in by.
+# first rectangle. The hall's second rectangle is the entry passage. The bedroom (the room with
+# the shelves of toys and the miniatures bench) holds nobody: it is where the player starts
+# (owner, 2026-11-27), so it is floor to walk on but not a room to clear.
 ROOMS = [
     ('hall', 'Hall', 1, [(-4.75, -1.25, -1.95, -0.45), (-6.3, -3.9, -3.5, -1.75)]),
-    ('bedroom', 'Bedroom', 2, [(-9.6, -4.75, -1.75, 2.6)]),
-    ('dining', 'Dining room', 2, [(-1.25, 2.9, -1.55, 2.7)]),
-    ('kitchen', 'Kitchen', 3, [(-2.6, 2.35, -6.2, -1.55)]),
+    ('bedroom', 'Bedroom', 0, [(-9.6, -4.75, -1.75, 2.6)]),
+    ('dining', 'Dining room', 3, [(-1.25, 2.9, -1.55, 2.7)]),
+    ('kitchen', 'Kitchen', 4, [(-2.6, 2.35, -6.2, -1.55)]),
     ('living', 'Living room', 3, [(2.35, 8.6, -6.2, -0.6)]),
 ]
-ENTRY = (-6.3, -4.6, -3.5, -2.3)             # where the player comes in: the end of that passage
-KEEP_OFF = 3.4                              # m: no raider starts nearer the way in than this
+START = 'bedroom'                           # the room the player starts in
+START_LOOK = (0.0, 1.0)                     # and the way they face there: at the shelves of figures
+ENTRY = (-6.3, -4.6, -3.5, -2.3)             # the end of the entry passage: where the second wave comes in
+KEEP_OFF = 3.4                              # m: no raider starts nearer the player than this
 
 
 def open_ply(path):
@@ -313,31 +318,31 @@ def main():
         clear[walk & ~nxt] = step * CELL
         grown = nxt
 
-    # The player comes in at the end of the entry passage, looking up it toward the hall.
-    (start,), _, _ = spots(walk, clear, ENTRY, 1)
+    # The player starts in the open middle of the start room; the second wave's way in is the
+    # end of the entry passage.
+    (start,), _, _ = spots(walk, clear, next(r for r in ROOMS if r[0] == START)[3][0], 1)
+    (entry,), _, _ = spots(walk, clear, ENTRY, 1)
     rooms = []
     for i, room in enumerate(ROOMS):
-        stand, _, _ = spots(walk, clear, room[3][0], room[2], away=start)
-        _, centre, _ = spots(walk, clear, room[3][0], 1)
         cells = int((walk & (owner == i)).sum())
         if not cells:
             raise SystemExit(f'{room[1]} is cut off from the rest of the house: no walkable floor in it')
-        if i == 0:
-            # Whoever holds the hall stands at its far end, not at the player's elbow.
-            ys, xs = np.nonzero(walk & within(walk.shape, room[3][0]) & (clear >= 0.2))
-            far = int(np.argmax(np.hypot(X0 + (xs + 0.5) * CELL - start[0], Y0 + (ys + 0.5) * CELL - start[1])))
-            stand = [[round(float(X0 + (xs[far] + 0.5) * CELL), 2), round(float(Y0 + (ys[far] + 0.5) * CELL), 2)]]
+        if not room[2]:
+            print(f'ROOM {room[1]}: {cells * CELL * CELL:.1f} m2 walkable, nobody in it')
+            continue
+        stand, _, _ = spots(walk, clear, room[3][0], room[2], away=start)
+        _, centre, _ = spots(walk, clear, room[3][0], 1)
         rooms.append({'id': room[0], 'name': room[1], 'rects': [list(r) for r in room[3]], 'centre': centre, 'spots': stand})
         print(f'ROOM {room[1]}: {cells * CELL * CELL:.1f} m2 walkable, raiders at {stand}')
-    hall = rooms[0]['centre']
-    print(f'START {start}, facing the hall at {hall}')
+    print(f'START {start} in the {START}, ENTRY {entry}')
     data = {
         'note': 'Written by scripts/pocapitol/house-nav.py from the house scan. House frame: metres, floor z = 0, x along the house.',
         'cell': CELL, 'x0': X0, 'y0': Y0, 'cols': cols, 'rows': rows, 'step': STEP, 'unit': 0.02,
         'height': base64.b64encode(np.where(has_floor & in_house, np.minimum(254, np.round(height / 0.02)), 255).astype(np.uint8).tobytes()).decode(),
         'walk': base64.b64encode(np.packbits(walk.ravel(), bitorder='little').tobytes()).decode(),
         'rooms': rooms,
-        'start': {'x': start[0], 'y': start[1], 'lookX': hall[0], 'lookY': hall[1]},
+        'start': {'x': start[0], 'y': start[1], 'lookX': start[0] + START_LOOK[0], 'lookY': start[1] + START_LOOK[1]},
+        'entry': {'x': entry[0], 'y': entry[1]},
     }
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'w', newline='\n') as fh:
@@ -358,6 +363,7 @@ def main():
             for sx, sy in room['spots']:
                 img[int((sy - Y0) / CELL), int((sx - X0) / CELL)] = [1, 0.1, 0.1]
         img[int((start[1] - Y0) / CELL), int((start[0] - X0) / CELL)] = [0.2, 0.6, 1]
+        img[int((entry[1] - Y0) / CELL), int((entry[0] - X0) / CELL)] = [1, 0.4, 1]
         Image.fromarray((np.clip(np.flipud(img), 0, 1) * 255).astype(np.uint8)).resize((cols * 6, rows * 6), Image.NEAREST).save(os.path.join(png, 'nav.png'))
         print('PNG', os.path.join(png, 'nav.png'))
 
