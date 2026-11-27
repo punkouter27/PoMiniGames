@@ -55,6 +55,7 @@ public partial class StorageService : IStorageService
     private const string PoBrawlPlayerEloPartition = "pobrawlplayerelo";
     private const string PoRacerPartition = "poracer";
     private const string PoVoxelStrikePartition = "povoxelstrike";
+    // Cabinet keeps one partition per track ("pocabinet_grandprix", "pocabinet_house"): see PoCabinetTrackPartition.
     private const string PoCabinetPartition = "pocabinet_" + PoCabinetHighScore.CircuitId;
     private const string PoMulePartition = "pomule";
 

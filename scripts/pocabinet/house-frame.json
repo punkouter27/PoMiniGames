@@ -1,0 +1,9 @@
+{
+ "note": "The house scan's own frame to the house frame PoCabinet's House Party lap is laid in: p_house = R (p_scan - origin). Metres, floor on z = 0, z up, x along the house (bedroom at -x, living room at +x), y to the left of x. Written by house-scan.py --fit; the knots in house-route.py are in this frame, so refit only for a new scan.",
+ "R": [
+  [0.9575631243422208, -0.003926169414683495, 0.2881968911936622],
+  [-0.2881937892402134, 0.0013464142239586916, 0.9575711602863282],
+  [-0.004147618995502991, -0.999991386144133, 0.00015777897013602438]
+ ],
+ "origin": [0.006013996299667189, 1.4499751550203694, -0.0002287775573388407]
+}

@@ -87,6 +87,7 @@ public sealed class PoCabinetTrack
         // it instead of taking a cool-down lap, because past the run-out there is only the
         // return link. Mirrored in track.js.
         Laps = def.Laps;
+        TrackLimits = def.TrackLimits;
         _pointToPoint = def.FinishKnot > 0;
         LapLength = _pointToPoint ? _cum[def.FinishKnot * def.StepsPerSegment] : Length;
         _parkAt = _pointToPoint
@@ -203,10 +204,11 @@ public sealed class PoCabinetTrack
 
     public double TangentY(int i) => _ty[i];
 
-    /// <summary>The circuit, built once.</summary>
-    public static PoCabinetTrack Get()
+    /// <summary>A track, built once per id: the house for its id, the Grand Prix (what online
+    /// races run on) for no id or any other.</summary>
+    public static PoCabinetTrack Get(string? trackId = null)
     {
-        var def = PoCabinetTrackGeometry.Get();
+        var def = PoCabinetTrackGeometry.Get(trackId);
         return Cache.GetOrAdd(def.Id, _ => new PoCabinetTrack(def));
     }
 
@@ -221,6 +223,9 @@ public sealed class PoCabinetTrack
 
     /// <summary>Laps in a race here.</summary>
     public int Laps { get; }
+
+    /// <summary>False where running wide does not void the lap (the house). Mirrors track.js <c>limits</c>.</summary>
+    public bool TrackLimits { get; }
 
     /// <summary>Share of its top speed a finished car at race distance <paramref name="distance"/>
     /// holds: 0.6 on a circuit; on a point-to-point track 0.6 into the run-out, then 0 (park).</summary>

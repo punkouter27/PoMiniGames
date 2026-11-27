@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using PoMiniGames.Shared.Games;
 
 namespace PoMiniGamesClient.Features.PoCabinet;
 
@@ -40,6 +41,9 @@ public sealed class PoCabinetUiSettings
     /// link or a data-saving browser (models.js <c>roomPlan</c>). JS key <c>roomDetail</c>.
     /// </summary>
     public string RoomDetail { get; set; } = "auto";
+    /// <summary>The solo track the start card's map dropdown last picked (<see cref="PoCabinetCatalog.Tracks"/>
+    /// ids); online races and the demo are always the Grand Prix. JS key <c>track</c> (the engine ignores it).</summary>
+    public string Track { get; set; } = PoCabinetCatalog.DefaultTrackId;
     /// <summary>
     /// Opt-in hardware compute &amp; UI shader backend: "auto" (WebGPU WGSL when available with
     /// WebGL2 fallback), "webgpu", or "webgl" (force WebGL2 path). JS key <c>gpuCompute</c>.
@@ -60,6 +64,7 @@ public sealed class PoCabinetUiSettings
         s.SteerMode = OneOf(s.SteerMode, d.SteerMode, "pad", "tilt");
         s.SteeringAssist = OneOf(s.SteeringAssist, d.SteeringAssist, "off", "light", "strong");
         s.RoomDetail = OneOf(s.RoomDetail, d.RoomDetail, "auto", "splat", "mesh");
+        s.Track = PoCabinetCatalog.KnownTrackId(s.Track) ?? d.Track;
         s.GpuCompute = OneOf(s.GpuCompute, d.GpuCompute, "auto", "webgpu", "webgl");
         s.HudScale = Clamp(s.HudScale, 0.8, 1.3, d.HudScale);
         s.SteerSensitivity = Clamp(s.SteerSensitivity, 0.5, 1.5, d.SteerSensitivity);

@@ -80,7 +80,7 @@ const decal = (extra) => new THREE.MeshStandardMaterial({
 export class Trackside {
     /**
      * @param track   runtime track (track.js)
-     * @param opts    { theme, terrain, atmosphere }
+     * @param opts    { theme, terrain, atmosphere, indoor }  (indoor: nothing stands beside the road)
      */
     constructor(track, opts = {}) {
         this.track = track;
@@ -96,8 +96,10 @@ export class Trackside {
             () => this.buildPatches(),
             () => this.buildRubber(),
             () => this.buildIslands(),
-            () => this.buildBoards(),
         ];
+        // Braking boards and corner numbers stand on the ground beside the road: indoors the
+        // road is in the air and beside it is somebody's furniture.
+        if (!opts.indoor) steps.push(() => this.buildBoards());
         for (const s of steps) {
             try { s(); } catch (e) { console.warn('pocabinet/trackside: part skipped', e); }
         }

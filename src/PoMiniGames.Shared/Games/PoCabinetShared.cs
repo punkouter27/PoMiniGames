@@ -155,11 +155,13 @@ public sealed class PoCabinetStaticWorld
     public IReadOnlyList<PoCabinetZoneWire> Zones { get; set; } = new List<PoCabinetZoneWire>();
     /// <summary>The scan the lap drives through and where it stands, or null. Drawn only.</summary>
     public PoCabinetScanWire? Scan { get; set; }
+    /// <summary>False where running wide does not void the lap (the house). Both physics copies read it.</summary>
+    public bool TrackLimits { get; set; } = true;
 }
 
 /// <summary>Samples [From, To) (wrapping past the line when From &gt; To) are dressed as
 /// <see cref="Theme"/>: capitol (the stadium), senate (the autumn hill), court (the scanned
-/// basketball court) or maralago (the beach).</summary>
+/// basketball court) or maralago (the beach); house on the indoor track.</summary>
 public sealed class PoCabinetZoneWire
 {
     public int From { get; set; }
@@ -169,14 +171,17 @@ public sealed class PoCabinetZoneWire
 
 /// <summary>
 /// A scanned place the lap drives through (the basketball court: models/court.glb and its
-/// Gaussian splat). <see cref="X"/>, <see cref="Y"/> is where the scan's origin stands (sim
-/// units) and <see cref="Scale"/> how many sim units its metre is drawn at; its floor is
-/// <see cref="FloorZ"/> sim units up. Only the part within <see cref="HalfLength"/> (along the
-/// scan's x, which lies along the sim's) and <see cref="HalfWidth"/> metres of the origin is
-/// drawn; inside that rectangle the scene's own ground steps down out of its way.
+/// Gaussian splat; the house: models/house.ksplat). <see cref="X"/>, <see cref="Y"/> is where
+/// the scan's origin stands (sim units) and <see cref="Scale"/> how many sim units its metre is
+/// drawn at; its floor is <see cref="FloorZ"/> sim units up. The court is drawn only within
+/// <see cref="HalfLength"/> (along the scan's x, which lies along the sim's) and
+/// <see cref="HalfWidth"/> metres of the origin, and inside that rectangle the scene's own
+/// ground steps down out of its way; the house is drawn whole, and its rectangle holds the lap.
 /// </summary>
 public sealed class PoCabinetScanWire
 {
+    /// <summary>Which scan: "court" or "house" (models.js SCANS picks its files and how it is drawn).</summary>
+    public string Id { get; set; } = "court";
     public double X { get; set; }
     public double Y { get; set; }
     public double Scale { get; set; } = 1;

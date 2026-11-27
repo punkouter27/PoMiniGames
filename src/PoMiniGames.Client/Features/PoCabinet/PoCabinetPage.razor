@@ -43,6 +43,10 @@
                                Objective="@Lede"
                                Controls="@ControlsContent"
                                Options="@OptionsContent"
+                               Maps="@TrackMaps"
+                               MapLabel="Track"
+                               MapId="@SelectedTrackId"
+                               MapIdChanged="OnTrackPickedAsync"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                OnStart="StartRaceAsync" />
                 </div>
@@ -271,7 +275,7 @@
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                          Color="@_color" PaintChanged="OnPaintChanged"
                          Livery="@_livery" LiveryChanged="OnLiveryChanged"
-                         ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)"
+                         ShowWeather="@ShowWeatherSetting" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)"
                          ShowCamera="@(_phase is Phase.Racing)" OnCycleCamera="CycleCameraAsync" />
     </div>
 </GameShell>

@@ -330,6 +330,7 @@ export function surfaceAt(track, i, lateral) {
  * the car's flank is beyond it. Mirrors PoCabinetPhysics.Beyond.
  */
 function beyondLimits(track, i, lateral) {
+    if (track.limits === false) return false;   // no track limits here (the house)
     const s = lateral > 0 ? 1 : -1;
     const k = track.kerbs[i];
     const edge = track.hwAt(i) + (k !== 0 && (k > 0 ? 1 : -1) === s ? KERB_OUTER : 0);
@@ -638,9 +639,13 @@ function stepSub(track, car, c, dt, grip, cond) {
         car.vz -= GRAVITY_Z * dt;
         car.z += car.vz * dt;
         if (car.z <= targetZ) {
-            const impactV = -car.vz;
+            // It lands moving with the road, not stopped dead: on a long descent the road is
+            // falling away under it, and a car left at vz = 0 took off again the next tick and
+            // skipped the whole way down. The suspension takes what it hit the road with.
+            const roadVz = track.grade(proj.index) * Math.max(0, car.speed) * roadDot;
+            const impactV = roadVz - car.vz;
             car.z = targetZ;
-            car.vz = 0;
+            car.vz = roadVz;
             car.susp = Math.min(1, Math.max(-1, impactV * 0.08));
         } else {
             car.susp += (-0.35 - car.susp) * Math.min(1, dt * 8.0);
@@ -650,7 +655,8 @@ function stepSub(track, car, c, dt, grip, cond) {
         const compAccel = -SUSP_K * dz - SUSP_DAMP * (car.vz - gradeVz);
         car.vz += compAccel * dt;
         car.z += car.vz * dt;
-        if (car.z < targetZ - 0.8) { car.z = targetZ - 0.8; if (car.vz < 0) car.vz = 0; }
+        // Bottomed out: it cannot be sinking faster than the road itself is falling (0 on the flat).
+        if (car.z < targetZ - 0.8) { car.z = targetZ - 0.8; if (car.vz < Math.min(0, gradeVz)) car.vz = Math.min(0, gradeVz); }
         if (Math.abs(car.z - targetZ) < 1e-7 && Math.abs(car.vz) < 1e-5) { car.z = targetZ; car.vz = 0; }
         car.susp = Math.min(1, Math.max(-1, (targetZ - car.z) * 1.4));
     }

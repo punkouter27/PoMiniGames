@@ -398,9 +398,9 @@ public partial class StorageService
     }
 
     // ── PoCabinet High Scores (T5) ────────────────────────────────────────────
-    // One board in the circuit's own partition ("pocabinet_grandprix"): rows the retired tracks
-    // left in "pocabinet" and "pocabinet_{track}" are never read. Identity-keyed, one row per
-    // player, ratcheted by ShouldOverwrite to only accept a faster lap.
+    // One board per track, each in its own partition ("pocabinet_grandprix", "pocabinet_house"):
+    // rows the retired tracks left in "pocabinet" and "pocabinet_{track}" are never read.
+    // Identity-keyed, one row per player, ratcheted by ShouldOverwrite to only accept a faster lap.
     private static readonly HighScoreDescriptor<PoCabinetHighScore> PoCabinetScores = new(
         Table: PoCabinetTable,
         Partition: PoCabinetPartition,
@@ -408,8 +408,8 @@ public partial class StorageService
         {
             PlayerName = DisplayName24(e.PlayerName),
             UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
-            // Every row in this partition is a lap of the circuit, whatever the caller sent.
-            TrackId = PoCabinetHighScore.CircuitId,
+            // Every row in a partition is a lap of that track: the canonical id, never free text.
+            TrackId = PoCabinetCatalog.KnownTrackId(e.TrackId) ?? PoCabinetHighScore.CircuitId,
             BestLapSeconds = double.IsFinite(e.BestLapSeconds) ? Math.Clamp(e.BestLapSeconds, 0.001, 3600) : 0,
             // 100, not PoCabinetCatalog.SoloCarCount (64): rows posted from the old 100-car field keep their place.
             FinalPosition = e.FinalPosition is >= 1 and <= 100 ? e.FinalPosition : 1,
@@ -450,11 +450,23 @@ public partial class StorageService
                 < (existing.GetDouble("BestLapSeconds") ?? double.MaxValue),
     };
 
-    public Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoCabinetScores, limit);
+    /// <summary>The partition of a track's board, or null for an id no track has (never a partition
+    /// to create). A missing id is the Grand Prix, as for a stored row that predates the field.</summary>
+    public static string? PoCabinetTrackPartition(string? trackId) =>
+        string.IsNullOrWhiteSpace(trackId) ? PoCabinetPartition
+        : PoCabinetCatalog.KnownTrackId(trackId) is { } id ? "pocabinet_" + id
+        : null;
+
+    public Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null) =>
+        PoCabinetTrackPartition(trackId) is { } partition
+            ? GetHighScoresAsync(PoCabinetScores, limit, partition: partition)
+            : Task.FromResult(new List<PoCabinetHighScore>());
 
     public Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry) =>
-        SaveHighScoreAsync(PoCabinetScores, entry, requirePersistence: true);
+        SaveHighScoreAsync(PoCabinetScores, entry,
+            partition: PoCabinetTrackPartition(entry.TrackId)
+                ?? throw new ArgumentException($"'{entry.TrackId}' is not a Cabinet track.", nameof(entry)),
+            requirePersistence: true);
 
 
     // ── Weekly boards ─────────────────────────────────────────────────────

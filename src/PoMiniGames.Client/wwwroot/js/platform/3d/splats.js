@@ -24,6 +24,14 @@
 //     direction/position moved enough, never more than one request in flight.
 //   • Tier cap: `maxSplats` keeps an even stride of the file (a 400k scan becomes 100k on low) and
 //     compensates the lost density by growing each kept gaussian a little.
+//   • Only what can be seen is drawn. The sort worker drops every splat outside the view frustum
+//     (with a margin for the frames a sort lags the camera by) before it sorts, and the cloud draws
+//     that many instances, not the whole file: the vertex stage is the cost (a 2M-splat interior
+//     ran at 10 fps drawing them all, whatever the resolution), and a camera inside a scan sees a
+//     third of it. Two more cuts, both opt-in: `lod` thins what is far away to the most
+//     important share of each neighbourhood (ranked here at load, see rankSplats), and `maxDraw`
+//     keeps the nearest splats when there are still too many (indoors the farthest are behind a
+//     wall anyway).
 //
 // Alpha is NormalBlending, depthTest on, depthWrite off: the splat sits behind/among opaque meshes
 // and blends correctly with the sorted order. Colours in the file are sRGB; `linear` (default on)
@@ -31,12 +39,14 @@
 //
 // USAGE
 //   import { loadSplat } from '../platform/3d/splats.js';
-//   const cloud = await loadSplat(THREE, TSL, url, { matrix, maxSplats: 200000, crop, hide, onProgress });
+//   const cloud = await loadSplat(THREE, TSL, url, { matrix, maxSplats: 200000, crop, hide, onProgress, lod, maxDraw });
 //   scene.add(cloud.object); ... each frame: cloud.update(camera)   (optional: also auto-sorts in onBeforeRender)
 //   cloud.dispose();
 //
 // `crop` = { x, z, hx, hz, fade }  drops splats outside the rectangle (world units) and fades the last
-// `fade` units. `hide` = { floorY, scale, low, hoopAt, hoopReach, hoopHalf, cx, cz } drops everything
+// `fade` units. `lod` = { near, floor, cell } keeps, of the splats `d` world units away (d > near),
+// the most important max(floor, near / d) share of each `cell`-sized cube. `maxDraw` caps the
+// instances drawn. `hide` = { floorY, scale, low, hoopAt, hoopReach, hoopHalf, cx, cz } drops everything
 // higher than `low` metres over the floor except two hoop columns (PoCabinet's court). Both optional.
 
 const TEX_W = 2048;
@@ -179,13 +189,15 @@ const formatOf = (url) => { const m = /\.(ksplat|splat|ply)(\?|#|$)/i.exec(url);
  * Bake placement + build the four data textures' arrays. `m` is a 16-number column-major matrix
  * (THREE.Matrix4.elements) or null. Returns centres separately for the sorter.
  */
-export function packSplats(data, { m = null, maxSplats = Infinity } = {}) {
+export function packSplats(data, { m = null, maxSplats = Infinity, lod = null } = {}) {
     const stride = data.count > maxSplats ? Math.ceil(data.count / maxSplats) : 1;
     const n = Math.ceil(data.count / stride);
     const grow = Math.pow(stride, 1 / 3);               // fewer splats cover the same space: swell them
     const size = Math.ceil(n / TEX_W) * TEX_W * 4;
     const A = new Float32Array(size), B = new Float32Array(size), C = new Float32Array(size);
     const centers = new Float32Array(n * 3);
+    const radii = new Float32Array(n);                  // how far a splat reaches from its centre (3 sigma), for the culler
+    const weight = lod ? new Float32Array(n) : null;    // opacity x footprint, for the LOD's ranking
     const e = m ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     // 3x3 (row-major a[r][c] = e[c*4+r]) and translation
     const a = [[e[0], e[4], e[8]], [e[1], e[5], e[9]], [e[2], e[6], e[10]]];
@@ -213,35 +225,114 @@ export function packSplats(data, { m = null, maxSplats = Infinity } = {}) {
         A[o] = wx; A[o + 1] = wy; A[o + 2] = wz; A[o + 3] = data.rgba[i * 4 + 3] / 255;
         B[o] = cv(0, 0); B[o + 1] = cv(0, 1); B[o + 2] = cv(0, 2); B[o + 3] = cv(1, 1);
         C[o] = cv(1, 2); C[o + 1] = cv(2, 2);
+        radii[j] = 3 * Math.sqrt(Math.max(B[o], B[o + 3], C[o + 1], 0));
+        if (weight) {
+            // the footprint is the two widest axes (a floor or a wall is a flat disc)
+            const lo = Math.min(Math.abs(s[0]), Math.abs(s[1]), Math.abs(s[2]));
+            const vol = Math.abs(s[0] * s[1] * s[2]) * Math.cbrt(Math.abs(e[0] * e[5] * e[10])) ** 2;
+            weight[j] = A[o + 3] * (lo > 1e-12 ? vol / lo : 0);
+        }
         C[o + 2] = data.rgba[i * 4] + data.rgba[i * 4 + 1] * 256 + data.rgba[i * 4 + 2] * 65536;   // 3 bytes in one exact float
     }
-    return { n, A, B, C, centers, stride, rows: size / 4 / TEX_W };
+    const ranks = lod ? rankSplats(centers, weight, Number(lod.cell) || 1) : null;
+    return { n, A, B, C, centers, radii, ranks, stride, rows: size / 4 / TEX_W };
+}
+
+/**
+ * Where each splat stands among its neighbours: 0 for the most important in its `cell`-sized
+ * cube, towards 1 for the least. "The best 20% everywhere" is then ranks < 0.2, and it is 20% of
+ * a dim room as much as of a bright one: ranked over the whole file, a share was the bright rooms
+ * and nothing of the dark ones. No sort: a histogram of log weight per cell, two passes.
+ */
+export function rankSplats(centers, weight, cell) {
+    const n = weight.length, BINS = 32;
+    const ranks = new Float32Array(n), cellOf = new Int32Array(n), binOf = new Uint8Array(n);
+    let lo = Infinity, hi = -Infinity;
+    for (let j = 0; j < n; j++) {
+        const w = Math.log(Math.max(weight[j], 1e-30));
+        ranks[j] = w;
+        if (w < lo) lo = w; if (w > hi) hi = w;
+    }
+    const scale = (BINS - 1e-3) / Math.max(hi - lo, 1e-9);
+    const ids = new Map();
+    for (let j = 0; j < n; j++) {
+        const key = `${Math.floor(centers[j * 3] / cell)},${Math.floor(centers[j * 3 + 1] / cell)},${Math.floor(centers[j * 3 + 2] / cell)}`;
+        let id = ids.get(key);
+        if (id === undefined) { id = ids.size; ids.set(key, id); }
+        cellOf[j] = id;
+        binOf[j] = (ranks[j] - lo) * scale;
+    }
+    const hist = new Uint32Array(ids.size * BINS), total = new Uint32Array(ids.size);
+    for (let j = 0; j < n; j++) { hist[cellOf[j] * BINS + binOf[j]]++; total[cellOf[j]]++; }
+    // above[c * BINS + b]: how many in cell c are in a heavier bin than b
+    const above = new Uint32Array(ids.size * BINS);
+    for (let c = 0; c < ids.size; c++) {
+        let run = 0;
+        for (let b = BINS - 1; b >= 0; b--) { above[c * BINS + b] = run; run += hist[c * BINS + b]; }
+    }
+    for (let j = 0; j < n; j++) {
+        const k = cellOf[j] * BINS + binOf[j];
+        // Within a bin the splats share its span evenly, by a hash of the index (no ties to sort).
+        const jitter = ((j * 2654435761) >>> 0) / 4294967296;
+        ranks[j] = (above[k] + hist[k] * jitter) / total[cellOf[j]];
+    }
+    return ranks;
 }
 
 // ------------------------------------------------------------------------------- sort worker
 
-/** Runs inside the worker (stringified), so it must not close over anything. */
+/**
+ * Runs inside the worker (stringified), so it must not close over anything. Per request: drop the
+ * splats the view cannot hold, sort the rest back to front (a 16-bit counting sort on view depth)
+ * and post { order, first, count }: the instances to draw are order[first .. first + count).
+ */
 function sortWorkerBody() {
-    let centers = null, n = 0;
+    let centers = null, radii = null, ranks = null, n = 0, pick = null, depth = null, key = null;
     self.onmessage = (ev) => {
         const m = ev.data;
-        if (m.centers) { centers = new Float32Array(m.centers); n = centers.length / 3; return; }
+        if (m.centers) {
+            centers = new Float32Array(m.centers); n = centers.length / 3;
+            radii = m.radii ? new Float32Array(m.radii) : null;
+            ranks = m.ranks ? new Float32Array(m.ranks) : null;
+            pick = new Uint32Array(n); depth = new Float32Array(n); key = new Uint16Array(n);
+            return;
+        }
         if (!centers) return;
-        const { dir, cam, order } = m;                     // depth = dot(c - cam, dir) (view forward)
-        const depth = new Float32Array(n);
-        let lo = Infinity, hi = -Infinity;
+        const { dir, cam, order, view } = m;               // depth = dot(c - cam, dir) (view forward)
+        let lo = Infinity, hi = -Infinity, count = 0;
+        const cull = view && radii;
+        const rx = cull ? view.right : null, ux = cull ? view.up : null;
+        const tanX = cull ? view.tanX : 0, tanY = cull ? view.tanY : 0;
+        const lodNear = cull && ranks && view.lodNear > 0 ? view.lodNear : 0, lodFloor = cull ? view.lodFloor : 1;
         for (let i = 0; i < n; i++) {
-            const d = (centers[i * 3] - cam[0]) * dir[0] + (centers[i * 3 + 1] - cam[1]) * dir[1] + (centers[i * 3 + 2] - cam[2]) * dir[2];
-            depth[i] = d; if (d < lo) lo = d; if (d > hi) hi = d;
+            const vx = centers[i * 3] - cam[0], vy = centers[i * 3 + 1] - cam[1], vz = centers[i * 3 + 2] - cam[2];
+            const d = vx * dir[0] + vy * dir[1] + vz * dir[2];
+            if (cull) {
+                const r = radii[i];
+                if (d < -r) continue;                                  // behind the camera
+                const reach = (d > 0 ? d : 0) + r;
+                const x = vx * rx[0] + vy * rx[1] + vz * rx[2];
+                if ((x < 0 ? -x : x) > reach * tanX + r) continue;     // off to the side
+                const y = vx * ux[0] + vy * ux[1] + vz * ux[2];
+                if ((y < 0 ? -y : y) > reach * tanY + r) continue;     // above or below
+                // Far away, only the most important share of each neighbourhood.
+                if (lodNear && d > lodNear) {
+                    const share = lodNear / d;
+                    if (ranks[i] > (share > lodFloor ? share : lodFloor)) continue;
+                }
+            }
+            pick[count] = i; depth[count] = d; count++;
+            if (d < lo) lo = d; if (d > hi) hi = d;
         }
         const K = 65536, counts = new Uint32Array(K + 1), inv = (K - 1) / Math.max(hi - lo, 1e-6);
-        const key = new Uint16Array(n);
-        for (let i = 0; i < n; i++) { const k = ((depth[i] - lo) * inv) | 0; key[i] = k; counts[k + 1]++; }
+        for (let j = 0; j < count; j++) { const k = ((depth[j] - lo) * inv) | 0; key[j] = k; counts[k + 1]++; }
         // back to front: the farthest (largest key) first
         for (let k = 0; k < K; k++) counts[k + 1] += counts[k];
         const out = new Float32Array(order);
-        for (let i = 0; i < n; i++) out[n - 1 - counts[key[i]]++] = i;
-        self.postMessage({ order: out.buffer }, [out.buffer]);
+        for (let j = 0; j < count; j++) out[count - 1 - counts[key[j]]++] = pick[j];
+        // Over the budget: the nearest ones are kept (they are the end of the list).
+        const drawn = view && view.maxDraw > 0 && count > view.maxDraw ? view.maxDraw : count;
+        self.postMessage({ order: out.buffer, first: count - drawn, count: drawn }, [out.buffer]);
     };
 }
 
@@ -347,15 +438,28 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
     let worker = null, busy = false, url = null;
     const last = { dir: new THREE.Vector3(), cam: new THREE.Vector3(), has: false };
     const dir = new THREE.Vector3(), cam = new THREE.Vector3(), inv = new THREE.Matrix4();
-    let spare = null;
+    const right = new THREE.Vector3(), up = new THREE.Vector3();
+    // The frustum the worker culls to is wider than the camera's by this much (radians): a sort
+    // comes back a frame or two after the camera asked for it, and the car has turned meanwhile.
+    const CULL_MARGIN = 0.22;
+    const lod = opts.lod || null;
+    let spare = null, drawn = n, maxDraw = Number(opts.maxDraw) || 0;
     try {
         url = URL.createObjectURL(new Blob([`(${sortWorkerBody.toString()})()`], { type: 'text/javascript' }));
         worker = new Worker(url);
-        const c = packed.centers.slice();
-        worker.postMessage({ centers: c.buffer }, [c.buffer]);
+        const c = packed.centers.slice(), r = packed.radii ? packed.radii.slice() : null;
+        const k = packed.ranks ? packed.ranks.slice() : null;
+        worker.postMessage({ centers: c.buffer, radii: r?.buffer, ranks: k?.buffer }, [c.buffer, r?.buffer, k?.buffer].filter(Boolean));
         worker.onmessage = (ev) => {
             const o = new Float32Array(ev.data.order);
-            orderAttr.array.set(o); orderAttr.needsUpdate = true; spare = o; busy = false;
+            const first = ev.data.first | 0, count = ev.data.count ?? n;
+            // Only the instances that will be drawn go to the GPU.
+            orderAttr.array.set(first || count < n ? o.subarray(first, first + count) : o);
+            orderAttr.clearUpdateRanges?.();
+            orderAttr.addUpdateRange?.(0, count);
+            orderAttr.needsUpdate = true;
+            geo.instanceCount = drawn = count;
+            spare = o; busy = false;
         };
         worker.onerror = (e) => { console.warn('splats: sort worker failed', e.message); busy = false; };
     } catch (e) {
@@ -374,18 +478,37 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
         busy = true;
         const buf = (spare && spare.buffer.byteLength) ? spare.buffer : new Float32Array(n).buffer;
         spare = null;
-        worker.postMessage({ dir: [dir.x, dir.y, dir.z], cam: [cam.x, cam.y, cam.z], order: buf }, [buf]);
+        // The view to cull to, in the cloud's frame. Only a perspective camera is culled.
+        let view = null;
+        if (camera.isPerspectiveCamera && opts.cull !== false) {
+            right.setFromMatrixColumn(camera.matrixWorld, 0).transformDirection(inv);
+            up.setFromMatrixColumn(camera.matrixWorld, 1).transformDirection(inv);
+            const half = Math.min(1.45, camera.fov * Math.PI / 360 + CULL_MARGIN);
+            const halfX = Math.min(1.45, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect) + CULL_MARGIN);
+            view = {
+                right: [right.x, right.y, right.z], up: [up.x, up.y, up.z], tanX: Math.tan(halfX), tanY: Math.tan(half),
+                lodNear: lod ? Number(lod.near) || 0 : 0, lodFloor: lod ? Number(lod.floor) || 0 : 1, maxDraw,
+            };
+        }
+        worker.postMessage({ dir: [dir.x, dir.y, dir.z], cam: [cam.x, cam.y, cam.z], order: buf, view }, [buf]);
     }
     mesh.onBeforeRender = (renderer, scene, camera) => update(camera);
 
     return {
         object: mesh, count: n, uniforms: U, update,
+        /** Instances drawn after the last sort (the whole cloud until the first one returns). */
+        get drawn() { return drawn; },
         warmSort(camera) { last.has = false; update(camera); },
         setLighting({ tint, flash } = {}) {
             if (tint !== undefined) U.ambientTint.value.set(tint);
             if (typeof flash === 'number') U.flash.value = Math.max(0, flash);
         },
         setOpacity(v) { U.opacity.value = v; },
+        /** Change the draw budget (0 = none); the next sort applies it. */
+        setMaxDraw(v) {
+            const next = Math.max(0, Number(v) || 0);
+            if (next !== maxDraw) { maxDraw = next; last.has = false; }
+        },
         dispose() {
             worker?.terminate(); if (url) URL.revokeObjectURL(url);
             geo.dispose(); material.dispose(); tA.dispose(); tB.dispose(); tC.dispose();
@@ -415,7 +538,7 @@ export async function loadSplat(THREE, TSL, url, opts = {}) {
     } else buffer = await res.arrayBuffer();
     const data = parseSplatBuffer(buffer, opts.format ?? formatOf(url));
     const m = opts.matrix ? (opts.matrix.elements ?? opts.matrix) : null;
-    const packed = packSplats(data, { m, maxSplats: opts.maxSplats });
+    const packed = packSplats(data, { m, maxSplats: opts.maxSplats, lod: opts.lod });
     opts.onProgress?.(100);
     return createSplatCloud(THREE, TSL, packed, opts);
 }

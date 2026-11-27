@@ -381,6 +381,7 @@
     {
         var key = board.GameKey;
         if (key.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoRacer.Value;
+        else if (key.StartsWith("pocabinet-", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoCabinet.Value;
         else if (string.Equals(key, "pobrawldemo", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoBrawl.Value;
 
         return GameCatalog.All
@@ -722,6 +723,7 @@
         // to "Other" at the bottom of the page, away from the Grand Prix board.
         static GameKey Game(GameLeaderboardDto b) =>
             b.GameKey.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoRacer
+            : b.GameKey.StartsWith("pocabinet-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoCabinet
             : (GameKey)b.GameKey;
 
         _groupedBoards = new List<BoardGroup>

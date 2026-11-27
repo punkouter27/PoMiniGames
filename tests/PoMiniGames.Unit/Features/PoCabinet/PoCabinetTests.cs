@@ -1,5 +1,7 @@
 using FluentAssertions;
+using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.PoCabinet;
+using PoMiniGames.Infrastructure.Services;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Features.PoCabinet;
 using Xunit;
@@ -8,6 +10,10 @@ namespace PoMiniGames.Unit.Features.PoCabinet;
 
 /// <summary>PoCabinet's scripted talk, its one circuit's features, the AI and the physics under
 /// it, the one lobby, and the per-tick wire budget.</summary>
+/// <remarks>In the time-budget collection: its full-field replays and laps load the machine for
+/// seconds, and the board AI's tests there time their moves (BoardAiTests.HardBeatsEasy failed
+/// beside them about one run in three).</remarks>
+[Collection(PoMiniGames.Unit.Features.BoardAi.TimeBudgetGroup.Name)]
 public class PoCabinetTests
 {
     private static readonly string[] ExpectedMoments = ["finish", "lead", "passed", "preRace"];
@@ -25,8 +31,11 @@ public class PoCabinetTests
     [Theory]
     [InlineData(nameof(ScriptedBanterCoversEveryOfficial_AndTheDebriefFollowsTheNumbers))]
     [InlineData(nameof(TheCircuitShipsItsFeatures_AndTheServerReadsTheSameRoad))]
-    [InlineData(nameof(ThereIsOneCircuit_WhateverIdACallerCarries))]
+    [InlineData(nameof(TheCatalogHasTwoTracks_AndRetiredIdsStayUnknown))]
+    [InlineData(nameof(TheHouseWorld_IsAnIndoorClosedLoopOnTheScan))]
     [InlineData(nameof(EachOfficial_LapsOnItsOwnLine_AndAHumanCarObeysInputsAndTheBarrier))]
+    [InlineData(nameof(TheLapVerifier_ReplaysOnTheSubmittedTrack_AndTheHouseIsAlwaysDry))]
+    [InlineData(nameof(EachTrackHasItsOwnPartitionAndBoard_AndAnUnknownIdHasNone))]
     [InlineData(nameof(Contacts_AreImpulsesBetweenCarShapedHulls))]
     [InlineData(nameof(Lobby_FirstArrivalHosts_LaterArrivalsShareIt_AndBouncesAtCap))]
     [InlineData(nameof(PerTickSnapshot_FitsTwoKilobytes_AtEightCars))]
@@ -160,30 +169,81 @@ public class PoCabinetTests
     }
 
     /// <summary>
-    /// The catalog is one track. Only its id is a track a lap may be posted on (any casing), so a
-    /// lap parked on a track the game used to have is refused; every geometry lookup returns the
-    /// circuit, whatever id an old caller still carries.
+    /// The catalog has two tracks, the Grand Prix first. Only their ids are tracks a lap may be
+    /// posted on (any casing, canonical id back), so a lap parked on a track the game used to
+    /// have is refused; every geometry lookup of any other id returns the Grand Prix.
     /// </summary>
-    private static void ThereIsOneCircuit_WhateverIdACallerCarries()
+    private static void TheCatalogHasTwoTracks_AndRetiredIdsStayUnknown()
     {
         var track = PoCabinetCatalog.Track;
+        PoCabinetCatalog.Tracks.Select(t => t.Id).Should().Equal("grandprix", "house");
         track.Id.Should().Be(PoCabinetCatalog.DefaultTrackId).And.Be(PoCabinetTrackGeometry.TrackId);
         track.Name.Should().Be("Cabinet Grand Prix");
+        PoCabinetCatalog.House.Id.Should().Be(PoCabinetCatalog.HouseTrackId).And.Be("house");
+        PoCabinetCatalog.House.Name.Should().Be("House Party");
         PoCabinetCatalog.GetTrack("capitol").Should().BeSameAs(track);
+        PoCabinetCatalog.GetTrack(null).Should().BeSameAs(track);
+        PoCabinetCatalog.GetTrack(" HOUSE ").Should().BeSameAs(PoCabinetCatalog.House);
 
         PoCabinetCatalog.IsKnownTrack(track.Id).Should().BeTrue();
         PoCabinetCatalog.IsKnownTrack(" " + track.Id.ToUpperInvariant() + " ").Should().BeTrue();
-        foreach (var gone in new[] { "capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", "court", "daily-20261019", "", null })
+        PoCabinetCatalog.KnownTrackId(" House ").Should().Be("house");
+        PoCabinetCatalog.KnownTrackId("GRANDPRIX").Should().Be("grandprix");
+        foreach (var gone in new[] { "capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", "court", "daily-20261019", "daily-20261101", "", null })
+        {
             PoCabinetCatalog.IsKnownTrack(gone).Should().BeFalse($"'{gone}' is not a track any more");
+            PoCabinetCatalog.KnownTrackId(gone).Should().BeNull();
+        }
 
         PoCabinetTrackGeometry.Get("capitol").Should().BeSameAs(PoCabinetTrackGeometry.Get());
         PoCabinetTrackGeometry.Get().Id.Should().Be(track.Id);
+        PoCabinetTrackGeometry.Get("HOUSE").Id.Should().Be("house");
+        PoCabinetTrack.Get().Id.Should().Be("grandprix", "online races ask for no track");
+        PoCabinetTrack.Get("house").Id.Should().Be("house");
+        PoCabinetTrack.Get("house").Should().BeSameAs(PoCabinetTrack.Get("HOUSE"), "one runtime track per id");
+        PoCabinetTrack.Get("capitol").Should().BeSameAs(PoCabinetTrack.Get());
         new PoCabinetScoreDto().TrackId.Should().Be(track.Id, "a client that sends no track means the circuit");
     }
 
     /// <summary>
+    /// The house: its own id and name, two laps, the house theme and scan, a road that climbs from
+    /// the floor to six feet (1464 units) and never dips below it, and a centerline that closes.
+    /// </summary>
+    private static void TheHouseWorld_IsAnIndoorClosedLoopOnTheScan()
+    {
+        var def = PoCabinetTrackGeometry.Get("house");
+        def.Laps.Should().Be(2);
+        var world = PoCabinetTrackGeometry.BuildStaticWorld("house");
+        world.TrackId.Should().Be("house");
+        world.TrackName.Should().Be(PoCabinetCatalog.House.Name);
+        world.TotalLaps.Should().Be(2);
+        world.Theme.Should().Be("house");
+        world.Scan.Should().NotBeNull();
+        world.Scan!.Id.Should().Be("house");
+        PoCabinetTrackGeometry.BuildStaticWorld("grandprix").Scan!.Id.Should().Be("court");
+
+        // A 100-second lap, so running wide costs speed there, not the lap; the Grand Prix keeps its limits.
+        world.TrackLimits.Should().BeFalse();
+        PoCabinetTrack.Get("house").TrackLimits.Should().BeFalse();
+        PoCabinetPhysics.Beyond(PoCabinetTrack.Get("house"), 0, 500).Should().BeFalse("no lap is voided for running wide in the house");
+        PoCabinetTrackGeometry.BuildStaticWorld("grandprix").TrackLimits.Should().BeTrue();
+        PoCabinetPhysics.Beyond(PoCabinetTrack.Get(), 0, 500).Should().BeTrue();
+
+        int n = world.CenterXY.Count / 2;
+        world.CenterZ.Should().HaveCount(n).And.OnlyContain(z => z >= 0, "the road never dips below the floor");
+        world.CenterZ.Max().Should().BeInRange(1450, 1480, "the road climbs to six feet (1464 units)");
+        world.Zones.Should().OnlyContain(z => z.Theme == "house");
+
+        // Closed: the gap from the last sample back to the first is one more step of the road.
+        double Gap(int a, int b) => Math.Sqrt(Math.Pow(world.CenterXY[a * 2] - world.CenterXY[b * 2], 2) + Math.Pow(world.CenterXY[a * 2 + 1] - world.CenterXY[b * 2 + 1], 2));
+        double meanStep = Enumerable.Range(0, n - 1).Average(i => Gap(i, i + 1));
+        Gap(n - 1, 0).Should().BeLessThan(meanStep * 2, "the loop closes on itself");
+    }
+
+    /// <summary>
     /// Each of the four officials, alone on the circuit, completes a lap through the real physics
-    /// on its own line (every pair's mean lateral offset over the lap differs by ≥ 8 units); a
+    /// on its own line (every pair's mean lateral offset over the lap differs by ≥ 8 units); on
+    /// the house each completes a lap unwrecked in 70 to 200 s; a
     /// human car flat out on full right lock ends up pinned at the barrier, never through it, and
     /// every applied input's sequence number is acknowledged.
     /// </summary>
@@ -193,6 +253,16 @@ public class PoCabinetTests
         var laterals = new Dictionary<string, double>();
         foreach (var o in PoCabinetPersonality.Roster)
         {
+            var house = new PoCabinetSim(seed: 42,
+                [new PoCabinetDriver("bot", PoCabinetCatalog.OfficialName(o.Id), IsPlayer: false, o.Color, o.Personality, o.MaxSpeed, o.CorneringSkill, o.Id)],
+                PoCabinetCatalog.HouseTrackId);
+            house.TrackId.Should().Be("house");
+            var hcar = house.SnapshotCars()[0];
+            for (var i = 0; i < 30 * 300 && hcar.LapsDone < 1; i++) house.Tick(dt, new Dictionary<string, PoCabinetInput>());
+            hcar.LapsDone.Should().Be(1, $"{o.Id} completes the house lap");
+            hcar.Wrecked.Should().BeFalse($"{o.Id} does not wreck on the house");
+            hcar.LapStartTime.Should().BeInRange(70, 200, $"{o.Id}'s house lap is a sane time");
+
             var sim = new PoCabinetSim(seed: 42,
                 [new PoCabinetDriver("bot", PoCabinetCatalog.OfficialName(o.Id), IsPlayer: false, o.Color, o.Personality, o.MaxSpeed, o.CorneringSkill, o.Id)]);
             var car = sim.SnapshotCars()[0];
@@ -228,6 +298,46 @@ public class PoCabinetTests
         }
         me.AckSeq.Should().Be(150, "every applied input is acknowledged");
         me.Speed.Should().BeGreaterThan(0, "throttle moves the car");
+    }
+
+    /// <summary>
+    /// A solo lap replays on the track it was submitted for, and the house never rains: a wet
+    /// replay there is the dry one, and an id no track has races the Grand Prix.
+    /// </summary>
+    private static void TheLapVerifier_ReplaysOnTheSubmittedTrack_AndTheHouseIsAlwaysDry()
+    {
+        // One second of race, not a lap: each replay steps all 64 cars, and a longer one here
+        // (600 ticks, then 150) made the board AI's test beside it fail: its "hard" player has
+        // 15 ms a move, and loses when this is using the machine.
+        var inputs = Enumerable.Repeat(new PoCabinetControls(1, 0, 0), 30).ToArray();
+        var dry = PoCabinetLapVerifier.Replay("house", false, inputs);
+        PoCabinetLapVerifier.Replay("house", true, inputs).Should().Be(dry, "indoors the wet flag is ignored");
+        PoCabinetLapVerifier.Replay("HOUSE", false, inputs).Should().Be(dry, "ids are matched in any casing");
+        dry.BestLapSeconds.Should().Be(-1, "a second of throttle is not a lap");
+        dry.Position.Should().BeInRange(1, PoCabinetCatalog.SoloCarCount);
+
+        var grandPrix = PoCabinetLapVerifier.Replay(PoCabinetCatalog.DefaultTrackId, false, inputs);
+        PoCabinetLapVerifier.Replay(null, false, inputs).Should().Be(grandPrix, "no track id is the Grand Prix");
+        grandPrix.BestLapSeconds.Should().Be(-1);
+    }
+
+    /// <summary>
+    /// Each track's laps live in a partition of their own ("pocabinet_grandprix", "pocabinet_house"),
+    /// no id is the Grand Prix, an id no track has is no partition at all, and the leaderboard's
+    /// board ids and titles follow the track ("pocabinet" stays the Grand Prix's).
+    /// </summary>
+    private static void EachTrackHasItsOwnPartitionAndBoard_AndAnUnknownIdHasNone()
+    {
+        StorageService.PoCabinetTrackPartition(null).Should().Be("pocabinet_grandprix");
+        StorageService.PoCabinetTrackPartition("grandprix").Should().Be("pocabinet_grandprix");
+        StorageService.PoCabinetTrackPartition(" HOUSE ").Should().Be("pocabinet_house");
+        foreach (var gone in new[] { "capitol", "bedroom", "daily-20261101", "pocabinet" })
+            StorageService.PoCabinetTrackPartition(gone).Should().BeNull($"'{gone}' never gets a partition");
+
+        UnifiedLeaderboardEndpoints.PoCabinetBoardKey("grandprix").Should().Be("pocabinet");
+        UnifiedLeaderboardEndpoints.PoCabinetBoardKey("house").Should().Be("pocabinet-house");
+        UnifiedLeaderboardEndpoints.PoCabinetBoardTitle("grandprix").Should().Be("Cabinet");
+        UnifiedLeaderboardEndpoints.PoCabinetBoardTitle("house").Should().Be("Cabinet: House Party");
     }
 
     /// <summary>

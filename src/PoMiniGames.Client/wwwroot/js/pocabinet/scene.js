@@ -140,6 +140,7 @@ class SceneHandle {
         this.runoffMats = null;   // gravel / tarmac run-off materials, wetted by setWeather
         this.roadRefl = { value: 0.02 };   // the road's reflectivity for postfx.js, set by setWeather
         this.theme = 'grandprix';
+        this.indoor = false;      // an indoor scan is the whole world (models.isIndoor): no terrain, sky, scenery, grass or rain
         this.roomSplat = null;    // the court scan's Gaussian splat (DropInViewer), when it loaded
         this.roomProgress = null; // its loading bar over the canvas
         this.roomDetail = null;   // 'auto' | 'splat' (full) | 'mesh' (lite); read from the stored settings when unset
@@ -403,7 +404,8 @@ class SceneHandle {
 
     /** Rain or clear: fog and sky colour, light levels, the sky's clouds, and a fresh IBL capture. */
     setWeather(rain) {
-        this.raining = !!rain;
+        rain = !!rain && !this.indoor;   // it never rains in the house
+        this.raining = rain;
         this.wetUniform.value = rain ? 1 : 0;
         const base = this.baseAtmosphere || {};
         const fog = hex(base.fogHex, '#14233f');
@@ -419,7 +421,7 @@ class SceneHandle {
         this.sun.intensity = SUN_BASE * ambient * day;
         this.hemi.intensity = HEMI_BASE * ambient * (0.3 + 0.7 * day);
         this.scene.environmentIntensity = ENV_BASE * (0.25 + 0.75 * day);
-        this.sunVisibility = this.sky ? this.sky.preset.sunSize > 0 ? day * (rain ? 0 : 1) : 0 : 0;
+        this.sunVisibility = this.sky && !this.indoor ? this.sky.preset.sunSize > 0 ? day * (rain ? 0 : 1) : 0 : 0;
         this.fx.exposure = 1;
         this.fx.bloomThreshold = 1.1;
         this.sky?.setRain(rain);
@@ -553,6 +555,10 @@ class SceneHandle {
         this.track = buildTrack(world);
         const t = this.track;
         this.theme = themeOf(t);
+        // Indoors (the house): the scan is the whole world, so the scene adds no terrain, sky,
+        // scenery, grass or rain of its own, and the road is a toy track on stilts.
+        const indoor = models.isIndoor(t);
+        this.indoor = indoor;
         const group = new THREE.Group();
         group.name = 'pocabinet-track';
 
@@ -566,19 +572,27 @@ class SceneHandle {
             map: tex.map, normalMap: tex.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
         }), 70, 0.35);
         let ground = null;
-        try {
-            this.terrain = new Terrain(t);
-            ground = this.terrain.mesh(groundMat, reach, tile);
-        } catch (e) {
+        if (indoor) {
+            // A dark floor well under the house: what a gap in the scan's own floor shows.
             this.terrain = null;
-            console.warn('pocabinet/scene: terrain skipped', e);
+            ground = flatGround(world, new THREE.MeshBasicMaterial({ color: hex(atmosphere.skyHex, '#16110d') }), reach, tile);
+            ground.position.y = models.scanOf(t).groundY;
+            ground.receiveShadow = false;
+        } else {
+            try {
+                this.terrain = new Terrain(t);
+                ground = this.terrain.mesh(groundMat, reach, tile);
+            } catch (e) {
+                this.terrain = null;
+                console.warn('pocabinet/scene: terrain skipped', e);
+            }
         }
         if (!ground) ground = flatGround(world, groundMat, reach, tile);
         group.add(ground);
         this.groundMesh = ground;
 
         const tar = asphalt();
-        const roadMat = reflective(puddlePorosity(macro(new THREE.MeshStandardMaterial({
+        const roadMat = indoor ? models.toyRoadMaterial(atmosphere) : reflective(puddlePorosity(macro(new THREE.MeshStandardMaterial({
             color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
             map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
             side: THREE.DoubleSide,
@@ -588,8 +602,11 @@ class SceneHandle {
         // Over the scan the road is a deck a hand above the court: it throws a shadow on it.
         this.roadMesh.castShadow = !!t.scan;
         group.add(this.roadMesh);
-        this.buildRunoff(group, atmosphere, groundMat, tile);
+        this.buildRunoff(group, atmosphere, indoor ? models.toyShoulderMaterial(atmosphere) : groundMat, tile);
         models.buildScanFloor(this, group);
+        if (indoor) {
+            try { models.buildToyTrack(this, group, atmosphere); } catch (e) { console.warn('pocabinet/scene: toy track skipped', e); }
+        }
 
         // Edge lines on the tarmac, then the barriers where physics puts the wall.
         const lineMat = new THREE.MeshStandardMaterial({
@@ -615,7 +632,7 @@ class SceneHandle {
         group.add(startLine(t));
 
         try {
-            this.trackside = new Trackside(t, { theme: this.theme, terrain: this.terrain, atmosphere });
+            this.trackside = new Trackside(t, { theme: this.theme, terrain: this.terrain, atmosphere, indoor });
             group.add(this.trackside.group);
         } catch (e) {
             this.trackside = null;
@@ -635,18 +652,29 @@ class SceneHandle {
             this.sunDirVisual = new THREE.Vector3(...this.sky.preset.sun).normalize();
             this.hemi.color.copy(new THREE.Color(this.sky.preset.zenith).lerp(new THREE.Color('#ffffff'), 0.5));
             this.hemi.groundColor.copy(hex(atmosphere.groundHex, '#2a3a24'));
+            if (indoor) {
+                // The dome is not drawn (a window in the scan shows the scan's own outdoors, a gap
+                // shows the dark), but it still lights the cars and is what their paint reflects.
+                // Lamp light, not daylight: the scan is a house in the evening.
+                this.sky.mesh.visible = false;
+                this.sun.color.set('#ffd9b0');
+                this.hemi.color.set('#ffe6cc');
+            }
         } catch (e) {
             this.sky = null;
             console.warn('pocabinet/scene: sky skipped', e);
         }
-        try {
-            this.scenery = new Scenery(t, {
-                ...world, kerbs: computeKerbs(t), theme: this.theme, terrain: this.terrain,
-            });
-            group.add(this.scenery.group);
-        } catch (e) {
-            this.scenery = null;
-            console.warn('pocabinet/scene: scenery skipped', e);
+        this.scenery = null;
+        if (!indoor) {
+            try {
+                this.scenery = new Scenery(t, {
+                    ...world, kerbs: computeKerbs(t), theme: this.theme, terrain: this.terrain,
+                });
+                group.add(this.scenery.group);
+            } catch (e) {
+                this.scenery = null;
+                console.warn('pocabinet/scene: scenery skipped', e);
+            }
         }
 
         this.scene.add(group);
@@ -732,7 +760,7 @@ class SceneHandle {
         }
         this.grass = null;
         const blades = GRASS_BLADES[this.quality] || 0;
-        if (!this.track || !blades) return;
+        if (!this.track || !blades || this.indoor) return;
         try {
             this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades, {
                 keepOut: models.scanRing(this.track), terrain: this.terrain,

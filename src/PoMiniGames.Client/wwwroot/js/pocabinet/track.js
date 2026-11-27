@@ -168,9 +168,13 @@ class Track {
         this.kerbs = ints(world?.kerbs);
         this.line = perSample(world?.racingLine) || new Float64Array(this.count);
         this.theme = String(world?.theme || this.id);
+        // False where running wide does not void the lap (the house, whose lap is 100 s long). An old
+        // payload without it reads as a track with limits. MIRRORED: PoCabinetTrack.TrackLimits.
+        this.limits = world?.trackLimits !== false;
         // Render-only: the scenery zone each sample is dressed as (capitol, senate, court,
-        // maralago; '' where the world names none) and the scan the lap drives through
-        // ({ x, y, scale, floorZ, halfLength, halfWidth } in sim units and metres), or null.
+        // maralago, or house indoors; '' where the world names none) and the scan the lap drives
+        // through ({ id, x, y, scale, floorZ, halfLength, halfWidth } in sim units and metres;
+        // id 'court' or 'house', models.js SCANS), or null.
         this.zoneOf = new Array(this.count).fill('');
         for (const z of Array.isArray(world?.zones) ? world.zones : []) {
             const from = Number(z.from) | 0, to = Number(z.to) | 0;
@@ -179,6 +183,7 @@ class Track {
         }
         const scan = world?.scan;
         this.scan = scan && Number(scan.scale) > 0 ? {
+            id: String(scan.id || 'court'),
             x: Number(scan.x) || 0, y: Number(scan.y) || 0, scale: Number(scan.scale), floorZ: Number(scan.floorZ) || 0,
             halfLength: Number(scan.halfLength) || 0, halfWidth: Number(scan.halfWidth) || 0,
         } : null;
@@ -266,7 +271,7 @@ class Track {
         return !(i >= this.hiddenFrom && i < this.hiddenTo);
     }
 
-    /** The scenery zone sample `i` is dressed as: 'capitol', 'senate', 'court', 'maralago' or ''. */
+    /** The scenery zone sample `i` is dressed as: 'capitol', 'senate', 'court', 'maralago', 'house' or ''. */
     zoneAt(i) {
         return this.zoneOf[i];
     }

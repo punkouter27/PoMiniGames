@@ -104,7 +104,18 @@ let race = null;
 export function startRace(dotnetRef, sceneHandle, minimapHandle, opts) {
     stopRace();
     race = new Race(dotnetRef, sceneHandle, minimapHandle, opts || {});
+    // Checks drive the running race through this (as PoBrawl's __pobrawl): `?debug` in the
+    // address, or localStorage 'pominigames:pocabinet-debug'. Nothing in the game reads it.
+    if (debugOn()) window.__pocabinet = () => race;
     return true;
+}
+
+function debugOn() {
+    try {
+        return /[?&]debug(=|&|$)/.test(location.search) || !!localStorage.getItem('pominigames:pocabinet-debug');
+    } catch {
+        return false;
+    }
 }
 
 export function stopRace() {
@@ -431,7 +442,7 @@ class Race {
     /** Rain grip from the mounted environment, until it is held for the race (see the constructor). */
     syncWeather() {
         if (this.weatherHeld) return;
-        const wet = currentEnvironment().raining;
+        const wet = currentEnvironment().raining && !this.scene?.indoor;   // the house is always dry
         this.grip = wet ? 0.85 : 1;
         this.cond.wet = wet;
         if (this.fx) this.fx.grip = this.grip;

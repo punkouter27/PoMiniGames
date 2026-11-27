@@ -66,10 +66,16 @@ public sealed record PoCabinetTrackDefinition(
 
     /// <summary>A scan the lap drives through, and where it stands. Render-only.</summary>
     public PoCabinetScanWire? Scan { get; init; }
+
+    /// <summary>Whether running wide (all four wheels past the edge) voids the lap. False on the
+    /// house: its lap is three times the Grand Prix's and a race is two of them, so one off in
+    /// 100 seconds would leave most players with no lap to post, and the shoulder's drag is
+    /// already the price. Both physics copies read it.</summary>
+    public bool TrackLimits { get; init; } = true;
 }
 
 /// <summary>A scenery zone starting at knot <paramref name="FromKnot"/>, dressed as
-/// <paramref name="Theme"/> (capitol, senate, court, maralago).</summary>
+/// <paramref name="Theme"/> (capitol, senate, court, maralago; house indoors).</summary>
 public sealed record PoCabinetZoneDef(double FromKnot, string Theme);
 
 /// <summary>What lies between the road edge and the barrier. Grass drags and has little grip;
@@ -105,8 +111,12 @@ public sealed record PoCabinetIslandDef(double FromKnot, double ToKnot, double L
 /// </summary>
 public static class PoCabinetTrackGeometry
 {
-    /// <summary>The one circuit's id (also <see cref="PoCabinetCatalog.DefaultTrackId"/>).</summary>
+    /// <summary>The Grand Prix circuit's id (also <see cref="PoCabinetCatalog.DefaultTrackId"/>):
+    /// the track online races run on, and the one any unknown id gets.</summary>
     public const string TrackId = "grandprix";
+
+    /// <summary>The scanned house's id: a second track, solo only.</summary>
+    public const string HouseTrackId = "house";
 
     /// <summary>
     /// Where the scanned basketball court stands (wwwroot/models/court.glb, court.ksplat): its
@@ -118,6 +128,7 @@ public static class PoCabinetTrackGeometry
     /// </summary>
     private static readonly PoCabinetScanWire Court = new()
     {
+        Id = "court",
         X = -1300,
         Y = 1850,
         Scale = 50,
@@ -256,9 +267,139 @@ public static class PoCabinetTrackGeometry
         Scan = Court,
     };
 
-    /// <summary>The circuit's definition. There is one track; <paramref name="trackId"/> is kept
-    /// for callers that still carry an id, and any value gets the same circuit.</summary>
-    public static PoCabinetTrackDefinition Get(string? trackId = null) => Definition;
+
+    /// <summary>
+    /// Where the scanned house stands (wwwroot/models/house.ksplat): its origin on the sim's, drawn
+    /// at 800 sim units to the metre (a car is a ~5 cm toy, the road 13 cm wide), its floor at
+    /// height 0. All of it is drawn: the half extents only say the whole lap is indoors.
+    /// </summary>
+    private static readonly PoCabinetScanWire House = new()
+    {
+        Id = "house",
+        X = 0,
+        Y = 0,
+        Scale = 800,
+        FloorZ = 0,
+        HalfLength = 11,
+        HalfWidth = 8,
+    };
+
+    /// <summary>
+    /// House Party: a lap of a scanned house on a toy road. Off the grid along the kitchen
+    /// floor and out through the wide opening; along the living room's south wall, up past the
+    /// television and along the north wall to a crest by the mantel (1.5 m); back through the
+    /// kitchen and up the dining room's east side over the chair backs, a hairpin over the head
+    /// of the table and down the middle of it, over the buffet and into the hall; the hall's
+    /// upper lane, climbing, through the bedroom door (both lanes pinch to share it) and round
+    /// the bedroom to the crest in front of the shelves at six feet (1.83 m); down past the loft
+    /// bed, out of the door, down the hall's lower lane, round the end of the kitchen wall and
+    /// down the aisle beside the island to the floor.
+    ///
+    /// GENERATED, do not hand-edit: scripts/pocabinet/house-route.py lays the knots on the scan
+    /// in metres (the house frame of house-frame.json), checks that nothing in the scan stands
+    /// in the road, that the hall's two lanes keep their barriers apart and that no grade is over
+    /// 0.24, and prints these four arrays (`--cs`): x and -y at 800 units to the metre, the
+    /// road's height over the floor, the bank into each bend and the width.
+    /// </summary>
+    private static readonly PoCabinetTrackDefinition HouseDefinition = new(
+        HouseTrackId,
+        TrackWidth: 105,
+        Knots:
+        [
+            (1320, 3592), (1640, 3576), (1960, 3552), (2320, 3552), (2720, 3616), (3120, 3728),
+            (3560, 3856), (4080, 3952), (4640, 3984), (5160, 3984), (5560, 3904),
+            (5776, 3640), (5808, 3240), (5808, 2800), (5808, 2360), (5760, 1960),
+            (5536, 1680), (5160, 1584), (4720, 1584), (4240, 1600), (3760, 1616), (3320, 1664),
+            (3040, 1904), (2776, 2240), (2480, 2560), (2096, 2688), (1776, 2432),
+            (1616, 2040), (1560, 1600), (1560, 1120), (1560, 640), (1560, 160), (1560, -320), (1544, -760),
+            (1432, -1104), (1128, -1232), (824, -1104), (696, -760),
+            (696, -320), (696, 80), (648, 456), (448, 752), (112, 864), (-280, 816), (-720, 720),
+            (-1160, 704), (-1600, 712), (-2080, 720), (-2560, 728), (-3040, 736), (-3520, 736), (-3976, 708),
+            (-4288, 464), (-4464, 112), (-4496, -280), (-4496, -680), (-4640, -976), (-4960, -1088),
+            (-5296, -976), (-5472, -680), (-5488, -280), (-5488, 120), (-5472, 448), (-5312, 688), (-5000, 744), (-4720, 720), (-4464, 696), (-4216, 776), (-3968, 908),
+            (-3536, 1016), (-3040, 1040), (-2560, 1040), (-2080, 1040), (-1600, 1040), (-1240, 1064),
+            (-992, 1240), (-976, 1560), (-1136, 1904), (-1280, 2280), (-1296, 2680), (-1296, 3040), (-1216, 3360),
+            (-944, 3568), (-560, 3600), (-80, 3600), (400, 3600), (880, 3600),
+        ],
+        StepsPerSegment: 16,
+        Atmosphere: new PoCabinetAtmosphereWire
+        {
+            // Indoors: what shows past the scan (through a window, a gap in a wall) is dusk, and
+            // the fog is out past the far wall (the house is ~1450 scene units long).
+            SkyHex = "#16110d",
+            FogStart = 2600,
+            FogEnd = 6000,
+            FogHex = "#16110d",
+            AmbientIntensity = 0.9,
+            GroundHex = "#5a3c24",
+            RoadHex = "#4a4d55",
+            AccentHex = "#e07a3f",
+        })
+    {
+        // Two laps (owner, 2026-11-27): the second is the flying one. The lap is three times the
+        // Grand Prix's, so running onto the shoulder costs speed, not the lap.
+        Laps = 2,
+        TrackLimits = false,
+        KnotZ =
+        [
+            16, 16, 16, 16, 16, 16,
+            24, 80, 168, 264, 344,
+            416, 496, 584, 672, 760,
+            832, 904, 984, 1064, 1136, 1184,
+            1184, 1144, 1088, 1032, 976,
+            936, 912, 904, 904, 904, 904, 896,
+            880, 856, 832, 808,
+            800, 800, 808, 824, 840, 856, 880,
+            912, 968, 1024, 1080, 1136, 1192, 1240,
+            1288, 1336, 1384, 1424, 1448, 1464,
+            1448, 1400, 1336, 1272, 1208, 1144, 1088, 1040, 1000, 952, 904,
+            824, 744, 664, 584, 504, 440,
+            384, 320, 240, 160, 80, 32, 16,
+            16, 16, 16, 16, 16,
+        ],
+        KnotBank =
+        [
+            0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0.15,
+            0.15, 0, 0, 0, 0.10,
+            0.15, 0, 0, 0, 0, 0.15,
+            0, 0, -0.06, -0.22, -0.09,
+            0, 0, 0, 0, 0, 0, 0,
+            0.22, 0.17, 0.20, 0.08,
+            0, 0, -0.08, -0.15, -0.10, 0, 0,
+            0, 0, 0, 0, 0, 0, -0.13,
+            -0.07, -0.09, 0, 0.08, 0.18, 0.13,
+            0.16, 0.12, 0, 0, 0.11, 0.22, 0.08, 0, -0.14, -0.12, 0,
+            0, 0, 0, 0, 0, -0.10,
+            -0.22, -0.14, 0, 0.08, 0, 0, 0.08,
+            0.08, 0, 0, 0, 0,
+        ],
+        KnotWidth =
+        [
+            1, 1, 1, 1, 1, 1.08,
+            1.15, 1.15, 1.15, 1.15, 1.15,
+            1.15, 1.15, 1.15, 1.15, 1.15,
+            1.15, 1.15, 1.15, 1.15, 1.1, 1.05,
+            1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 0.96, 0.9, 0.84, 0.8,
+            0.85, 0.95, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 0.96, 0.9, 0.82, 0.82,
+            0.88, 0.96, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1,
+        ],
+        Theme = HouseTrackId,
+        Zones = [new(0, HouseTrackId)],
+        Scan = House,
+    };
+
+    /// <summary>A track's definition: the house for <see cref="HouseTrackId"/> (any casing), the
+    /// Grand Prix for anything else, a retired track's id included.</summary>
+    public static PoCabinetTrackDefinition Get(string? trackId = null) =>
+        string.Equals(trackId?.Trim(), HouseTrackId, StringComparison.OrdinalIgnoreCase) ? HouseDefinition : Definition;
 
     /// <summary>
     /// Closed Catmull-Rom resample of the knots, as a flat <c>[x0, y0, x1, y1, …]</c> array.
@@ -349,6 +490,7 @@ public static class PoCabinetTrackGeometry
             FinishIndex = def.FinishKnot * def.StepsPerSegment,
             HiddenFrom = def.HiddenFromKnot * def.StepsPerSegment,
             HiddenTo = def.HiddenToKnot * def.StepsPerSegment,
+            TrackLimits = def.TrackLimits,
         };
         PoCabinetTrackFeatures.Fill(world, def, xy);
         return world;

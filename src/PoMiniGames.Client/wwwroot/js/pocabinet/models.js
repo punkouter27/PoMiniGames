@@ -1,7 +1,16 @@
 // pocabinet/models.js
 //
-// The scan the lap drives through: an outdoor basketball court (track.scan says where it stands;
-// PoCabinetTrackGeometry lays the road across it). Two files draw it, both in the court's own
+// The scan a lap drives through (track.scan says which, and where it stands; SCANS below says how
+// each is drawn). Two of them:
+//
+// THE HOUSE (the House Party track): a whole house, bedroom to living room, as one Gaussian splat
+// in the house frame of scripts/pocabinet/house-frame.json (metres, floor on y = 0, x along the
+// house). house.ksplat is 2M splats, 48 MB; house-low.ksplat is its first 250k (6 MB), shown
+// first, and all the low tier, the "Lite" setting and a phone ever draw. It is drawn whole, there
+// is no mesh, and the road through it is a toy track (buildToyTrack): moulded plastic with a
+// shoulder either side, standing on stilts wherever it is off the floor.
+//
+// THE COURT (the Grand Prix): an outdoor basketball court. Two files draw it, both in the court's own
 // frame (metres, floor on y = 0, x from one backboard to the other; scripts/blender/
 // pocabinet-court.py and pocabinet-court-splat.py build them from the same reconstruction):
 //
@@ -21,8 +30,9 @@
 // methods that call them. Render-only.
 
 import * as THREE from './three.js';
-import { WORLD_SCALE } from './util.js';
-import { disposeObject } from './meshes.js';
+import { WORLD_SCALE, roadPlane } from './util.js';
+import { disposeObject, hex, ribbon } from './meshes.js';
+import { wallFace } from './terrain.js';
 import * as TSL from 'three-eco/tsl';
 import { loadSplat } from '../platform/3d/splats.js';
 import { getKtx2Loader } from '../platform/3d/textureLoader.js';
@@ -41,7 +51,50 @@ export const COURT = {
     // court's axis. The trees round the court reach in over it, and without their trunks
     // (outside the rectangle) their branches would hang in the air.
     low: 0.6, hoopAt: 13.7, hoopReach: 1.9, hoopHalf: 1.5,
+    crop: true,
+    // How many splats each quality tier can sort and blend: the whole 400k scan on high, half on
+    // medium, a quarter (the light file's size) on low. The loader strides the file down to the cap.
+    cap: { high: 400000, medium: 200000, low: 100000 },
+    shadow: 0.32,         // the floor's shadow catcher
 };
+
+export const HOUSE = {
+    url: null,                               // no mesh: the light splat is the lite version
+    splat: 'models/house.ksplat',            // 2M splats, 48 MB
+    splatLow: 'models/house-low.ksplat',     // 250k, 6 MB: shown first, and the lite version
+    splatLift: 1.0,
+    label: 'house',
+    crop: false,          // drawn whole
+    cap: { high: 2000000, medium: 1000000, low: 250000 },
+    // What is drawn of it (platform/3d/splats.js culls to the view first): past `near` world units
+    // (2 m) only the most important share of each `cell` (half a metre) of the house, down to a
+    // fifth of it at the far end, and never more than `draw` at once (the nearest are kept).
+    // Owner, 2026-11-27: draw more of the house and accept fewer frames. So the budget is set by
+    // the tier the scan was loaded on and does not follow the scene's live quality down. Drawing
+    // all 2M ran at 10 fps on a laptop GPU (Snapdragon X) whatever the resolution; frames go
+    // roughly as 9M / splats drawn there with a 64-car race on top.
+    lod: { near: 160, floor: 0.2, cell: 40 },
+    draw: { high: 800000, medium: 550000, low: 250000 },
+    indoor: true,         // no terrain, sky, scenery, grass or rain; the road is a toy track
+    shadow: 0.2,
+    groundY: -110,        // world units: a dark floor under the house, below the stairwell's foot
+    deckFrom: 40,         // sim units (5 cm): past this the road is off the floor, on stilts
+    stiltEvery: 8,        // samples between pairs of stilts (~25 cm of road)
+    seam: 200,            // sim units between the toy track's moulded joints (25 cm lengths)
+};
+
+/** The scans, by track.scan.id. */
+export const SCANS = { court: COURT, house: HOUSE };
+
+/** How the handle's (or a track's) scan is drawn: the court's when it has none or an unknown one. */
+export function scanOf(sh) {
+    return SCANS[(sh?.track ?? sh)?.scan?.id] || COURT;
+}
+
+/** True on a track that is all indoors (the house): the scan is the whole world. */
+export function isIndoor(track) {
+    return !!track?.scan && !!SCANS[track.scan.id]?.indoor;
+}
 
 /**
  * The Basis Universal transcoder KTX2Loader runs in its worker, served by this site
@@ -83,7 +136,7 @@ export function buildScanFloor(sh, group) {
     const p = scanPlace(sh);
     if (!p) return;
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(p.hx * 2, p.hz * 2).rotateX(-Math.PI / 2),
-        new THREE.ShadowMaterial({ opacity: 0.32, depthWrite: false }));
+        new THREE.ShadowMaterial({ opacity: scanOf(sh).shadow, depthWrite: false }));
     catcher.position.set(p.x, p.y + 0.09, p.z);
     catcher.receiveShadow = true;
     catcher.name = 'pocabinet-scan-shadows';
@@ -142,9 +195,12 @@ function roomPlan(detail) {
 export async function loadScan(sh, group) {
     const place = scanPlace(sh);
     if (!place) return;
+    const scan = scanOf(sh);
     const plan = roomPlan(sh.roomDetail || (sh.roomDetail = storedRoomDetail()));
-    if (sh.quality !== 'low' && plan !== 'mesh' && await loadScanSplat(sh, group, plan === 'full')) return;
-    if (sh.disposed || sh.trackGroup !== group) return;
+    const lite = sh.quality === 'low' || plan === 'mesh';
+    // A scan with no mesh (the house) is always a splat: the light file is its lite version.
+    if ((!lite || !scan.url) && await loadScanSplat(sh, group, plan === 'full' && !lite)) return;
+    if (sh.disposed || sh.trackGroup !== group || !scan.url) return;
     await loadScanMesh(sh, group, place);
 }
 
@@ -232,7 +288,7 @@ function progressBar(sh) {
     el.style.cssText = 'position:absolute;left:50%;bottom:14%;transform:translateX(-50%);z-index:5;'
         + 'padding:6px 12px;border-radius:999px;background:rgba(10,12,16,.62);color:#f1ede6;'
         + 'font:600 12px/1.2 system-ui,sans-serif;pointer-events:none;display:flex;gap:8px;align-items:center;';
-    el.innerHTML = '<span>Loading court</span><span style="width:110px;height:5px;border-radius:3px;background:rgba(255,255,255,.18);overflow:hidden"><i style="display:block;height:100%;width:0;background:#9fd0ff;transition:width .2s"></i></span><b>0%</b>';
+    el.innerHTML = '<span>Loading scan</span><span style="width:110px;height:5px;border-radius:3px;background:rgba(255,255,255,.18);overflow:hidden"><i style="display:block;height:100%;width:0;background:#9fd0ff;transition:width .2s"></i></span><b>0%</b>';
     host.appendChild(el);
     const bar = el.querySelector('i'), pct = el.querySelector('b');
     return {
@@ -247,26 +303,24 @@ function progressBar(sh) {
     };
 }
 
-/**
- * How many splats this quality tier can sort and blend: the whole 400k scan on high, half on
- * medium, a quarter (the light file's size) on low. The loader strides the file down to the cap.
- */
-export const SPLAT_CAP = { high: 400000, medium: 200000, low: 100000 };
-
 async function makeViewer(sh, group, url, place, onProgress) {
+    const scan = scanOf(sh);
     // The splat's frame is z up: turned to three's y up, scaled and stood where the scan stands.
     const upright = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
     const matrix = new THREE.Matrix4().compose(new THREE.Vector3(place.x, place.y, place.z), upright,
         new THREE.Vector3(place.scale, place.scale, place.scale));
     const cloud = await loadSplat(THREE, TSL, url, {
         matrix,
-        maxSplats: SPLAT_CAP[sh.quality] ?? SPLAT_CAP.high,
-        lift: COURT.splatLift,
+        maxSplats: scan.cap[sh.quality] ?? scan.cap.high,
+        lod: scan.lod,
+        maxDraw: scan.draw ? (scan.draw[sh.quality] ?? scan.draw.high) : 0,
+        lift: scan.splatLift,
         name: 'pocabinet-scan-splat',
-        // Only the court and a few metres round it, softly ending in the lawn; above `low` metres
-        // only the two hoops (the trees round the court would otherwise hang in the air).
-        crop: { x: place.x, z: place.z, hx: place.hx, hz: place.hz, fade: COURT.fade },
-        hide: { floorY: place.y, scale: place.scale, low: COURT.low, hoopAt: COURT.hoopAt, hoopReach: COURT.hoopReach, hoopHalf: COURT.hoopHalf, cx: place.x, cz: place.z },
+        // The court: only it and a few metres round it, softly ending in the lawn; above `low`
+        // metres only the two hoops (the trees round the court would otherwise hang in the air).
+        // The house is drawn whole.
+        crop: scan.crop ? { x: place.x, z: place.z, hx: place.hx, hz: place.hz, fade: scan.fade } : undefined,
+        hide: scan.crop ? { floorY: place.y, scale: place.scale, low: scan.low, hoopAt: scan.hoopAt, hoopReach: scan.hoopReach, hoopHalf: scan.hoopHalf, cx: place.x, cz: place.z } : undefined,
         onProgress: (p) => onProgress?.(Number(p) || 0),
     });
     if (sh.disposed || sh.trackGroup !== group) {
@@ -290,18 +344,19 @@ async function makeViewer(sh, group, url, place, onProgress) {
 export async function loadScanSplat(sh, group, full = true) {
     const place = scanPlace(sh);
     if (!place) return false;
+    const scan = scanOf(sh);
     const bar = progressBar(sh);
     sh.roomProgress = bar;
     const done = () => { bar.remove(); if (sh.roomProgress === bar) sh.roomProgress = null; };
     try {
-        const low = await makeViewer(sh, group, COURT.splatLow, place, (p) => bar.set(p * (full ? 0.25 : 1), `Loading ${COURT.label}`));
+        const low = await makeViewer(sh, group, scan.splatLow, place, (p) => bar.set(p * (full ? 0.25 : 1), `Loading ${scan.label}`));
         if (!low) { done(); return false; }
         low.name = 'pocabinet-scan-splat';
         group.add(low);
         sh.roomSplat = low;
         if (!full) { done(); return true; }
         // The sharp version, behind the light one; any failure just keeps the light one.
-        makeViewer(sh, group, COURT.splat, place, (p) => bar.set(25 + p * 0.75, `Sharpening ${COURT.label}`))
+        makeViewer(sh, group, scan.splat, place, (p) => bar.set(25 + p * 0.75, `Sharpening ${scan.label}`))
             .then((sharp) => {
                 if (!sharp) return;
                 if (sh.roomSplat !== low) { disposeViewer(sharp); return; }
@@ -310,12 +365,12 @@ export async function loadScanSplat(sh, group, full = true) {
                 sh.roomSplat = sharp;
                 disposeViewer(low);
             })
-            .catch((e) => console.warn('pocabinet/scene: the full court splat was skipped, keeping the light one', e))
+            .catch((e) => console.warn(`pocabinet/scene: the full ${scan.label} splat was skipped, keeping the light one`, e))
             .finally(done);
         return true;
     } catch (e) {
         done();
-        console.warn('pocabinet/scene: the court splat was skipped, drawing the mesh', e);
+        console.warn(`pocabinet/scene: the ${scan.label} splat was skipped`, e);
         return false;
     }
 }
@@ -349,7 +404,167 @@ export function setRoomDetail(sh, detail) {
 export function syncRoomSplat(sh) {
     const cloud = sh.roomSplat?.userData?.cloud;
     if (!cloud) return;
-    cloud.uniforms.lift.value = COURT.splatLift;
+    cloud.uniforms.lift.value = scanOf(sh).splatLift;
     const flash = sh.fx?.lightningFlash || 0;
     cloud.setLighting?.({ flash });
+}
+
+// ── The toy track (indoor scans) ─────────────────────────────────────────────────────────────
+
+/**
+ * The toy road: moulded grey plastic under a light clearcoat, so the room's light slides along it
+ * as a soft sheen. Smooth, where the Grand Prix's tarmac is rough.
+ */
+export function toyRoadMaterial(atmosphere) {
+    return new THREE.MeshPhysicalMaterial({
+        color: hex(atmosphere.roadHex, '#4a4d55'), roughness: 0.58, metalness: 0,
+        clearcoat: 0.55, clearcoatRoughness: 0.28, side: THREE.DoubleSide,
+    });
+}
+
+/** The shoulder either side of the toy road (the run-off): the same plastic in the track's accent colour. */
+export function toyShoulderMaterial(atmosphere) {
+    return new THREE.MeshStandardMaterial({
+        color: hex(atmosphere.accentHex, '#e07a3f').multiplyScalar(0.8), roughness: 0.72, metalness: 0, side: THREE.DoubleSide,
+    });
+}
+
+let moulding = null;
+/** Alpha across the road's width (u) and one moulded length (v): darker toward both rails, the
+ *  shading a moulded channel has, and a thin joint line where two lengths meet. */
+function mouldingTexture() {
+    if (moulding) return moulding;
+    const w = 64, h = 64;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const img = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+        const v = y / h;
+        const joint = Math.max(0, 1 - Math.min(v, 1 - v) * h / 1.6);
+        for (let x = 0; x < w; x++) {
+            const u = (x + 0.5) / w;
+            const edge = Math.pow(Math.max(0, 1 - Math.min(u, 1 - u) / 0.16), 2);
+            img.data[(y * w + x) * 4 + 3] = Math.round(Math.min(1, edge * 0.42 + joint * 0.5) * 255);
+        }
+    }
+    g.putImageData(img, 0, 0);
+    moulding = new THREE.CanvasTexture(c);
+    moulding.wrapS = THREE.ClampToEdgeWrapping;
+    moulding.wrapT = THREE.RepeatWrapping;
+    moulding.anisotropy = 4;
+    return moulding;
+}
+
+/** One strip over the road, u across its width, v one per moulded length. */
+function mouldingStrip(t, seam) {
+    const n = t.count;
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= n; i++) {
+        const k = i % n;
+        const nx = -t.ty[k], ny = t.tx[k];
+        const v = (i === n ? t.length : t.cum[k]) / seam;
+        for (const [lat, u] of [[-t.hw[k], 0], [t.hw[k], 1]]) {
+            pos.push((t.x[k] + nx * lat) / WORLD_SCALE, 0.035 + roadPlane(t, k, lat) / WORLD_SCALE, (t.y[k] + ny * lat) / WORLD_SCALE);
+            uv.push(u, v);
+        }
+    }
+    for (let i = 0; i < n; i++) {
+        if (!t.drawn(i)) continue;
+        const a0 = i * 2;
+        idx.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geom.setIndex(idx);
+    return geom;
+}
+
+/**
+ * What makes the road through an indoor scan a toy track, on top of the road, shoulders and
+ * barriers the scene lays for every track:
+ *   - the moulding: channel shading and a joint every `seam` units, as an overlay on the road;
+ *   - a slab under the road and both shoulders, a few millimetres thick, so the track has an
+ *     underside and an edge when a camera looks up at it from the floor;
+ *   - stilts: a pair under the slab's edges every `stiltEvery` samples wherever the road is more
+ *     than `deckFrom` over the floor, down to the floor (through whatever furniture the scan has
+ *     under it: the scan draws over them there), none where one would stand in another stretch
+ *     of the road's own corridor (the hall's two lanes).
+ */
+export function buildToyTrack(sh, group, atmosphere) {
+    const t = sh.track;
+    const scan = scanOf(sh);
+    const n = t.count;
+    const floor = (t.scan?.floorZ || 0);
+    const overlay = new THREE.Mesh(mouldingStrip(t, scan.seam), new THREE.MeshBasicMaterial({
+        color: 0x000000, map: mouldingTexture(), transparent: true, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide,
+    }));
+    overlay.name = 'pocabinet-toy-moulding';
+    overlay.renderOrder = 1;
+    group.add(overlay);
+
+    const slabMat = new THREE.MeshStandardMaterial({
+        color: hex(atmosphere.roadHex, '#4a4d55').multiplyScalar(0.55), roughness: 0.7, metalness: 0, side: THREE.DoubleSide,
+    });
+    const THICK = 0.55;    // world units: ~7 mm of plastic at this scale
+    const left = (i) => -(wallFace(t, i, -1) + 2.5), right = (i) => wallFace(t, i, 1) + 2.5;
+    const under = new THREE.Mesh(ribbon(t, left, right, -THICK, 45), slabMat);
+    under.name = 'pocabinet-toy-slab';
+    under.castShadow = true;
+    group.add(under);
+    // The slab's two edges: a skirt from the shoulder's level down to the underside.
+    for (const lat of [left, right]) {
+        const pos = [], idx = [];
+        for (let i = 0; i <= n; i++) {
+            const k = i % n, a = lat(k);
+            const x = (t.x[k] - t.ty[k] * a) / WORLD_SCALE, z = (t.y[k] + t.tx[k] * a) / WORLD_SCALE;
+            const y = roadPlane(t, k, a) / WORLD_SCALE;
+            pos.push(x, y + 0.012, z, x, y - THICK, z);
+        }
+        for (let i = 0; i < n; i++) {
+            if (!t.drawn(i)) continue;
+            const a0 = i * 2;
+            idx.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setIndex(idx);
+        g.computeVertexNormals();
+        const skirt = new THREE.Mesh(g, slabMat);
+        skirt.name = 'pocabinet-toy-skirt';
+        group.add(skirt);
+    }
+
+    const up = (i) => !!t.z && t.z[i] - floor > scan.deckFrom;
+    const inOtherStretch = (sx, sy, i) => {
+        for (let k = 0; k < n; k += 2) {
+            const gap = Math.abs(k - i);
+            if (Math.min(gap, n - gap) < 60) continue;
+            const dx = t.x[k] - sx, dy = t.y[k] - sy;
+            if (dx * dx + dy * dy < (wallFace(t, k, 1) + 6) ** 2) return true;
+        }
+        return false;
+    };
+    const spots = [];
+    for (let i = 0; i < n; i += scan.stiltEvery) {
+        if (!up(i) || !t.drawn(i)) continue;
+        for (const s of [-1, 1]) {
+            const lat = s * (wallFace(t, i, s) - 2);
+            const sx = t.x[i] - t.ty[i] * lat, sy = t.y[i] + t.tx[i] * lat;
+            if (inOtherStretch(sx, sy, i)) continue;
+            spots.push([sx / WORLD_SCALE, (roadPlane(t, i, lat) - floor) / WORLD_SCALE - THICK, sy / WORLD_SCALE]);
+        }
+    }
+    if (spots.length) {
+        const stilts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.42, 0.55, 1, 10),
+            new THREE.MeshStandardMaterial({ color: '#ece8df', roughness: 0.5, metalness: 0 }), spots.length);
+        const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+        const y0 = floor / WORLD_SCALE;
+        spots.forEach(([x, h, z], k) => stilts.setMatrixAt(k, m.compose(new THREE.Vector3(x, y0 + h / 2, z), q, new THREE.Vector3(1, h, 1))));
+        stilts.castShadow = true;
+        stilts.name = 'pocabinet-toy-stilts';
+        group.add(stilts);
+    }
 }

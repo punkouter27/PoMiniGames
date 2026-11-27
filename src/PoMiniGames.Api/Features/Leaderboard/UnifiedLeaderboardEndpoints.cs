@@ -120,6 +120,7 @@ public static class UnifiedLeaderboardEndpoints
         var boardTasks = new[]
         {
             SafeBuildAsync(PoCabinetTitle, () => BuildPoCabinetAsync(storage, limit)),
+            SafeBuildAsync(PoCabinetBoardTitle(PoCabinetCatalog.HouseTrackId), () => BuildPoCabinetAsync(storage, limit, PoCabinetCatalog.HouseTrackId)),
             SafeBuildAsync("Marble Race", () => BuildMarbleAsync(storage, limit)),
             SafeBuildAsync("Brawl", () => BuildPoBrawlAsync(storage, limit)),
             SafeBuildAsync("Brawl Demo", () => BuildPoBrawlDemoAsync(storage, limit)),
@@ -163,6 +164,13 @@ public static class UnifiedLeaderboardEndpoints
         {
             var track = PoRacerCatalog.Tracks.FirstOrDefault(t => t.Id == key[PoRacerBoardPrefix.Length..]);
             return track is null ? null : await BuildPoRacerAsync(storage, limit, track.Id);
+        }
+
+        // Likewise "pocabinet-{track}" (the House Party); bare "pocabinet" is the Grand Prix.
+        if (key.StartsWith(PoCabinetBoardPrefix, StringComparison.Ordinal))
+        {
+            var track = PoCabinetCatalog.Tracks.FirstOrDefault(t => t.Id != PoCabinetCatalog.DefaultTrackId && t.Id == key[PoCabinetBoardPrefix.Length..]);
+            return track is null ? null : await BuildPoCabinetAsync(storage, limit, track.Id);
         }
 
         var canonical = Domain.Primitives.GameKey.TryParse(key);
@@ -340,22 +348,32 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private const string PoCabinetTitle = "Cabinet";
+    private const string PoCabinetBoardPrefix = "pocabinet-";
+
+    /// <summary>The board key for a Cabinet track: the Grand Prix keeps bare "pocabinet", the
+    /// others append the track id ("pocabinet-house").</summary>
+    public static string PoCabinetBoardKey(string trackId) =>
+        trackId == PoCabinetCatalog.DefaultTrackId ? "pocabinet" : PoCabinetBoardPrefix + trackId;
+
+    /// <summary>The board's title: "Cabinet" for the Grand Prix, "Cabinet: {track name}" for the others.</summary>
+    public static string PoCabinetBoardTitle(string trackId) =>
+        trackId == PoCabinetCatalog.DefaultTrackId ? PoCabinetTitle : $"{PoCabinetTitle}: {PoCabinetCatalog.GetTrack(trackId).Name}";
 
     /// <summary>
-    /// Best lap per player (lower is better) on Cabinet's circuit, the game's one board
-    /// ("pocabinet"). Every stored lap is server-computed (a replay of the solo input log, or
-    /// the online sim's own timing), and the table keeps one ratcheted row per player, so the
-    /// read is already ranked.
+    /// Best lap per player (lower is better) on one Cabinet track: "pocabinet" for the Grand
+    /// Prix, "pocabinet-house" for the House Party. Every stored lap is server-computed (a
+    /// replay of the solo input log, or the online sim's own timing), and the table keeps one
+    /// ratcheted row per player per track, so the read is already ranked.
     /// </summary>
-    private static async Task<GameLeaderboardDto> BuildPoCabinetAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> BuildPoCabinetAsync(IStorageService storage, int limit, string trackId = PoCabinetCatalog.DefaultTrackId)
     {
-        var scores = await storage.GetPoCabinetHighScoresAsync(limit);
+        var scores = await storage.GetPoCabinetHighScoresAsync(limit, trackId);
         var entries = scores
             .Where(s => s.BestLapSeconds > 0)
             .Select((s, i) => new LeaderboardEntryDto(i + 1, s.PlayerName, s.BestLapSeconds, FormatLapTime(s.BestLapSeconds)))
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("pocabinet", PoCabinetTitle, "Best lap", HigherIsBetter: false, entries);
+        return new GameLeaderboardDto(PoCabinetBoardKey(trackId), PoCabinetBoardTitle(trackId), "Best lap", HigherIsBetter: false, entries);
     }
 
     /// <summary>A lap as m:ss.fff: Cabinet laps run past a minute, and tenths would tie half the board.</summary>

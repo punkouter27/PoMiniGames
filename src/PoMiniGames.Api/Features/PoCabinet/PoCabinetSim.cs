@@ -36,14 +36,15 @@ public sealed class PoCabinetSim
     private int _tickCount;
     private int _finishOrder;
 
-    public PoCabinetSim(int seed, IReadOnlyList<PoCabinetDriver> drivers)
+    /// <param name="trackId">The track to race: none (every online race) is the Grand Prix; tests pass the house.</param>
+    public PoCabinetSim(int seed, IReadOnlyList<PoCabinetDriver> drivers, string? trackId = null)
     {
         if (drivers is null || drivers.Count == 0)
             throw new ArgumentException("at least one driver is required", nameof(drivers));
         if (drivers.Count > PoCabinetCatalog.OnlineGridSize)
             throw new ArgumentException($"max {PoCabinetCatalog.OnlineGridSize} drivers", nameof(drivers));
 
-        _track = PoCabinetTrack.Get();
+        _track = PoCabinetTrack.Get(trackId);
         TotalLaps = _track.Laps;
         _rng = new Random(seed);
 

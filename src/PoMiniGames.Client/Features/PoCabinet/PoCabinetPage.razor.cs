@@ -114,7 +114,36 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected string PlayerColorHex => PoCabinetPaintShop.HexFor(_color);
 
-    protected static string TrackName => PoCabinetCatalog.Track.Name;
+    /// <summary>The track of the race in progress or just run (Grand Prix online and in the demo).</summary>
+    private string _raceTrackId = PoCabinetCatalog.DefaultTrackId;
+
+    protected string TrackName => PoCabinetCatalog.GetTrack(_raceTrackId).Name;
+
+    /// <summary>The track the start card has picked: the dropdown's choice in 1P, the Grand Prix
+    /// for everything else (online races and the demo run on it alone).</summary>
+    protected string SelectedTrackId => Mode == GameMode.OnePlayer
+        ? PoCabinetCatalog.KnownTrackId(Settings.Track) ?? PoCabinetCatalog.DefaultTrackId
+        : PoCabinetCatalog.DefaultTrackId;
+
+    /// <summary>The start card's map dropdown: both tracks in 1P, none otherwise.</summary>
+    protected IReadOnlyList<IntroMap>? TrackMaps => Mode == GameMode.OnePlayer ? TrackChoices : null;
+
+    private static readonly IReadOnlyList<IntroMap> TrackChoices = [.. PoCabinetCatalog.Tracks.Select(t => new IntroMap(t.Id, t.Name))];
+
+    /// <summary>The start card's dropdown picked a track: remembered with the other settings.</summary>
+    protected async Task OnTrackPickedAsync(string id)
+    {
+        Settings.Track = PoCabinetCatalog.KnownTrackId(id) ?? PoCabinetCatalog.DefaultTrackId;
+        await OnSettingsChangedAsync();
+    }
+
+    /// <summary>The drawer's weather choice shows only where it can apply: not online, not in the house.</summary>
+    protected bool ShowWeatherSetting =>
+        !IsMultiplayerMode && (_phase == Phase.Start ? SelectedTrackId : _raceTrackId) != PoCabinetCatalog.HouseTrackId;
+
+    /// <summary>The weather a race gets: dry online and indoors (the house), the player's setting otherwise.</summary>
+    private string WeatherFor(string trackId) =>
+        IsMultiplayerMode || trackId == PoCabinetCatalog.HouseTrackId ? "clear" : Settings.Weather;
 
     protected string PingClass => (_pingMs ?? 999) switch
     {
@@ -127,21 +156,24 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         ? $"A hundred cars race themselves, covered like TV: the director cuts to the closest battles. {RaceLength}."
         : IsMultiplayerMode
             ? $"Everyone who joins lands in one lobby — first in hosts and starts the race. {RaceLength}."
-            : $"Take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid, on a circuit that runs from the stadium over Senate Hill, along the beach and across a giant basketball court. {RaceLength}; a top-{PoCabinetCatalog.SoloFrontRunners} finish is a win.";
+            : SelectedTrackId == PoCabinetCatalog.HouseTrackId
+                ? $"Take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid, on a toy road through a scan of a real house: off the kitchen floor, down the dining table and up to six feet in the air. {RaceLength}; a top-{PoCabinetCatalog.SoloFrontRunners} finish is a win."
+                : $"Take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid, on a circuit that runs from the stadium over Senate Hill, along the beach and across a giant basketball court. {RaceLength}; a top-{PoCabinetCatalog.SoloFrontRunners} finish is a win.";
 
     /// <summary>The place that earns the fanfare and counts as a win: the podium in a
     /// multiplayer-sized field (16 cars at most), the top six of the 64-car solo field.</summary>
     private static int FrontRunnerCut => PoCabinetCatalog.SoloFrontRunners;
 
     /// <summary>
-    /// The circuit's board for the results' Top 3 (UnifiedLeaderboardEndpoints, "pocabinet").
-    /// Null while the lap is with the server (a solo lap is replayed there, which takes a
-    /// moment), so the board is read once the new row can be on it; and for a spectator.
+    /// The raced track's board for the results' Top 3 (UnifiedLeaderboardEndpoints: "pocabinet",
+    /// or "pocabinet-house"). Null while the lap is with the server (a solo lap is replayed there,
+    /// which takes a moment), so the board is read once the new row can be on it; and for a spectator.
     /// </summary>
-    protected string? BoardKey => _submitting || _awaitingFinal || IsSpectating || Mode == GameMode.Demo ? null : GameKeys.PoCabinet.Value;
+    protected string? BoardKey => _submitting || _awaitingFinal || IsSpectating || Mode == GameMode.Demo ? null
+        : _raceTrackId == PoCabinetCatalog.DefaultTrackId ? GameKeys.PoCabinet.Value : $"{GameKeys.PoCabinet.Value}-{_raceTrackId}";
 
-    /// <summary>"2 laps": the circuit's own race length.</summary>
-    private static string RaceLength => PoCabinetTrackGeometry.Get().Laps is var laps && laps == 1 ? "1 lap" : $"{laps} laps";
+    /// <summary>"2 laps": the selected track's own race length.</summary>
+    private string RaceLength => PoCabinetTrackGeometry.Get(SelectedTrackId).Laps is var laps && laps == 1 ? "1 lap" : $"{laps} laps";
 
     protected static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCabinet);
 
@@ -351,7 +383,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _gameCode = null;
             _localCarId = null;
             ResetTelemetry();
-            _world = PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetTrackGeometry.Get());
+            _raceTrackId = SelectedTrackId;
+            _world = PoCabinetTrackGeometry.BuildStaticWorld(_raceTrackId);
             _totalLaps = _world.TotalLaps;
             await EnsureEngineAsync();
             await LoadStoredRecordsAsync();
@@ -442,7 +475,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             WireSessionHandlers();
             var snap = await Session.JoinRaceAsync(gameCode);
             _localCarId = snap.LocalCarId;
-            _world = snap.Static ?? PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetTrackGeometry.Get());
+            _raceTrackId = PoCabinetCatalog.DefaultTrackId;   // online races run on the Grand Prix alone
+            _world = snap.Static ?? PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetCatalog.DefaultTrackId);
             _totalLaps = _world.TotalLaps;
             await LoadStoredRecordsAsync();
             await MountSceneAsync(_world);
@@ -639,7 +673,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private async Task MountEnvironmentAsync()
     {
         // Online races are dry on the server (and in prediction): rain there would only be paint.
-        var weather = IsMultiplayerMode ? "clear" : Settings.Weather;
+        // The house is indoors: always clear (the lap proof's wet flag follows this mount).
+        var weather = WeatherFor(_raceTrackId);
         try { _envHandle = await JS.InvokeAsync<IJSObjectReference>("PoCabinet.mountEnvironment", _sceneHandle, weather); }
         catch { _envHandle = null; }
     }
@@ -892,7 +927,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         var position = _position;
         var dnf = _dnf;
         var serial = _raceSerial;
-        const string trackId = PoCabinetCatalog.DefaultTrackId;
+        var trackId = _raceTrackId;
         bool Current() => serial == _raceSerial && !_disposed;
         try
         {
@@ -908,7 +943,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 {
                     var proof = await JS.InvokeAsync<JsonElement>("PoCabinet.lapProof");
                     if (proof.TryGetProperty("inputs", out var i) && i.ValueKind == JsonValueKind.String) inputs = i.GetString();
-                    wet = proof.TryGetProperty("wet", out var w) && w.ValueKind == JsonValueKind.True;
+                    // The house is indoors: never wet, whatever the engine's environment says.
+                    wet = trackId != PoCabinetCatalog.HouseTrackId
+                        && proof.TryGetProperty("wet", out var w) && w.ValueKind == JsonValueKind.True;
                 }
                 catch (JSException) { /* no proof → the server refuses the lap; local records still stand */ }
             }
@@ -1020,7 +1057,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     private async Task LoadStoredRecordsAsync()
     {
-        try { _laps.LoadStored(await JS.InvokeAsync<JsonElement>("PoCabinet.getRecords", PoCabinetCatalog.DefaultTrackId)); }
+        try { _laps.LoadStored(await JS.InvokeAsync<JsonElement>("PoCabinet.getRecords", _raceTrackId)); }
         catch { /* first race ever, or storage unavailable — no personal bests */ }
     }
 

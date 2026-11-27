@@ -1,7 +1,7 @@
 namespace PoMiniGames.Shared.Games;
 
 /// <summary>
-/// Display metadata for PoCabinet's circuit: the card's name, blurb, accent colour, length and
+/// Display metadata for a PoCabinet track: the card's name, blurb, accent colour, length and
 /// difficulty. Geometry (knots, width, atmosphere) lives next door in
 /// <see cref="PoCabinetTrackGeometry"/> under the same id, a lower-case string safe for URL paths.
 /// </summary>
@@ -34,8 +34,12 @@ public static class PoCabinetCatalog
     /// player starts 33rd: the top six earn the fanfare and count as a win.</summary>
     public const int SoloFrontRunners = 6;
 
-    /// <summary>The one circuit's id: what a race, a stored lap and the board are keyed by.</summary>
+    /// <summary>The Grand Prix's id: the track online races run on, and the one a race, a stored
+    /// lap or a board gets when it names no other.</summary>
     public const string DefaultTrackId = PoCabinetTrackGeometry.TrackId;
+
+    /// <summary>The scanned house's id: a second track, solo only, with a board of its own.</summary>
+    public const string HouseTrackId = PoCabinetTrackGeometry.HouseTrackId;
 
     /// <summary>A multiplayer seat's paint when the player sent none.</summary>
     public const string DefaultSeatColor = "#3a7d44";
@@ -77,19 +81,41 @@ public static class PoCabinetCatalog
     /// <summary>The <c>OfficialId</c> a field racer carries on the wire (physics.js <c>soloField</c>'s id).</summary>
     public const string FieldRacerId = "field";
 
-    /// <summary>The circuit: one lap takes in every kind of road the game has.</summary>
+    /// <summary>The Grand Prix: one lap takes in every kind of outdoor road the game has.</summary>
     public static PoCabinetTrackInfo Track { get; } = new(
         DefaultTrackId,
         "Cabinet Grand Prix",
         "One lap of everything: the stadium straight and its banked first turn, the climb over Senate Hill to the hairpin and the chicane, a blast across a giant scanned basketball court, the joker-lane sweeper and the beach road past the sand traps.",
         "#d4af37", 12, "Medium");
 
-    /// <summary>The circuit's card, whatever id a caller still carries.</summary>
-    public static PoCabinetTrackInfo GetTrack(string? id = null) => Track;
+    /// <summary>The house: a toy road through a scan of a real one, floor to six feet and back.</summary>
+    public static PoCabinetTrackInfo House { get; } = new(
+        HouseTrackId,
+        "House Party",
+        "Two laps of a scanned house on a toy road: off the kitchen floor, round the living room, down the middle of the dining table, up the hall and round the bedroom to six feet in the air, then all the way back down.",
+        "#e07a3f", 33, "Medium");
 
-    /// <summary>The id a race may be run and a lap posted on: the circuit's own.</summary>
-    public static bool IsKnownTrack(string? id) =>
-        string.Equals(id?.Trim(), DefaultTrackId, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Every track a solo race can be run on, the Grand Prix first (the start card's list).</summary>
+    public static IReadOnlyList<PoCabinetTrackInfo> Tracks { get; } = [Track, House];
+
+    /// <summary>A track's card: the house for its id (any casing), the Grand Prix for anything
+    /// else, a retired track's id included.</summary>
+    public static PoCabinetTrackInfo GetTrack(string? id = null) =>
+        string.Equals(id?.Trim(), HouseTrackId, StringComparison.OrdinalIgnoreCase) ? House : Track;
+
+    /// <summary>True for an id a race may be run and a lap posted on (any casing).</summary>
+    public static bool IsKnownTrack(string? id) => KnownTrackId(id) is not null;
+
+    /// <summary>The track's own id for <paramref name="id"/> in any casing, or null when no
+    /// track has it: what a stored lap and a board are keyed by.</summary>
+    public static string? KnownTrackId(string? id)
+    {
+        foreach (var track in Tracks)
+        {
+            if (string.Equals(id?.Trim(), track.Id, StringComparison.OrdinalIgnoreCase)) return track.Id;
+        }
+        return null;
+    }
 
     /// <summary>A lap or race time as the HUD, the cards and the results show it: m:ss.s.</summary>
     public static string FormatLap(double seconds)

@@ -121,7 +121,7 @@ PC's audio device failing under headless Chromium: both fixed, every browser now
 |---|---|---|
 | Format | `dotnet format PoMiniGames.slnx --verify-no-changes` | — |
 | Build | `dotnet build PoMiniGames.slnx -c Release` (warnings are errors) | — |
-| Unit (460) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
+| Unit (463) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
 | Integration (15) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
 | E2E API (16) | `dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build` | Azurite on 127.0.0.1:10000/10002 (`docker compose up -d azurite`); local only |
 | E2E UI (24 methods, 30 cases) | `pwsh scripts/run-e2eui.ps1` (publishes the trimmed Release build to a temp folder and runs the tier against it via `POMINIGAMES_E2EUI_APP_DIR`; `-Filter` narrows it) | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy. Plain `dotnet test tests/PoMiniGames.E2EUI` still runs the in-process (untrimmed) host |

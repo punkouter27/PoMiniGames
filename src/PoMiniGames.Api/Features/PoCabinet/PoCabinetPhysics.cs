@@ -232,6 +232,7 @@ public static class PoCabinetPhysics
     /// <summary>Track limits: all four wheels past the edge (the kerb counts as track). Mirrors physics.js <c>beyondLimits</c>.</summary>
     public static bool Beyond(PoCabinetTrack track, int i, double lateral)
     {
+        if (!track.TrackLimits) return false;   // no track limits here (the house)
         int s = lateral > 0 ? 1 : -1;
         int k = track.KerbAt(i);
         double edge = track.HalfWidthAt(i) + (k != 0 && (k > 0 ? 1 : -1) == s ? KerbOuter : 0);
@@ -504,9 +505,13 @@ public static class PoCabinetPhysics
             car.Z += car.Vz * dt;
             if (car.Z <= targetZ)
             {
-                double impactV = -car.Vz;
+                // It lands moving with the road, not stopped dead: on a long descent the road is
+                // falling away under it, and a car left at Vz = 0 took off again the next tick and
+                // skipped the whole way down. Mirrors physics.js.
+                double roadVz = track.Grade(proj.Index) * Math.Max(0, car.Speed) * roadDot;
+                double impactV = roadVz - car.Vz;
                 car.Z = targetZ;
-                car.Vz = 0;
+                car.Vz = roadVz;
                 car.Susp = Math.Clamp(impactV * 0.08, -1, 1);
             }
             else
@@ -520,7 +525,8 @@ public static class PoCabinetPhysics
             double compAccel = -SuspK * dz - SuspDamp * (car.Vz - gradeVz);
             car.Vz += compAccel * dt;
             car.Z += car.Vz * dt;
-            if (car.Z < targetZ - 0.8) { car.Z = targetZ - 0.8; if (car.Vz < 0) car.Vz = 0; }
+            // Bottomed out: it cannot be sinking faster than the road itself is falling (0 on the flat).
+            if (car.Z < targetZ - 0.8) { car.Z = targetZ - 0.8; if (car.Vz < Math.Min(0, gradeVz)) car.Vz = Math.Min(0, gradeVz); }
             if (Math.Abs(car.Z - targetZ) < 1e-7 && Math.Abs(car.Vz) < 1e-5) { car.Z = targetZ; car.Vz = 0; }
             car.Susp = Math.Clamp((targetZ - car.Z) * 1.4, -1, 1);
         }

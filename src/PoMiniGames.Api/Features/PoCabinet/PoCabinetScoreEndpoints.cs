@@ -12,7 +12,8 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <summary>
 /// PoCabinet's score endpoint: authenticated best-lap submissions guarded by the
 /// <c>pocabinet</c> rate-limit policy. The stored laps are read by the unified
-/// leaderboard (<c>GET /api/leaderboards/pocabinet</c>): one board, for the one circuit.
+/// leaderboard: <c>GET /api/leaderboards/pocabinet</c> for the Grand Prix and
+/// <c>pocabinet-house</c> for the House Party (a solo-only track: it has no online proof).
 ///
 /// <para>
 /// <b>Every stored lap and place is server-computed.</b> A solo submission carries its
@@ -53,7 +54,8 @@ public static class PoCabinetScoreEndpoints
             errors[nameof(dto.BestLapSeconds)] = ["Best lap must be between 0 and 3600 seconds."];
         if (dto.FinalPosition is < 1 or > PoCabinetCatalog.SoloCarCount)
             errors[nameof(dto.FinalPosition)] = [$"Final position must be between 1 and {PoCabinetCatalog.SoloCarCount}."];
-        if (!PoCabinetCatalog.IsKnownTrack(dto.TrackId))
+        var trackId = PoCabinetCatalog.KnownTrackId(dto.TrackId);
+        if (trackId is null)
             errors[nameof(dto.TrackId)] = ["That track is no longer raced."];
         if (!IsValidGameCode(dto.GameCode))
             errors[nameof(dto.GameCode)] = [$"Game code must be at most {MaxGameCodeLength} letters, digits, '-' or '_'."];
@@ -69,7 +71,6 @@ public static class PoCabinetScoreEndpoints
 
         var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
         var log = loggerFactory.CreateLogger("PoCabinetScores");
-        const string trackId = PoCabinetCatalog.DefaultTrackId;
 
         double verifiedLap;
         int verifiedPlace;
@@ -90,7 +91,7 @@ public static class PoCabinetScoreEndpoints
             }
             try
             {
-                (verifiedLap, verifiedPlace) = PoCabinetLapVerifier.Replay(dto.Wet, inputs);
+                (verifiedLap, verifiedPlace) = PoCabinetLapVerifier.Replay(trackId, dto.Wet, inputs);
             }
             finally
             {
@@ -101,6 +102,8 @@ public static class PoCabinetScoreEndpoints
         {
             // Read, not spent: the lap is forgotten only once the score below is stored, so a
             // failed save (503, parked by the client and retried) still finds it next time.
+            // Online races only run the Grand Prix, so a no-log submission for any other track
+            // never matches and is refused below.
             onlineLap = await races.PeekVerifiedLapAsync(userId, ct);
             verifiedLap = onlineLap is not null && onlineLap.TrackId == trackId ? onlineLap.BestLapSeconds : -1;
             verifiedPlace = onlineLap?.Position ?? 0;
@@ -135,7 +138,7 @@ public static class PoCabinetScoreEndpoints
         {
             PlayerName = playerName,
             UserId = userId,
-            TrackId = trackId,
+            TrackId = trackId!,   // validated above: unknown ids were refused
             BestLapSeconds = verifiedLap,
             FinalPosition = place,
             IsGuest = isGuest,
@@ -184,7 +187,7 @@ public static class PoCabinetScoreEndpoints
 }
 
 /// <summary>
-/// Inbound score payload from the client. <see cref="TrackId"/> must be the circuit's id (any
+/// Inbound score payload from the client. <see cref="TrackId"/> must be a raced track's id (any
 /// casing): a lap run on a track that is no longer raced is refused, never stored.
 /// </summary>
 public sealed class PoCabinetScoreDto
@@ -201,6 +204,6 @@ public sealed class PoCabinetScoreDto
     /// <summary>Solo proof: base64 input log (see <see cref="PoCabinetLapVerifier.Decode"/>).
     /// Empty for a multiplayer race, whose laps the server already simulated.</summary>
     public string? Inputs { get; set; }
-    /// <summary>Solo proof: the race ran in rain (grip <see cref="PoCabinetLapVerifier.WetGrip"/>).</summary>
+    /// <summary>Solo proof: the race ran in rain (grip <see cref="PoCabinetLapVerifier.WetGrip"/>); ignored on the house, which is indoors.</summary>
     public bool Wet { get; set; }
 }

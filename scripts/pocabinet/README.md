@@ -1,7 +1,9 @@
 # PoCabinet race harness
 
-PoCabinet has one circuit, **Cabinet Grand Prix** (`grandprix`), defined in
-`src/PoMiniGames.Shared/Games/PoCabinetTrackGeometry.cs`. Its physics runs in two copies that must
+PoCabinet has two tracks, both defined in
+`src/PoMiniGames.Shared/Games/PoCabinetTrackGeometry.cs`: **Cabinet Grand Prix** (`grandprix`,
+the outdoor circuit, and the one online races run on) and **House Party** (`house`, a toy road
+through a scanned house, 1P only; see "The scanned house" below). The physics runs in two copies that must
 agree to the last bit: `src/PoMiniGames.Client/wwwroot/js/pocabinet/physics.js` + `track.js` (solo
 races in the browser) and `src/PoMiniGames.Api/Features/PoCabinet/` (`PoCabinetPhysics`,
 `PoCabinetAiDriver`, `PoCabinetTrack`; the lap verifier and online races). These tools race the
@@ -12,6 +14,8 @@ browser copy in node, so a change to the track or the physics can be checked wit
    ```powershell
    dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds
    ```
+
+   It writes `grandprix.json` and `house.json`; every command below takes either id.
 
 2. Race the 64-car field on it (the player on the demo autopilot from grid slot 32):
 
@@ -95,6 +99,70 @@ carries them per sample (`zones`) and the scene reads `track.zoneAt(i)`:
 | `senate` | 6.5 to 26 | The climb, crest, hairpin, esses and chicane: the temple on the crest, an autumn forest, high hills |
 | `court` | 26 to 37 | The run down to and across the scanned basketball court: tarmac run-off with blue limit stripes |
 | `maralago` | 37 to 50 | The joker sweeper and the beach road: sand traps, palms, the mansion, golf greens, dunes |
+
+## The scanned house
+
+House Party is a lap through a Gaussian-splat scan of a whole house: bedroom, hall, dining room,
+kitchen and living room on one floor, about 17 m by 7 m. `PoCabinetTrackGeometry.House` stands
+the scan's origin on the sim's at **800 sim units to the metre**, so a 39-unit car is a ~5 cm toy
+and the 105-unit road is 13 cm wide. The road climbs from the floor to 1.83 m (six feet, 1464
+units) in front of the bedroom shelves. A race is two laps of about 100 s each, always dry, and
+it has no track limits: a lap that long rarely goes by without one off, and the shoulder's drag
+is already the price.
+
+What draws it (`wwwroot/js/pocabinet/models.js`, `HOUSE`):
+
+- `wwwroot/models/house.ksplat`: 2,000,000 splats, 48 MB. `house-low.ksplat` is its 250,000
+  most important, spread evenly over the house (6 MB): shown first, and all that the low tier,
+  the "Lite" setting and a phone draw. There is no mesh.
+- Not all of it at once. `platform/3d/splats.js` drops what is outside the view, thins what is
+  more than 2 m away to the most important share of each half-metre cube, and keeps to a draw
+  budget (800k on high, 550k on medium, 250k on low; the nearest win), set by the tier the scan
+  was loaded on. Drawing all 2M ran at 10 fps on a Snapdragon X laptop whatever the resolution.
+  The owner chose more house over more frames (2026-11-27): a two-lap race on the medium tier
+  (550k) ran at 8 to 38 fps there, mostly 10 to 30, slowest looking down the length of the house.
+- The road is a toy track (`buildToyTrack`): moulded plastic with an orange shoulder either
+  side (the run-off), a slab under it and a pair of stilts every 25 cm wherever it is more than
+  5 cm off the floor. The scene adds no terrain, sky, scenery, grass or rain indoors.
+
+The sim is flat (cars only know how high the road is), so two stretches of road must never share
+ground on the plan: the hall carries both lanes side by side, and both squeeze through the
+bedroom door beside its open leaf (the road narrows to 0.8 of its width there).
+
+### Rebuilding the house
+
+The capture (`gaussian_pointcloud.ply`, ~5M gaussians, 1.2 GB) is kept out of the repo. Plain
+Python 3.10+ with numpy (Pillow too for `--png`); no Blender.
+
+```powershell
+# 1. The splat, in the house frame (house-frame.json: metres, floor on z = 0, x along the house).
+python scripts/pocabinet/house-scan.py <path>\gaussian_pointcloud.ply <tmp>\house.ply --budget 2000000
+python scripts/pocabinet/house-scan.py <path>\gaussian_pointcloud.ply <tmp>\house-low.ply --head 250000
+node --max-old-space-size=8192 scripts/pocabinet/ksplat.mjs <tmp>\house.ply src/PoMiniGames.Client/wwwroot/models/house.ksplat
+node scripts/pocabinet/ksplat.mjs <tmp>\house-low.ply src/PoMiniGames.Client/wwwroot/models/house-low.ksplat
+
+# 2. The lap: its checks against that splat, and pictures of it (plan.png, profile.png).
+python scripts/pocabinet/house-route.py <tmp>\house.ply --png <tmp>
+
+# 3. After moving a knot (KNOTS and WIDTH in house-route.py): print the C# arrays and paste them
+#    into HouseDefinition in PoCabinetTrackGeometry.cs, then dump the worlds and race it.
+python scripts/pocabinet/house-route.py --cs
+dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds
+node scripts/pocabinet/harness.mjs race house clean
+```
+
+`house-route.py` fails (exit 1) if a bend is tighter than 150 units, two stretches of road come
+within 30 units of sharing a barrier, a grade is over 0.24, or the scan has something solid
+standing in the road. It checks against gaussians more than 40% opaque only, so look at the lap
+in the game too: haze and thin things (a lamp flex, a plant's leaves) do not count as solid.
+A healthy lap (2026-11-27, a full-field run of one lap): 61 to 63 of 64 cars finish it, the
+median in about 100 s, no car stuck. `house-scan.py --fit` finds the frame of a new capture; the knots are laid in the frame
+on file, so a new capture means laying the lap again.
+
+A new scan-only track needs: a `PoCabinetScanWire` with its own `Id`, an entry in `SCANS` in
+`models.js`, a definition and a catalog card in `PoCabinetTrackGeometry` / `PoCabinetCatalog`,
+and a partition and board id (`StorageService.PoCabinetTrackPartition`,
+`UnifiedLeaderboardEndpoints.PoCabinetBoardKey`).
 
 ## The scanned court
 

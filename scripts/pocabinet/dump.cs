@@ -2,12 +2,15 @@
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property PublishAot=false
 // Dumps PoCabinetTrackGeometry.BuildStaticWorld() exactly as the page hands it to race.js.
-// dotnet run dump.cs -- <outDir>     (writes <outDir>/grandprix.json)
+// dotnet run dump.cs -- <outDir>     (writes <outDir>/grandprix.json and <outDir>/house.json)
 using System.Text.Json;
 using PoMiniGames.Shared.Games;
 
 var outDir = args[0];
 Directory.CreateDirectory(outDir);
-var world = PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetTrackGeometry.TrackId);
-File.WriteAllText(Path.Combine(outDir, world.TrackId + ".json"), JsonSerializer.Serialize(world, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
-Console.WriteLine($"{world.TrackId}: {world.CenterXY.Count / 2} samples, theme {world.Theme}, width {world.TrackWidth}, {world.TotalLaps} laps, name {world.TrackName}");
+foreach (var track in PoCabinetCatalog.Tracks)
+{
+    var world = PoCabinetTrackGeometry.BuildStaticWorld(track.Id);
+    File.WriteAllText(Path.Combine(outDir, world.TrackId + ".json"), JsonSerializer.Serialize(world, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+    Console.WriteLine($"{world.TrackId}: {world.CenterXY.Count / 2} samples, theme {world.Theme}, width {world.TrackWidth}, {world.TotalLaps} laps, name {world.TrackName}");
+}
