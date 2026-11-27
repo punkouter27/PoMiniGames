@@ -20,18 +20,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
-    <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGamesClient.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.Api\PoMiniGames.Api.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGames.Client.csproj" />
     <!-- TierCeilingGuard (the 100/50/25/25 assertion, shared by all four tiers). -->
   </ItemGroup>
 
   <ItemGroup>
-    <Using Include="Xunit" />
+    <!-- The per-game voice manifests (VoiceManifestTests): copied next to the tests, so no path to the repo is assumed. -->
+    <None Include="..\..\src\PoMiniGames.Client\wwwroot\audio\pobrawl\voices.json" Link="VoiceManifests\pobrawl\voices.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PoMiniGames.Client\wwwroot\audio\pofighter\voices.json" Link="VoiceManifests\pofighter\voices.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The PoBrawl rollback sim contract, shared with tests/pobrawl-rollback.test.mjs. -->
-    <None Include="..\pobrawl-rollback-golden.json" Link="pobrawl-rollback-golden.json" CopyToOutputDirectory="PreserveNewest" />
+    <Using Include="Xunit" />
   </ItemGroup>
 
 </Project>

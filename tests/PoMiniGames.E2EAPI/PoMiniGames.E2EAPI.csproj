@@ -23,10 +23,7 @@
   <ItemGroup>
     <!-- Spin the real host in-process (the Blazor WASM client is BFF-served
          by the host on :5000; no separate Vite/Node). -->
-    <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
-    <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
-         so the fixture compiles whether or not tests/Shared/PoMiniGames.TestUtilities.csproj
-         is registered in the solution. -->
+    <ProjectReference Include="..\..\src\PoMiniGames.Api\PoMiniGames.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,7 +31,6 @@
     <Using Include="FluentAssertions" />
     <!-- ArmAntiforgeryAsync is needed by every test that writes; a global using keeps
          the CSRF plumbing out of each file's header. -->
-    <Using Include="PoMiniGames.TestUtilities" />
   </ItemGroup>
 
 </Project>
