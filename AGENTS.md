@@ -333,6 +333,11 @@ uvx ruff check .                                               # Python lint (sc
   - PoCapitol's police loudhailer orders are voiced offline like Cabinet's radio
     (`scripts/pocapitol/voices.mjs`; clips in `wwwroot/audio/pocapitol/`). After editing `LINES`
     in `js/pocapitol/loudhailer.js` run it again (`--check` lists lines with no clip).
+  - PoCapitol's House map (start card, Map dropdown; `wwwroot/js/pocapitol/house/`) draws the house
+    scan PoCabinet's House Party ships (`models/house.ksplat`, `house-low.ksplat`): one file for
+    both games, in the frame of `scripts/pocabinet/house-frame.json`. Its floor and walls are
+    `models/pocapitol/house-nav.json`, baked by `scripts/pocapitol/house-nav.py`; after a new scan
+    or a refit of that frame run it again, or the walls stop matching the picture.
 - **Constraints:**
   - PoEcosystem is observation-only: never add controls that change its world.
   - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are

@@ -22,14 +22,14 @@
            GameOverDelayMs="1800"
            Outcome="@ResultOutcome"
            Stats="@ResultStats"
-           GameSummary="@ResultSummary"
-           GameDetails="@ResultDetails"
+           GameSummary="@(House ? HouseResultSummary : ResultSummary)"
+           GameDetails="@(House ? null : ResultDetails)"
            Diagnostics="@DiagStats"
            DiagnosticsContent="@TabHudContent">
     <ErrorBoundary @ref="_errorBoundary">
         <ChildContent>
             <div class="pc-root @(_demo ? "pc-phonecam" : null) @(_prefs.contrast == "high" ? "pc-contrast" : null)">
-                <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
+                <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="@(House ? "A scanned house, seen first person" : "Fictional Capitol grounds and interiors")"></div>
                 <div class="pc-film" aria-hidden="true"></div>
                 @* Always in the tree while play is live, so a caption arriving or clearing
                    never inserts or removes a node over the scene. *@
@@ -41,11 +41,11 @@
                             <span class="pc-caption-tag">RADIO</span> @_caption
                         }
                     </div>
-                    @HudContent
+                    @(House ? HouseHud : HudContent)
                 }
                 @if (_status != "active")
                 {
-                    <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
+                    <div class="pc-edition">PoCAPITOL <span>@(House ? "HOUSE MAP · FICTIONAL SCENARIO" : "ALTERNATE HISTORY · FICTIONAL SCENARIO")</span></div>
                 }
 
                 @* The shared start card, like every other game: one OK, controls beside the
@@ -54,10 +54,14 @@
                 {
                     <GameIntro CueScope="pocapitol"
                                Title="@TitleContent"
-                               Objective="One afternoon, five police lines. Play it as the crowd, the line, the commander, or an observer."
-                               Controls="@IntroControls"
-                               HowToPlay="@IntroRules"
-                               Options="@IntroOptions"
+                               Objective="@(House ? "A scanned house, five rooms, eleven armed raiders and more on the way. You are the officer sent in to clear it." : "One afternoon, five police lines. Play it as the crowd, the line, the commander, or an observer.")"
+                               Controls="@(House ? HouseControls : IntroControls)"
+                               HowToPlay="@(House ? HouseRules : IntroRules)"
+                               Options="@(House ? HouseOptions : IntroOptions)"
+                               Maps="@(_demo ? null : MapChoices)"
+                               MapId="@_map"
+                               MapIdChanged="OnMapPickedAsync"
+                               StartHint="@(_mapNote.Length > 0 ? _mapNote : null)"
                                Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                Wide="true"
                                OnStart="StartAsync" />
@@ -208,7 +212,11 @@
                                 <p class="pc-command-reply" role="status">@board.reply</p>
                             </section>
                         }
-                        @if (_prefs.overlay == "density")
+                        @if (House)
+                        {
+                            @* The analysis overlays are the Capitol crowd's: nothing to draw them over here. *@
+                        }
+                        else if (_prefs.overlay == "density")
                         {
                             <div class="pc-legend" aria-label="Crowd density legend">
                                 <span class="pc-eyebrow">DENSITY · FRUIN LEVEL OF SERVICE · V</span>
@@ -262,7 +270,7 @@
                         <section class="pc-panel pc-centered">
                         <GamePauseDialog LabelledBy="pc-paused" OnResume="() => PauseAsync(false)">
                             <span class="pc-eyebrow">TAKE A BREATH</span><h2 id="pc-paused">Scenario paused.</h2>
-                            <p>The clock, the crowd and the lines are stopped.</p>
+                            <p>@(House ? "The clock and everyone in the house are stopped." : "The clock, the crowd and the lines are stopped.")</p>
                             <label class="pc-small" for="pc-graphics-paused">Graphics · now @_graphicsLabel</label>
                             @GraphicsPicker("pc-graphics-paused")
                             <div class="pc-actions">
@@ -273,7 +281,10 @@
                                 </PoButton>
                                 <span id="pc-hold-hint" class="pc-visually-hidden">Press and hold to restart the attempt.</span>
                             </div>
-                            <details><summary>Historical context</summary>@ContextContent</details>
+                            @if (!House)
+                            {
+                                <details><summary>Historical context</summary>@ContextContent</details>
+                            }
                         </GamePauseDialog>
                         </section>
                     }
@@ -377,6 +388,64 @@
                 <span>@OnTheDay.Text</span>
             </div>
         }
+    </div>;
+
+    /// <summary>
+    /// The House map's always-on strip: the time taken, a pip per room and what to clear next at
+    /// the top; health and the two kinds of grenade bottom-left; the floor plan bottom-right
+    /// (house/game.js draws it: the officer, the room to clear next, raiders in view).
+    /// </summary>
+    private RenderFragment HouseHud => @<div class="pc-hud">
+        <div class="pc-hud-top">
+            <div class="pc-hud-row">
+                <span class="pc-hud-clock" aria-label="@($"Time {Clock}")">@Clock</span>
+                @* A pip per room and one more for the second wave. *@
+                <div class="pc-progress" role="img" aria-label="@($"{Math.Min(_milestone, HouseRooms.Length)} of {HouseRooms.Length} rooms clear{(HouseWave ? ", second wave under way" : "")}")">
+                    @for (var i = 0; i <= HouseRooms.Length; i++)
+                    {
+                        <span class="@(i < _milestone ? "pc-done" : null)"></span>
+                    }
+                </div>
+            </div>
+            <span class="pc-hud-title">@HudTitle</span>
+        </div>
+        <div class="pc-hud-vitals">
+            <div class="pc-ring @(Tone(_health))" style="--v: @_health; --g: @_health" role="meter" aria-valuenow="@_health" aria-valuemin="0" aria-valuemax="100" aria-label="Health">
+                <span class="pc-hud-num">@_health</span><small>HEALTH</small>
+            </div>
+            <div class="pc-ammo-chips">
+                <span class="pc-ammo-chip @(_grenades == 0 ? "pc-ammo-chip--empty" : null)" aria-label="@($"{_grenades} concussion grenades")">
+                    <span class="material-symbols-outlined" aria-hidden="true">flare</span><span class="pc-hud-num">@_grenades</span><kbd>G</kbd>
+                </span>
+                <span class="pc-ammo-chip @(_smoke == 0 ? "pc-ammo-chip--empty" : null)" aria-label="@($"{_smoke} smoke grenades")">
+                    <span class="material-symbols-outlined" aria-hidden="true">cloud</span><span class="pc-hud-num">@_smoke</span><kbd>H</kbd>
+                </span>
+            </div>
+        </div>
+        <canvas id="pocapitol-housemap" class="pc-housemap" aria-label="@($"Floor plan of the house. {HudTitle}")"></canvas>
+        @if (ToastLive(_milestoneAt) && _milestone > 0 && _milestone <= HouseRooms.Length)
+        {
+            var last = _milestone >= HouseRooms.Length;
+            var text = (last ? "They are coming back in" : $"{_milestone} of {HouseRooms.Length} rooms clear").ToUpperInvariant();
+            <div @key="@($"h{_milestone}")" class="pc-toast" role="status">
+                <span class="pc-eyebrow">@(last ? "HOUSE CLEAR · SECOND WAVE" : "ROOM CLEAR")</span>
+                <strong class="pc-flap" aria-label="@text">
+                    @for (var c = 0; c < text.Length; c++)
+                    {
+                        <span style="--i: @c" aria-hidden="true">@(text[c] == ' ' ? " " : text[c].ToString())</span>
+                    }
+                </strong>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment HouseResultSummary => @<div>
+        <div>@ResultBody</div>
+        @if (_house is { } h)
+        {
+            <div>@h.fired rounds fired, @h.hits on target (@h.headshots to the head); @h.taken damage taken.</div>
+        }
+        <div>@ResultNote</div>
     </div>;
 
     private RenderFragment ResultSummary => @<div>
@@ -490,7 +559,25 @@
     /// The Tab panel: a debug and stats view only. What a player needs while playing is on the
     /// always-on strip (HudContent); this keeps the counts, the radar and the diagnostics copy.
     /// </summary>
-    private RenderFragment TabHudContent => @<div class="pc-tab-hud @(_prefs.contrast == "high" ? "pc-contrast" : null)">
+    private RenderFragment TabHudContent => House ? HouseTabContent : CapitolTabContent;
+
+    /// <summary>The House map's Tab panel: the counts and the diagnostics copy (the plan is on the HUD).</summary>
+    private RenderFragment HouseTabContent => @<div class="pc-tab-hud @(_prefs.contrast == "high" ? "pc-contrast" : null)">
+        <div class="pc-tab-hud-head">
+            <div>
+                <span class="pc-eyebrow">@HudEyebrow</span>
+                <strong>@HudTitle</strong>
+            </div>
+        </div>
+        <div class="pc-crowd">
+            <span>@_activeRaiders / @_crowdTotal RAIDERS STANDING</span>
+            <span>@Math.Min(_milestone, HouseRooms.Length) / @HouseRooms.Length ROOMS CLEAR</span>
+            <span class="pc-time">@Clock · @_graphicsLabel</span>
+        </div>
+        <PoButton class="app-btn app-btn--sm" Click="CopyDiagnosticsAsync">Copy diagnostics</PoButton>
+    </div>;
+
+    private RenderFragment CapitolTabContent => @<div class="pc-tab-hud @(_prefs.contrast == "high" ? "pc-contrast" : null)">
         <div class="pc-tab-hud-head">
             <div>
                 <span class="pc-eyebrow">@HudEyebrow</span>
@@ -535,7 +622,63 @@
     /// other game uses, in five short tabs. Role and difficulty are *not* here — they belong on
     /// the start card — and diagnostics are the Tab panel.
     /// </summary>
-    private RenderFragment ScenarioOptions => @<div class="pc-opts">
+    private RenderFragment ScenarioOptions => House ? HouseScenarioOptions : CapitolScenarioOptions;
+
+    /// <summary>
+    /// The House map's drawer: what applies to it. Weather, the crowd overlays, the phone footage
+    /// look, the music, the loudhailer and the debrief belong to the Capitol scenario.
+    /// </summary>
+    private RenderFragment HouseScenarioOptions => @<div class="pc-opts">
+        <RadzenTabs RenderMode="TabRenderMode.Client">
+            <Tabs>
+                <RadzenTabsItem Text="Display">
+                    <label class="pc-small" for="pc-opt-graphics">Scan detail · now @_graphicsLabel</label>
+                    @GraphicsPicker("pc-opt-graphics")
+                    <p class="pc-small">Low draws the light scan (6 MB). Auto and High load the full scan (48 MB) behind it. The picture keeps its resolution; a slower device shows fewer frames.</p>
+
+                    <label class="pc-small" for="pc-opt-tracers">Tracers</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.tracers" Change="@(async (string val) => await SavePrefsAsync(tracers: val))" id="pc-opt-tracers">
+                        <Items>
+                            <RadzenSelectBarItem Text="On" Value="@("luminous")" />
+                            <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                        </Items>
+                    </RadzenSelectBar>
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="Comfort">
+                    <span class="pc-small" aria-hidden="true">Aim sensitivity · @_prefs.sensitivity.ToString("0.00")×</span>
+                    <RadzenSlider TValue="double" class="pc-range" Min="0.4m" Max="2.5m" Step="0.05" Value="@_prefs.sensitivity"
+                                  Change="@OnSensitivityChanged" HandleLabel="Aim sensitivity" />
+
+                    <span class="pc-small" aria-hidden="true">Field of view · @_prefs.fov°</span>
+                    <RadzenSlider TValue="int" class="pc-range" Min="50" Max="85" Value="@_prefs.fov"
+                                  Change="@OnFovChanged" HandleLabel="Field of view" />
+
+                    <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.motion" Change="@(async (string val) => await SavePrefsAsync(motion: val))" id="pc-opt-motion">
+                        <Items>
+                            <RadzenSelectBarItem Text="Full" Value="@("full")" />
+                            <RadzenSelectBarItem Text="Reduced" Value="@("reduced")" />
+                        </Items>
+                    </RadzenSelectBar>
+
+                    <label class="pc-small" for="pc-opt-contrast">HUD contrast</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.contrast" Change="@(async (string value) => await SavePrefsAsync(contrast: value))" id="pc-opt-contrast">
+                        <Items>
+                            <RadzenSelectBarItem Text="Normal" Value="@("normal")" />
+                            <RadzenSelectBarItem Text="High" Value="@("high")" />
+                        </Items>
+                    </RadzenSelectBar>
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="Keys">
+                    @KeyBindings
+                </RadzenTabsItem>
+            </Tabs>
+        </RadzenTabs>
+    </div>;
+
+    private RenderFragment CapitolScenarioOptions => @<div class="pc-opts">
         <RadzenTabs RenderMode="TabRenderMode.Client">
             <Tabs>
                 <RadzenTabsItem Text="Display">
@@ -655,30 +798,7 @@
                 </RadzenTabsItem>
 
                 <RadzenTabsItem Text="Keys">
-                    <p class="pc-small">Select a key, then press the new one. A key another action uses swaps with it. Arrow keys always steer.</p>
-                    <ul class="pc-keys">
-                        @foreach (var row in KeyRows)
-                        {
-                            var action = row.Action;
-                            var listening = _listening == action;
-                            <li class="pc-key-row">
-                                <span class="pc-key-label" id="@($"pc-key-label-{action}")">@row.Label</span>
-                                <span class="pc-pad-glyph" title="Gamepad" aria-hidden="true">@PadGlyph(action)</span>
-                                @* The capture flags sit on a wrapper: a component cannot carry :preventDefault. *@
-                                <span class="pc-keycap-slot" @key="@($"{action}-{row.Code}")"
-                                      @onkeydown="e => CaptureKeyAsync(action, e)"
-                                      @onkeydown:preventDefault="@listening" @onkeydown:stopPropagation="@listening">
-                                    <PoButton class="@($"pc-keycap {(listening ? "pc-keycap--listening" : null)} {(_swapped == action ? "pc-keycap--swapped" : null)}")"
-                                              aria-labelledby="@($"pc-key-label-{action}")" aria-describedby="@($"pc-key-now-{action}")"
-                                              Click="() => _listening = listening ? null : action"
-                                              @onfocusout="() => { if (_listening == action) _listening = null; }">
-                                        <span id="@($"pc-key-now-{action}")">@(listening ? "Press a key…" : DescribeKey(row.Code))</span>
-                                    </PoButton>
-                                </span>
-                            </li>
-                        }
-                    </ul>
-                    <p class="pc-small">G throws a concussion grenade and H a smoke grenade. Esc cancels a change.</p>
+                    @KeyBindings
                 </RadzenTabsItem>
 
                 <RadzenTabsItem Text="Debrief">
@@ -713,6 +833,68 @@
                 </RadzenTabsItem>
             </Tabs>
         </RadzenTabs>
+    </div>;
+
+    /// <summary>The rebinding list, the same on both maps' Keys tab.</summary>
+    private RenderFragment KeyBindings => @<div>
+        <p class="pc-small">Select a key, then press the new one. A key another action uses swaps with it. Arrow keys always steer.</p>
+        <ul class="pc-keys">
+            @foreach (var row in KeyRows)
+            {
+                var action = row.Action;
+                var listening = _listening == action;
+                <li class="pc-key-row">
+                    <span class="pc-key-label" id="@($"pc-key-label-{action}")">@row.Label</span>
+                    <span class="pc-pad-glyph" title="Gamepad" aria-hidden="true">@PadGlyph(action)</span>
+                    @* The capture flags sit on a wrapper: a component cannot carry :preventDefault. *@
+                    <span class="pc-keycap-slot" @key="@($"{action}-{row.Code}")"
+                          @onkeydown="e => CaptureKeyAsync(action, e)"
+                          @onkeydown:preventDefault="@listening" @onkeydown:stopPropagation="@listening">
+                        <PoButton class="@($"pc-keycap {(listening ? "pc-keycap--listening" : null)} {(_swapped == action ? "pc-keycap--swapped" : null)}")"
+                                  aria-labelledby="@($"pc-key-label-{action}")" aria-describedby="@($"pc-key-now-{action}")"
+                                  Click="() => _listening = listening ? null : action"
+                                  @onfocusout="() => { if (_listening == action) _listening = null; }">
+                            <span id="@($"pc-key-now-{action}")">@(listening ? "Press a key…" : DescribeKey(row.Code))</span>
+                        </PoButton>
+                    </span>
+                </li>
+            }
+        </ul>
+        <p class="pc-small">G throws a concussion grenade and H a smoke grenade. Esc cancels a change.</p>
+    </div>;
+
+    @* The House map's start card: its controls, its rules and its two settings. *@
+    private RenderFragment HouseControls => @<div>
+        <p class="keys-only"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> aim (click the scene to capture it) · <kbd>Shift</kbd> sprint</p>
+        <p class="keys-only"><kbd>Click</kbd> / <kbd>Space</kbd> fire · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade</p>
+        <p class="keys-only"><kbd>P</kbd> pause · <kbd>Esc</kbd> back to the main menu · <kbd>←</kbd> <kbd>→</kbd> turn</p>
+        <p class="touch-only">Touch: d-pad to move, drag to aim, FIRE, and grenade buttons that show what is left.</p>
+        <p>Gamepad: sticks move and aim, right trigger fires, X grenade, Y smoke, Start pauses.</p>
+    </div>;
+
+    private RenderFragment HouseRules => @<div>
+        <p>The house is a real one, walked through with a camera and rebuilt as a 3D scan: the walls, the furniture and the doorways are where they were. Eleven armed raiders hold its five rooms: the hall, the bedroom, the dining room, the kitchen and the living room.</p>
+        <p>You come in by the entry passage with a machine gun, five concussion grenades and two smoke grenades. Shots bring whoever is in earshot; smoke hides you; a grenade stays in its room. Health comes back if you stay out of fire for a few seconds. Clear every room, then hold the house: a second wave comes back in by the entry passage.</p>
+        <p><strong>Fiction.</strong> Adult themes; no injury is shown.</p>
+    </div>;
+
+    private RenderFragment HouseOptions => @<div class="pc-intro-opts">
+        <p class="pc-small pc-role-brief">The plan in the corner shows where you are and outlines the room to clear next.</p>
+        <div class="pc-options">
+            <div>
+                <label class="pc-small" for="pc-difficulty">Difficulty</label>
+                <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
+                    <Items>
+                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
+                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+            <div>
+                <label class="pc-small" for="pc-graphics">Scan detail</label>
+                @GraphicsPicker("pc-graphics")
+            </div>
+        </div>
     </div>;
 
     @* Keyboard lines are keys-only, so a touch phone sees its own line and the card fits 375x667 without scrolling. *@

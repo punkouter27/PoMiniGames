@@ -42,6 +42,12 @@ public partial class PoCapitolPage : IAsyncDisposable
         (18 * 60, "6:00 PM", "The citywide curfew begins."),
     ];
 
+    /// <summary>The start card's Map dropdown: the Capitol grounds scenario, or the scanned house.</summary>
+    private static readonly IReadOnlyList<IntroMap> MapChoices = [new("capitol", "Capitol grounds"), new("house", "House")];
+
+    /// <summary>The House map's rooms, in the order they are cleared (scripts/pocapitol/house-nav.py ROOMS).</summary>
+    private static readonly string[] HouseRooms = ["Hall", "Bedroom", "Dining room", "Kitchen", "Living room"];
+
     private static readonly string[] KeyChoices =
         ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyI", "KeyJ", "KeyK", "KeyL", "KeyF", "KeyR", "Space", "ShiftLeft", "ControlLeft", "KeyP"];
 
@@ -65,6 +71,9 @@ public partial class PoCapitolPage : IAsyncDisposable
     private int _crowdTotal = 512;
     private int _activeRaiders = 512, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64, _grenades, _smoke;
     private PrefsDto _prefs = new();
+    // The map picked on the start card, and the one the engine has built (the demo is always the Capitol).
+    private string _map = "capitol", _loadedMap = "", _mapNote = "";
+    private HouseSummaryDto? _house;
     private ReportDto? _report;
     private DebriefDto? _debrief;
     private bool _debriefBusy, _cardBusy;
@@ -120,25 +129,44 @@ public partial class PoCapitolPage : IAsyncDisposable
         ("pause", "Pause", _prefs.pause),
     ];
 
-    private bool Playing => !_demo && _role is not ("observer" or "commander");
+    /// <summary>
+    /// The House map is what is loaded: one officer clearing a scanned house, first person. It has
+    /// no roles and no clock of the day; the demo is always the Capitol.
+    /// </summary>
+    private bool House => !_demo && _map == "house";
 
-    private bool Commanding => !_demo && _role == "commander";
+    private bool Playing => House || (!_demo && _role is not ("observer" or "commander"));
 
-    /// <summary>Only a solo player in the crowd carries the machine gun and the grenades.</summary>
-    private bool Armed => !_demo && _role == "raider";
+    private bool Commanding => !House && !_demo && _role == "commander";
+
+    /// <summary>The solo player in the crowd carries the machine gun and the grenades; so does the House map's officer.</summary>
+    private bool Armed => House || (!_demo && _role == "raider");
 
     private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Chamber doors reached";
 
-    private string Clock => DateTime.Today.AddMinutes(12 * 60 + 50 + Math.Floor(_elapsed)).ToString("h:mm tt", CultureInfo.InvariantCulture);
+    /// <summary>The Capitol map shows the time of day; the House map how long the clearance has taken.</summary>
+    private string Clock => House
+        ? TimeSpan.FromSeconds(Math.Floor(_elapsed)).ToString(@"m\:ss", CultureInfo.InvariantCulture)
+        : DateTime.Today.AddMinutes(12 * 60 + 50 + Math.Floor(_elapsed)).ToString("h:mm tt", CultureInfo.InvariantCulture);
+
+    /// <summary>The room the House map wants cleared next (the engine sends its index as the "line").</summary>
+    private string HouseRoom => _lineIndex >= 0 && _lineIndex < HouseRooms.Length ? HouseRooms[_lineIndex] : "";
 
     private (int Minute, string Time, string Text) OnTheDay =>
         Timeline.Last(entry => entry.Minute <= Math.Max(Timeline[0].Minute, 12 * 60 + 50 + (int)_elapsed));
 
-    private string HudEyebrow => _role == "raider" || _demo ? $"OBJECTIVE {Math.Min(_milestone + 1, Objectives.Length)} / {Objectives.Length}"
+    /// <summary>The engine's "line" one past the last room: the five rooms are clear and the second wave is on.</summary>
+    private bool HouseWave => House && _lineIndex == HouseRooms.Length;
+
+    private string HudEyebrow => House ? (HouseWave ? "SECOND WAVE" : $"ROOM {Math.Min(_milestone + 1, HouseRooms.Length)} / {HouseRooms.Length}")
+        : _role == "raider" || _demo ? $"OBJECTIVE {Math.Min(_milestone + 1, Objectives.Length)} / {Objectives.Length}"
         : _role == "police" ? "HOLD UNTIL THE 6:00 PM CURFEW"
         : _role == "commander" ? "INCIDENT COMMAND · HOLD UNTIL 6:00 PM" : "OBSERVING · CROWD PROGRESS";
 
-    private string HudTitle => _role == "police" && !_demo
+    private string HudTitle => House
+        ? (HouseRoom.Length > 0 ? $"Clear the {HouseRoom.ToLowerInvariant()} · {_lineIntegrity} left"
+            : HouseWave ? $"Second wave, by the entry · {_lineIntegrity} left" : "House clear")
+        : _role == "police" && !_demo
         ? (_lineIndex >= 0 ? $"Hold the {LineNames[_lineIndex].ToLowerInvariant()}" : "Fall back to the chamber doors")
         : Commanding ? (_command is { } c && c.selected >= 0 && c.selected < LineNames.Length ? $"Commanding the {LineNames[c.selected].ToLowerInvariant()}" : "Command all five lines")
         : Objective;
@@ -172,6 +200,8 @@ public partial class PoCapitolPage : IAsyncDisposable
 
     private string ResultHeading => _outcome switch
     {
+        "cleared" => "House clear.",
+        "down" => "Officer down.",
         "doors" => "The doors stayed shut.",
         "curfew" => "Six o'clock. Curfew.",
         "overcome" => _role == "police" ? "Pulled back from the line." : "Helped away.",
@@ -181,6 +211,8 @@ public partial class PoCapitolPage : IAsyncDisposable
 
     private string ResultBody => _outcome switch
     {
+        "cleared" => $"Every room is clear, the second wave is stopped and all {_crowdTotal} raiders are down.",
+        "down" => $"You were hit too many times with {_activeRaiders} of {_crowdTotal} raiders still in the house. The attempt ends here.",
         "doors" => "The crowd reached the House chamber doors and found them barricaded. The chamber behind them had been evacuated. "
             + (_role is "police" or "commander" ? "The lines did not hold long enough." : "Nobody in this scenario gets in, as nobody did. Reaching the doors ends the game; it is not a historical victory."),
         "curfew" => _role is "police" or "commander" ? "The lines held until the curfew and the building was cleared."
@@ -192,11 +224,19 @@ public partial class PoCapitolPage : IAsyncDisposable
         _ => "The scenario has ended.",
     };
 
-    private List<StatItem> ResultStats =>
+    private List<StatItem> ResultStats => House ? HouseResultStats :
     [
         new() { Label = "TIME OF DAY", Value = Clock },
         new() { Label = "MILESTONES", Value = $"{_milestone} / {Objectives.Length}" },
         new() { Label = "STILL STANDING", Value = $"{_activeRaiders} / {_crowdTotal}" },
+    ];
+
+    private List<StatItem> HouseResultStats =>
+    [
+        new() { Label = "TIME", Value = Clock },
+        new() { Label = "ROOMS CLEARED", Value = $"{Math.Min(_milestone, HouseRooms.Length)} / {HouseRooms.Length}" },
+        new() { Label = "RAIDERS DOWN", Value = $"{Math.Max(0, _crowdTotal - _activeRaiders)} / {_crowdTotal}" },
+        new() { Label = "ACCURACY", Value = _house is { fired: > 0 } h ? $"{h.accuracy}%" : "—" },
     ];
 
     private GameResult ResultOutcome => _status switch
@@ -207,11 +247,11 @@ public partial class PoCapitolPage : IAsyncDisposable
     };
 
     private string ResultNote =>
-        _role != "raider" ? "Police-line, command and observer attempts are not saved."
+        !House && _role != "raider" ? "Police-line, command and observer attempts are not saved."
         : _resultWarning.Length > 0 ? _resultWarning
         : "Results stay in your local game stats. No public ranking and no score for harming anyone.";
 
-    private IEnumerable<StatItem> DiagStats =>
+    private IEnumerable<StatItem> DiagStats => House ? HouseDiagStats :
     [
         new() { Label = "Status", Value = _status },
         new() { Label = "Role", Value = _role },
@@ -224,6 +264,17 @@ public partial class PoCapitolPage : IAsyncDisposable
         new() { Label = "Sheltering", Value = _sheltering.ToString(CultureInfo.InvariantCulture) },
         new() { Label = "Tier", Value = _graphicsLabel },
         new() { Label = "Debrief", Value = DebriefMeta },
+    ];
+
+    private IEnumerable<StatItem> HouseDiagStats =>
+    [
+        new() { Label = "Status", Value = _status },
+        new() { Label = "Map", Value = "House" },
+        new() { Label = "Objective", Value = $"{Math.Min(_milestone + 1, HouseRooms.Length)}/{HouseRooms.Length} · {HudTitle}" },
+        new() { Label = "Time", Value = $"{Clock} ({_elapsed:0.0}s)" },
+        new() { Label = "Raiders", Value = $"{_activeRaiders} / {_crowdTotal} standing" },
+        new() { Label = "Health", Value = _health.ToString(CultureInfo.InvariantCulture) },
+        new() { Label = "Tier", Value = _graphicsLabel },
     ];
 
     /// <summary>
@@ -257,7 +308,8 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (_demo) Kiosk.SetCurrent("pocapitol-demo");
         if (_ready)
         {
-            if (_demo) await StartAsync();
+            // The demo is the Capitol's: coming to it from the House map builds the Capitol first.
+            if (_demo && _loadedMap == "capitol") await StartAsync();
             else
             {
                 try
@@ -290,7 +342,19 @@ public partial class PoCapitolPage : IAsyncDisposable
             if (!await Engine.LoadAsync())
                 throw new InvalidOperationException("The 3D assets could not be downloaded. Check your connection and retry.");
             _reference ??= DotNetObjectReference.Create(this);
-            await Engine.InitAsync("pocapitol-scene", _reference);
+            _map = await Engine.GetMapAsync();
+            var map = _demo ? "capitol" : _map;
+            try { await Engine.InitAsync("pocapitol-scene", _reference, map); }
+            catch (JSException ex) when (map == "house")
+            {
+                // The House map draws a scan this server may not have (it ships with PoCabinet's
+                // House Party): say so, and open the Capitol instead of an error page.
+                Logger.LogWarning(ex, "PoCapitol House map could not load; falling back to the Capitol");
+                _mapNote = "The House map could not load here. This is the Capitol grounds.";
+                _map = map = await Engine.SetMapAsync("capitol");
+                await Engine.InitAsync("pocapitol-scene", _reference, map);
+            }
+            _loadedMap = map;
             _graphics = await Engine.GetGraphicsAsync();
             _weatherMode = await Engine.GetWeatherAsync();
             _prefs = await Engine.GetPrefsAsync();
@@ -316,6 +380,20 @@ public partial class PoCapitolPage : IAsyncDisposable
         StateHasChanged();
     }
 
+    /// <summary>The start card's Map dropdown: remember the choice and build that map in place of the other.</summary>
+    private async Task OnMapPickedAsync(string id)
+    {
+        if (id == _map || _status != "intro") return;
+        _mapNote = "";
+        try
+        {
+            _map = await Engine.SetMapAsync(id);
+            await Engine.DisposeEngineAsync();
+            await LoadAsync();
+        }
+        catch (JSException ex) { await OnEngineError(ex.Message); }
+    }
+
     private async Task StartAsync()
     {
         try
@@ -323,6 +401,7 @@ public partial class PoCapitolPage : IAsyncDisposable
             await Engine.StartAsync(_difficulty, _demo, _role);
             _recorded = false;
             _report = null;
+            _house = null;
             _debrief = null;
             _caption = "";
             _command = null;
@@ -441,7 +520,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (_disposed || demo != _demo) return;
         var previousStatus = _status;
         var changed = _milestone != milestone || _status != status || _lineIndex != lineIndex;
-        var lineBroke = lineIndex != _lineIndex && _lineIndex >= 0 && status == "active";
+        var lineBroke = !House && lineIndex != _lineIndex && _lineIndex >= 0 && status == "active";
         var ended = status is "completed" or "failed";
         if (milestone > _milestone && status == "active") _milestoneAt = DateTime.UtcNow;
         _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
@@ -449,16 +528,16 @@ public partial class PoCapitolPage : IAsyncDisposable
         _outcome = outcome; _totalPolice = totalPolice; _lineIndex = lineIndex; _lineIntegrity = lineIntegrity;
         _graphicsLabel = graphics; _sheltering = sheltering; _grenades = grenades; _smoke = smoke;
         // The historical record's next entry slides in once, when the clock passes it.
-        if (status == "active" && OnTheDay.Time != _dayShown)
+        if (!House && status == "active" && OnTheDay.Time != _dayShown)
         {
             if (_dayShown.Length > 0 || elapsed > 1) _dayAt = DateTime.UtcNow;
             _dayShown = OnTheDay.Time;
         }
         // Each attempt that ends refreshes the report, including the demo's repeated runs.
-        if (ended && previousStatus is not ("completed" or "failed")) _ = LoadReportAsync();
+        if (ended && previousStatus is not ("completed" or "failed")) _ = House ? LoadHouseSummaryAsync() : LoadReportAsync();
         if (changed) _announcement = status != "active" ? $"Scenario {status}. {ResultHeading}"
             : lineBroke ? $"A police line has given way. {HudTitle}" : HudTitle;
-        if (_role == "raider" && !_demo && !_recorded && ended)
+        if ((House || _role == "raider") && !_demo && !_recorded && ended)
         {
             _recorded = true;
             try
@@ -769,6 +848,14 @@ public partial class PoCapitolPage : IAsyncDisposable
         StateHasChanged();
     }
 
+    /// <summary>The House map's end-card figures (accuracy is the one the page cannot work out itself).</summary>
+    private async Task LoadHouseSummaryAsync()
+    {
+        try { _house = await Engine.GetHouseSummaryAsync(); }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol house summary unavailable"); }
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
     private async Task LoadReportAsync()
     {
         try { _report = await Engine.GetReportViewAsync(); }
@@ -1014,6 +1101,22 @@ public partial class PoCapitolPage : IAsyncDisposable
         public int retries { get; set; }
         public bool fallback { get; set; }
         public string error { get; set; } = "";
+    }
+
+    /// <summary>The House map's attempt in numbers (house/world.js summary).</summary>
+    public sealed class HouseSummaryDto
+    {
+        public int seconds { get; set; }
+        public int rooms { get; set; }
+        public int roomsTotal { get; set; }
+        public int down { get; set; }
+        public int raiders { get; set; }
+        public int fired { get; set; }
+        public int hits { get; set; }
+        public int headshots { get; set; }
+        public int accuracy { get; set; }
+        public int taken { get; set; }
+        public int health { get; set; }
     }
 
     public sealed class ProbeDto

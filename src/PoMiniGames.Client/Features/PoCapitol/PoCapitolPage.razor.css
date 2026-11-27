@@ -153,6 +153,26 @@
 .pc-ammo-chip kbd { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #ffffff1a; color: #c9d4de; font-family: inherit; }
 .pc-ammo-chip--empty { opacity: 0.45; }
 
+/* The House map: its floor plan bottom-right (drawn by house/game.js), and the chip that shows a
+   scan file downloading. The chip is made by the engine, so it is reached through ::deep. */
+.pc-housemap {
+    position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: 64px;
+    width: min(250px, 34vw); height: auto;
+    background: var(--pc-glass); border: 1px solid color-mix(in srgb, var(--pc-gold) 28%, transparent); border-radius: 10px;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--po-black) 34%, transparent);
+    image-rendering: pixelated;
+}
+.pc-root ::deep .pc-scan-loading {
+    position: absolute; z-index: 6; left: 50%; bottom: 18px; translate: -50% 0;
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: var(--pc-glass); border: 1px solid color-mix(in srgb, var(--po-white) 14%, transparent); border-radius: 999px;
+    color: var(--po-white); font-size: 12px; font-weight: 600; pointer-events: none;
+}
+.pc-root ::deep .pc-scan-loading[hidden] { display: none; }
+.pc-root ::deep .pc-scan-loading i { display: block; width: 110px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--po-white) 18%, transparent); overflow: hidden; }
+.pc-root ::deep .pc-scan-loading b { display: block; width: 0; height: 100%; background: var(--pc-info); transition: width 200ms linear; }
+.pc-root ::deep .pc-scan-loading em { font-style: normal; font-variant-numeric: tabular-nums; }
+
 /* A milestone: split-flap letters behind a bloom of light, gone after a few seconds. */
 .pc-toast {
     position: absolute; top: 96px; left: 50%; translate: -50% 0;
@@ -349,6 +369,8 @@
 /* ── Touch ── */
 
 @media (pointer: coarse) {
+    /* Under the top strip, beside the vitals: the touch buttons own the bottom corners. */
+    .pc-housemap { bottom: auto; top: 76px; width: min(132px, 32vw); }
     /* 76px clears the shared Stats chip, which sits in the same bottom-left corner. */
     .pc-touch { display: flex; position: absolute; z-index: 5; bottom: max(76px, env(safe-area-inset-bottom)); left: max(20px, env(safe-area-inset-left)); right: max(20px, env(safe-area-inset-right)); justify-content: space-between; align-items: end; pointer-events: none; }
     .pc-touch ::deep button { width: 48px; height: 48px; border: 1px solid #dfc79780; border-radius: 10px; color: #f9e3b2; background: #142536b8; font-size: 20px; touch-action: none; pointer-events: auto; user-select: none; }

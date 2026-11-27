@@ -268,11 +268,19 @@ export function whisperFocus(source, listener) {
  * first-order reflections at their true path lengths over a decaying diffuse tail whose length is
  * Sabine's 0.161 V / (S a). Outdoors: a short ground bounce and the facade's slap-back.
  */
-export function roomImpulse(listener, rate = 44100, random = Math.random, { snow = 0 } = {}) {
-    const index = areaIndex(listener.x, listener.z);
+export function roomImpulse(listener, rate = 44100, random = Math.random, { snow = 0, room: own = null } = {}) {
+    const index = own ? -1 : areaIndex(listener.x, listener.z);
     const taps = [];
     let rt = 0.25, tail = 0.18, seconds = 0.9;
-    if (index === 0) {
+    if (own) {
+        // A room that is not one of the Capitol's (the House map): the same six first reflections
+        // and Sabine tail, from the size and softness it is given.
+        const volume = own.w * own.d * own.ceiling;
+        const surface = 2 * (own.w * own.d + own.w * own.ceiling + own.d * own.ceiling);
+        rt = clamp(0.161 * volume / (surface * own.absorb), 0.15, own.maxRt);
+        seconds = rt + 0.3;
+        for (const wall of [own.w / 2, own.w / 2, own.d / 2, own.d / 2, own.ceiling - 1.6, 1.6]) taps.push([2 * Math.max(0.5, wall) / SPEED_OF_SOUND, 0.4]);
+    } else if (index === 0) {
         // Fresh snow is one of the most absorbent surfaces outdoors: it kills the ground bounce
         // and takes the edge off the slap-back from the facade.
         const soak = 1 - 0.55 * clamp(snow, 0, 1);
@@ -320,7 +328,16 @@ export function roomImpulse(listener, rate = 44100, random = Math.random, { snow
     return { buffer, rt, index };
 }
 
-export function createAudio({ onCaption } = {}) {
+/** The House map's rooms, to the ear: a furnished living room, carpet and sofas soaking up the top end. */
+const HOUSE_ROOM = { w: 5.5, d: 4.5, ceiling: 2.45, absorb: 0.3, maxRt: 0.55 };
+
+/**
+ * @param setting  'capitol' (the grounds and the building: helicopter, crowd, alarm, stone rooms) or
+ *                 'house' (the House map: one furnished room's acoustics, wooden floors, and none
+ *                 of the Capitol's beds). The bangs, impacts and footsteps are the same either way.
+ */
+export function createAudio({ onCaption, setting = 'capitol' } = {}) {
+    const house = setting === 'house';
     const caption = text => { try { onCaption?.(String(text)); } catch { /* captions are decoration */ } };
     const bus = window.PoAudioBus;
     let out = null;
@@ -367,11 +384,11 @@ export function createAudio({ onCaption } = {}) {
     function tuneRoom(listenerPoint) {
         const index = areaIndex(listenerPoint.x, listenerPoint.z);
         // Outdoors the slap-back delay moves with the listener, quantized so it rebuilds rarely.
-        const key = index === 0 ? `0:${Math.round(listenerPoint.z / 10)}:${Math.round(snowLying * 4)}`
+        const key = house ? 'house' : index === 0 ? `0:${Math.round(listenerPoint.z / 10)}:${Math.round(snowLying * 4)}`
             : index === 2 ? `2:${Math.round(Math.hypot(listenerPoint.x, listenerPoint.z + 14) / 4)}` : String(index);
         if (key === roomKey) return;
         roomKey = key;
-        const { buffer } = roomImpulse(listenerPoint, ctx.sampleRate, Math.random, { snow: snowLying });
+        const { buffer } = roomImpulse(listenerPoint, ctx.sampleRate, Math.random, { snow: snowLying, room: house ? HOUSE_ROOM : null });
         const next = (activeSlot + 1) % 2;
         slots[next].convolver.buffer = buffer;
         const t = ctx.currentTime;
@@ -841,7 +858,7 @@ export function createAudio({ onCaption } = {}) {
         // The bang arrives late by its distance, and the duck with it.
         const depth = duckDepth(e.type, energy, away);
         if (depth > 0) setTimeout(() => { if (!disposed) duck(depth, e.type === 'grenade' || e.type === 'flash' ? 1.4 : 0.5); }, Math.min(900, away / SPEED_OF_SOUND * 1000));
-        const isIndoors = (e.z ?? listener.z) < 14.5;
+        const isIndoors = house || (e.z ?? listener.z) < 14.5;
         switch (e.type) {
             case 'shove':
                 if (clock - lastShove < 0.09 && !e.human) return;
@@ -1029,7 +1046,7 @@ export function createAudio({ onCaption } = {}) {
         snowLying = mix.snow ?? 0;
         aimListener();
         placeVoices();
-        const indoors = mix.z < 14.5, live = mix.active && !bus.isMuted?.();
+        const indoors = house || mix.z < 14.5, live = mix.active && !bus.isMuted?.();
         // While a menu is up (or just closed) the freeze owns the gate (see `menu` below).
         if (clock >= menu.until) ease(gate.gain, live && !menu.open ? 1 : 0, 0.25);
         shock.sync(live, mix);
@@ -1041,14 +1058,15 @@ export function createAudio({ onCaption } = {}) {
         if (heliPan.positionX) {
             heliPan.positionX.value = overhead.x; heliPan.positionY.value = overhead.y; heliPan.positionZ.value = overhead.z;
         } else heliPan.setPosition(overhead.x, overhead.y, overhead.z);
-        ease(heli.gain, live ? (indoors ? 0.08 : 1.4) : 0, 0.8);
+        // The helicopter, the crowd and the building's alarm are the Capitol's: a house has none.
+        ease(heli.gain, live && !house ? (indoors ? 0.08 : 1.4) : 0, 0.8);
         ease(buffet.gain, live && footage && !indoors ? micBuffet(mix.wind ?? 6.7, clock) * 0.5 : 0, 0.08);
         tuneRoom(listener);
         ease(wetSend.gain, indoors ? 0.55 : 0.12);
         // With the voices running the noise bed steps back: it is the far crowd, they are the near.
         const voiced = voices.node !== null;
-        ease(murmur.gain, live ? (0.07 + mix.crowd * 0.1) * (voiced ? 0.6 : 1) : 0);
-        ease(voices.level.gain, live && voiced ? 0.5 + 0.5 * mix.crowd : 0, 0.3);
+        ease(murmur.gain, live && !house ? (0.07 + mix.crowd * 0.1) * (voiced ? 0.6 : 1) : 0);
+        ease(voices.level.gain, live && voiced && !house ? 0.5 + 0.5 * mix.crowd : 0, 0.3);
         if (voiced && clock >= voices.sentAt) {
             voices.sentAt = clock + 0.2;
             voices.node.port.postMessage({
@@ -1120,7 +1138,7 @@ export function createAudio({ onCaption } = {}) {
             alarmAt = clock + 1;
             siren.frequency.setValueAtTime(880, t); siren.frequency.setValueAtTime(660, t + 0.5);
         }
-        ease(alarm.gain, indoors ? 0.018 : 0, 0.8);
+        ease(alarm.gain, indoors && !house ? 0.018 : 0, 0.8);
         if (clock >= radioAt) {
             radioAt = clock + 5 + Math.random() * 7;
             if (mix.police > 0.15 && mix.horn) radio(0.1 * mix.police, place(mix.horn.x, mix.horn.z, 2, 1.4));
@@ -1132,14 +1150,14 @@ export function createAudio({ onCaption } = {}) {
         }
         if (mix.walking && clock >= stepAt) {
             stepAt = clock + 0.36;
-            strike({ material: footstepMaterial(mix.x, mix.z, snowLying), energy: indoors ? 14 : 9, mass: 80, gain: 0.8 });
+            strike({ material: house ? 'wood' : footstepMaterial(mix.x, mix.z, snowLying), energy: indoors ? 14 : 9, mass: 80, gain: 0.8 });
         }
         // The nearest walkers, one footfall at a time, each from where its feet are.
         const walkers = mix.walkers;
         if (walkers?.length && clock >= footAt) {
             footAt = clock + 0.07 + Math.random() * 0.12;
             const w = walkers[walker++ % walkers.length];
-            strike({ material: footstepMaterial(w.x, w.z, snowLying), energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
+            strike({ material: house ? 'wood' : footstepMaterial(w.x, w.z, snowLying), energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
         }
         if (mix.gassed && clock >= coughAt) {
             coughAt = clock + 1.3 + Math.random();

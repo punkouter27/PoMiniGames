@@ -22,7 +22,13 @@ import { connectedPads, stick, pressed, ButtonEdges } from '../platform/gamepadB
 
 const GRAPHICS_KEY = 'pominigames:pocapitol-graphics';
 const WEATHER_KEY = 'pominigames:pocapitol-weather';
+const MAP_KEY = 'pominigames:pocapitol-map';
+/** The maps the start card offers: the Capitol grounds scenario (this file) and the House (house/game.js). */
+const MAPS = ['capitol', 'house'];
 let game = null;
+// The House map, when that is what is loaded: { play: house/game.js's game, prefs }. Then `game`
+// is null, and every call that only means something on the Capitol map answers as if idle.
+let house = null;
 
 /** Hosts without performance (and the Node harness) still need a clock. */
 const nowMs = () => globalThis.performance?.now?.() ?? Date.now();
@@ -33,6 +39,33 @@ function storedGraphics() {
     } catch { return 'auto'; }
 }
 
+/** The map picked on the start card last time ('capitol' unless a known other one was stored). */
+function storedMap() {
+    try {
+        const value = window.localStorage?.getItem(MAP_KEY);
+        return MAPS.includes(value) ? value : 'capitol';
+    } catch { return 'capitol'; }
+}
+
+function setMap(map) {
+    const value = MAPS.includes(map) ? map : 'capitol';
+    try { window.localStorage?.setItem(MAP_KEY, value); } catch { /* private mode: this visit only */ }
+    return value;
+}
+
+/** Build the House map (house/game.js) in place of the Capitol scenario. */
+async function initHouse(host, reference, figure) {
+    const { createHouseGame } = await import('./house/game.js');
+    const box = { play: null, prefs: loadPrefs() };
+    box.play = await createHouseGame({
+        host, reference, figure, getPrefs: () => box.prefs, mode: storedGraphics(),
+        tier: window.PoQuality?.tier?.() ?? detectTier({ maxTexture: 8192, memory: navigator.deviceMemory ?? 4, cores: navigator.hardwareConcurrency ?? 4 }),
+        track, toMainMenu,
+    });
+    if (!host.isConnected) { box.play.dispose(); return; }
+    house = box;
+}
+
 function storedWeather() {
     try {
         const value = window.localStorage?.getItem(WEATHER_KEY);
@@ -40,12 +73,13 @@ function storedWeather() {
     } catch { return 'historical'; }
 }
 
-async function init(hostId, reference) {
+async function init(hostId, reference, map = 'capitol') {
     dispose();
     const bootAt = nowMs();
     const host = document.getElementById(hostId);
     if (!host) throw new Error('PoCapitol scene container was not found.');
     delete host.dataset.interfaceError;
+    if (map === 'house') { await initHouse(host, reference, await loadFigure()); return; }
     // The rigged figure: a small glb the service worker caches, built in code if it cannot load.
     // The footprint layer is decoration and resolves to null if it is missing, so it can only
     // delay the scene by its own timeout.
@@ -577,6 +611,7 @@ function notify(g) {
 }
 
 function start(difficulty, demo = false, role = 'raider') {
+    if (house) { house.play.start(difficulty); return; }
     if (!game) throw new Error('PoCapitol is not loaded.');
     game.state = createAttempt(difficulty, demo, role);
     game.yaw = role === 'police' && !demo ? Math.PI : 0;
@@ -612,6 +647,7 @@ function start(difficulty, demo = false, role = 'raider') {
 }
 
 function pause(value) {
+    if (house) { house.play.pause(value); return; }
     if (!game?.started) return;
     const was = game.state.status === 'paused';
     setPaused(game.state, value);
@@ -626,6 +662,10 @@ function pause(value) {
 
 /** 'auto' follows frame time; 'low' and 'high' pin the picture. Remembered across visits. */
 function setGraphics(mode) {
+    if (house) {
+        try { window.localStorage?.setItem(GRAPHICS_KEY, mode); } catch { /* private mode: this visit only */ }
+        return house.play.setGraphics(mode);
+    }
     if (!game) throw new Error('PoCapitol is not loaded.');
     game.view.applyQuality?.(game.governor.setMode(mode));
     try { window.localStorage?.setItem(GRAPHICS_KEY, mode); } catch { /* private mode: this visit only */ }
@@ -703,6 +743,18 @@ function getDiagnostics() {
 }
 
 function getDiagnosticsText() {
+    if (house) {
+        const h = house.play.diagnostics();
+        return [
+            `PoCapitol House map build ${document.querySelector?.('.app-build-version')?.textContent?.trim() || 'dev'} · ${h.status}`,
+            `Init ${h.initMs} ms · level ${h.level} · ${h.scan.backend}`,
+            `Frame ${h.frameMsP50} ms p50 / ${h.frameMsP95} ms p95 · ${h.longFrames} frames over 55 ms`,
+            `Scan ${h.scan.file} · ${h.scan.splats} gaussians · ${h.scan.drawn} drawn`,
+            `Canvas ${h.canvas.width}×${h.canvas.height} @ ${window.devicePixelRatio ?? 1}x`,
+            `URL ${location.href}`,
+            `UA ${navigator.userAgent}`,
+        ].join('\n');
+    }
     const d = getDiagnostics();
     return [
         `PoCapitol build ${d.build} · ${d.status}`,
@@ -998,7 +1050,7 @@ async function exportPng(svgId, name = 'pocapitol-report.png') {
     } catch { return false; } finally { URL.revokeObjectURL(url); }
 }
 
-function getPrefs() { return prefsView(game?.prefs ?? loadPrefs()); }
+function getPrefs() { return prefsView(game?.prefs ?? house?.prefs ?? loadPrefs()); }
 
 /** The page wants one flat record; storage keeps the key map nested. */
 function prefsView(prefs) {
@@ -1015,8 +1067,9 @@ function prefsView(prefs) {
 
 /** Save the comfort settings and apply the ones the live scene reads immediately. */
 function setPrefs(patch = {}) {
-    const base = game?.prefs ?? loadPrefs();
+    const base = game?.prefs ?? house?.prefs ?? loadPrefs();
     const merged = savePrefs({ ...base, ...patch, keys: { ...base.keys, ...(patch.keys ?? {}) } });
+    if (house) { house.prefs = merged; house.play.applyPrefs(); }
     if (game) {
         game.prefs = merged;
         applyViewPrefs(game.view, merged);
@@ -1042,7 +1095,7 @@ function toMainMenu() {
 }
 
 function rebindKey(action, code) {
-    const base = game?.prefs ?? loadPrefs();
+    const base = game?.prefs ?? house?.prefs ?? loadPrefs();
     return setPrefs({ keys: rebind(base, action, code).keys });
 }
 
@@ -1082,6 +1135,7 @@ async function probeDebrief() {
 }
 
 function dispose() {
+    if (house) { const gone = house; house = null; gone.play.dispose(); }
     if (!game) return;
     const g = game;
     g.disposed = true; g.events.abort();
@@ -1097,10 +1151,12 @@ function dispose() {
 
 // Debugging and headless checks only: with localStorage 'pominigames:pocapitol-debug' set, the
 // live game is reachable as window.__pocapitol() (state, view, audio layers).
-try { if (window.localStorage?.getItem('pominigames:pocapitol-debug')) window.__pocapitol = () => game; } catch { /* storage blocked */ }
+try { if (window.localStorage?.getItem('pominigames:pocapitol-debug')) window.__pocapitol = () => game ?? house?.play ?? null; } catch { /* storage blocked */ }
 
 window.PoCapitol = {
-    init, start, pause, dispose, setGraphics, getGraphics: storedGraphics,
+    init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getMap: storedMap, setMap,
+    /** The House map's end-card figures (time, rooms, raiders, accuracy); null on the Capitol map. */
+    getHouseSummary: () => house?.play.summary() ?? null,
     setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
     getPrefs, setPrefs, rebindKey,
     getReportView, getDebrief, probeDebrief, download, downloadBytes, exportPng, copyText,

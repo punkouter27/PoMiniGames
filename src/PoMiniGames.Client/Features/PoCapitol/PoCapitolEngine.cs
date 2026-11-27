@@ -26,7 +26,17 @@ public sealed class PoCapitolEngine(IJSRuntime js)
     /// <summary>Loads the engine module through the platform loader; false if it could not be fetched.</summary>
     public ValueTask<bool> LoadAsync() => js.InvokeAsync<bool>("loadEngine", "pocapitol");
 
-    public ValueTask InitAsync(string hostId, DotNetObjectReference<PoCapitolPage> page) => Void("init", hostId, page);
+    /// <summary>Builds a map in the host element: <c>capitol</c> (the grounds scenario) or <c>house</c> (the scanned house).</summary>
+    public ValueTask InitAsync(string hostId, DotNetObjectReference<PoCapitolPage> page, string map) => Void("init", hostId, page, map);
+
+    /// <summary>The map picked on the start card last time (<c>capitol</c> unless a known other one was stored).</summary>
+    public ValueTask<string> GetMapAsync() => Get<string>("getMap");
+
+    /// <summary>Remembers the map for the next visit; returns the id actually stored.</summary>
+    public ValueTask<string> SetMapAsync(string map) => Get<string>("setMap", map);
+
+    /// <summary>The House map's end-card figures; null on the Capitol map.</summary>
+    public ValueTask<PoCapitolPage.HouseSummaryDto?> GetHouseSummaryAsync() => Get<PoCapitolPage.HouseSummaryDto?>("getHouseSummary");
 
     public ValueTask StartAsync(string difficulty, bool demo, string role) => Void("start", difficulty, demo, role);
 
