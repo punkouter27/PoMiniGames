@@ -112,15 +112,23 @@ is already the price.
 
 What draws it (`wwwroot/js/pocabinet/models.js`, `HOUSE`):
 
-- `wwwroot/models/house.ksplat`: 2,000,000 splats, 48 MB. `house-low.ksplat` is its 250,000
-  most important, spread evenly over the house (6 MB): shown first, and all that the low tier,
-  the "Lite" setting and a phone draw. There is no mesh.
-- Not all of it at once. `platform/3d/splats.js` drops what is outside the view, thins what is
-  more than 2 m away to the most important share of each half-metre cube, and keeps to a draw
-  budget (800k on high, 550k on medium, 250k on low; the nearest win), set by the tier the scan
-  was loaded on. Drawing all 2M ran at 10 fps on a Snapdragon X laptop whatever the resolution.
-  The owner chose more house over more frames (2026-11-27): a two-lap race on the medium tier
-  (550k) ran at 8 to 38 fps there, mostly 10 to 30, slowest looking down the length of the house.
+- `wwwroot/models/house.ksplat`: 2,800,000 splats, 92.5 MB (GitHub refuses a file over 100 MB),
+  with the first band of view-dependent colour (degree-1 spherical harmonics: the reflections
+  and sheen that turn with the camera), packed at compression level 2 (33 bytes a splat).
+  `house-low.ksplat` is 250,000 of them, spread evenly over the house (8 MB): shown first, and
+  all that the low tier, the "Lite" setting and a phone draw. There is no mesh.
+- Every splat is loaded on a desktop whatever its tier (thinning the file by a stride, and
+  swelling the rest to cover, is what made it blobby). Not all of them are drawn at once:
+  `platform/3d/splats.js` drops what is outside the view, thins what is more than 3 m away to
+  the most important share of each half-metre cube, and keeps to a draw budget (450k on high,
+  380k on medium, 250k on low; the nearest win). On a Snapdragon X laptop, looking down a whole
+  room, 400k drawn ran at 12 to 17 fps, 600k at 6 to 7 and 1M at 2 to 3, so the budget stops at
+  that knee; a two-lap race on medium ran at 14 to 36 fps, mostly 15 to 29 (2026-11-27).
+- Indoors the post chain leaves the scan as filmed (`postfx.js` `clean`): no speed blur, colour
+  fringes, heat haze or speed lines, no ambient occlusion, a quarter of the bloom and no filmic
+  tone curve. The chase camera rides higher and further back (`HOUSE.chase`): the capture was
+  filmed from standing height, and the nearer the camera gets to the floor the more it sees
+  what the capture never did.
 - The road is a toy track (`buildToyTrack`): moulded plastic with an orange shoulder either
   side (the run-off), a slab under it and a pair of stilts every 25 cm wherever it is more than
   5 cm off the floor. The scene adds no terrain, sky, scenery, grass or rain indoors.
@@ -136,10 +144,11 @@ Python 3.10+ with numpy (Pillow too for `--png`); no Blender.
 
 ```powershell
 # 1. The splat, in the house frame (house-frame.json: metres, floor on z = 0, x along the house).
-python scripts/pocabinet/house-scan.py <path>\gaussian_pointcloud.ply <tmp>\house.ply --budget 2000000
+python scripts/pocabinet/house-scan.py <path>\gaussian_pointcloud.ply <tmp>\house.ply --budget 2800000
 python scripts/pocabinet/house-scan.py <path>\gaussian_pointcloud.ply <tmp>\house-low.ply --head 250000
-node --max-old-space-size=8192 scripts/pocabinet/ksplat.mjs <tmp>\house.ply src/PoMiniGames.Client/wwwroot/models/house.ksplat
-node scripts/pocabinet/ksplat.mjs <tmp>\house-low.ply src/PoMiniGames.Client/wwwroot/models/house-low.ksplat
+#    level 2, degree-1 colour ("2 1"); the full file needs a big heap
+node --max-old-space-size=12000 scripts/pocabinet/ksplat.mjs <tmp>\house.ply src/PoMiniGames.Client/wwwroot/models/house.ksplat 2 1
+node scripts/pocabinet/ksplat.mjs <tmp>\house-low.ply src/PoMiniGames.Client/wwwroot/models/house-low.ksplat 2 1
 
 # 2. The lap: its checks against that splat, and pictures of it (plan.png, profile.png).
 python scripts/pocabinet/house-route.py <tmp>\house.ply --png <tmp>

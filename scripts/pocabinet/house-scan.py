@@ -1,6 +1,6 @@
 """PoCabinet "House Party": the scanned house as the Gaussian splat the game streams.
 
-    python scripts/pocabinet/house-scan.py <gaussian_pointcloud.ply (3DGS)> <out.ply> [--budget 2000000] [--head N]
+    python scripts/pocabinet/house-scan.py <gaussian_pointcloud.ply (3DGS)> <out.ply> [--budget 2800000] [--head N]
     python scripts/pocabinet/house-scan.py <gaussian_pointcloud.ply> --fit      # a new scan: print its frame
 
 Plain Python 3.10+ with numpy. The capture (a walk through a house: bedroom, hall, dining room,
@@ -8,12 +8,15 @@ kitchen, living room; ~5M gaussians, 1.2 GB, kept out of the repo) is in its own
 This script
 
 1. maps every gaussian into the house frame of house-frame.json (metres, the floor on z = 0,
-   z up, x along the house, y to the left of x): centres and rotations (the scale is 1);
+   z up, x along the house, y to the left of x): centres, rotations (the scale is 1) and the
+   first band of its view-dependent colour (degree-1 spherical harmonics, which turn like a
+   direction: reflections on the floorboards, the sheen on the cabinets);
 2. crops it to the house and a little outside the walls (what shows through the windows), and
    drops the near-invisible and the huge floaters;
 3. keeps the `--budget` most important (opacity x footprint, weighed up near the lap of
    house-route.py: the cars are 5 cm tall, so what stands beside the road is seen from a hand
-   away), base colour only, and writes a plain 3DGS PLY;
+   away), base colour plus the degree-1 band (9 numbers, clamped to +/-SH_CLAMP so the
+   packed file's 8 bits cover them finely), and writes a plain 3DGS PLY;
 4. orders the rows so that any leading share of the file is that share of EVERY part of the
    house: within each half-metre cell the gaussians are ranked by importance, and a row's place
    in the file is its rank as a fraction of its cell. The light version is the file's first
@@ -21,8 +24,9 @@ This script
    room. (ksplat.mjs then groups the rows into 5 m blocks, so the packed file's own order means
    nothing: the game ranks the splats again when it loads one, platform/3d/splats.js rankSplats.)
 
-scripts/pocabinet/ksplat.mjs packs that PLY into wwwroot/models/house.ksplat (2M, 48 MB); the
-light version (house-low.ksplat) is its first 250,000 rows (`--head 250000` writes only those).
+scripts/pocabinet/ksplat.mjs packs that PLY into wwwroot/models/house.ksplat at compression
+level 2 with degree-1 colour (`2 1`: 33 bytes a splat, 2.8M splats, ~92 MB, under GitHub's 100 MB
+file limit); the light version (house-low.ksplat) is its first 250,000 rows (`--head 250000`).
 
 --fit finds the frame of a new capture: the floor is the plane through the lowest dense level,
 the walls the yaw at which the wall-height gaussians bunch up most sharply. The knots of
@@ -51,6 +55,11 @@ ROAD_WEIGHT = 3.0
 CELL = 0.5            # m: the cells the file's order is balanced over
 KEEP = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity',
         'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3']
+# The degree-1 band per channel, as the capture stores it (15 coefficients a channel, channel by
+# channel), and the names the output gives it (3 a channel, which is how a degree-1 file is read).
+SH_IN = [[0, 1, 2], [15, 16, 17], [30, 31, 32]]
+SH_OUT = [f'f_rest_{i}' for i in range(9)]
+SH_CLAMP = 1.0
 
 
 def open_ply(path):
@@ -147,9 +156,12 @@ def main():
     props, raw = open_ply(a[0])
     ix = {p: i for i, p in enumerate(props)}
     print(f'SPLATS {len(raw)} in, {len(props)} properties')
-    d = np.empty((len(raw), len(KEEP)), dtype=np.float32)
+    d = np.empty((len(raw), len(KEEP) + 9), dtype=np.float32)
     for k, p in enumerate(KEEP):
         d[:, k] = raw[:, ix[p]]
+    for c, coeffs in enumerate(SH_IN):
+        for j, i in enumerate(coeffs):
+            d[:, len(KEEP) + c * 3 + j] = raw[:, ix[f'f_rest_{i}']]
     del raw
     kx = {p: i for i, p in enumerate(KEEP)}
     xyz = d[:, :3].astype(np.float64)
@@ -162,7 +174,7 @@ def main():
     if len(a) < 2:
         raise SystemExit('an output .ply is required')
     out = a[1]
-    budget = int(a[a.index('--budget') + 1]) if '--budget' in a else 2_000_000
+    budget = int(a[a.index('--budget') + 1]) if '--budget' in a else 2_800_000
     frame = json.load(open(FRAME))
     r, origin = np.array(frame['R']), np.array(frame['origin'])
 
@@ -171,6 +183,15 @@ def main():
     q = d[:, [kx['rot_0'], kx['rot_1'], kx['rot_2'], kx['rot_3']]].astype(np.float64)
     q /= np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-12)
     d[:, [kx['rot_0'], kx['rot_1'], kx['rot_2'], kx['rot_3']]] = quat_mul(quat_of(r), q).astype(np.float32)
+    # Degree-1 SH: colour += C1 (-s0 y + s1 z - s2 x) for a view direction (x, y, z), so the band is
+    # the vector w = (-s2, -s0, s1) dotted with the direction; it turns with the scan: w' = R w.
+    base = len(KEEP)
+    for c in range(3):
+        s0, s1, s2 = (d[:, base + c * 3 + j].astype(np.float64) for j in range(3))
+        w = np.stack([-s2, -s0, s1], 1) @ r.T
+        d[:, base + c * 3] = np.clip(-w[:, 1], -SH_CLAMP, SH_CLAMP)
+        d[:, base + c * 3 + 1] = np.clip(w[:, 2], -SH_CLAMP, SH_CLAMP)
+        d[:, base + c * 3 + 2] = np.clip(-w[:, 0], -SH_CLAMP, SH_CLAMP)
 
     size = np.exp(d[:, [kx['scale_0'], kx['scale_1'], kx['scale_2']]].astype(np.float64))
     keep = (alpha > MIN_ALPHA) & (size.max(1) < MAX_SIZE)
@@ -216,7 +237,7 @@ def main():
 
     head = int(a[a.index('--head') + 1]) if '--head' in a else len(order)
     d = d[order[:head]]
-    write_ply(out, KEEP, d)
+    write_ply(out, KEEP + SH_OUT, d)
     print(f'WROTE {out}: {len(d)} of {len(order)} gaussians ({by_road} of them by the road, {in_walls} inside the walls), '
           f'{os.path.getsize(out) / 1e6:.1f} MB')
 

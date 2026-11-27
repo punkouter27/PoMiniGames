@@ -1,22 +1,23 @@
 // Pack a 3DGS PLY into the .ksplat the PoCabinet scene streams (@mkkellogg/gaussian-splats-3d).
 //
 //   npm ci --prefix scripts/pocabinet                     (once: the pinned versions in package.json)
-//   node scripts/pocabinet/ksplat.mjs <in.ply> <out.ksplat> [compressionLevel=1]
+//   node scripts/pocabinet/ksplat.mjs <in.ply> <out.ksplat> [compressionLevel=1] [shDegree=0]
 //
 // Its node_modules stay in scripts/pocabinet/ (git-ignored); nothing here is part of the app
-// build. Compression level 1 is 16-bit centres/scales/rotations and 8-bit
-// colour; base colour only (degree 0), which is all the court scan is drawn with.
+// build. Compression level 1 is 16-bit centres/scales/rotations and 8-bit colour; level 2 the
+// same with 8-bit spherical harmonics. The court is base colour only (degree 0); the house is
+// level 2 with degree 1 (`2 1`), the colour that changes with the viewing angle.
 import fs from 'node:fs';
 import * as GS from '@mkkellogg/gaussian-splats-3d';
 import * as THREE from 'three';
 
-const [input, output, level = '1'] = process.argv.slice(2);
+const [input, output, level = '1', shDegree = '0'] = process.argv.slice(2);
 if (!input || !output) {
-    console.error('usage: node ksplat.mjs <in.ply> <out.ksplat> [compressionLevel]');
+    console.error('usage: node ksplat.mjs <in.ply> <out.ksplat> [compressionLevel] [shDegree]');
     process.exit(1);
 }
 const bytes = fs.readFileSync(input);
-const array = GS.PlyParser.parseToUncompressedSplatArray(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), 0);
+const array = GS.PlyParser.parseToUncompressedSplatArray(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), Number(shDegree));
 const generator = GS.SplatBufferGenerator.getStandardGenerator(1, Number(level), 0, new THREE.Vector3(), 5.0, 256);
 const buffer = generator.generateFromUncompressedSplatArray(array);
 fs.writeFileSync(output, Buffer.from(buffer.bufferData));

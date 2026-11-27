@@ -5,7 +5,8 @@
 //
 // THE HOUSE (the House Party track): a whole house, bedroom to living room, as one Gaussian splat
 // in the house frame of scripts/pocabinet/house-frame.json (metres, floor on y = 0, x along the
-// house). house.ksplat is 2M splats, 48 MB; house-low.ksplat is its first 250k (6 MB), shown
+// house), with the first band of its view-dependent colour (reflections and sheen that turn with
+// the camera). house.ksplat is 2.8M splats, 92 MB; house-low.ksplat is 250k of them (8 MB), shown
 // first, and all the low tier, the "Lite" setting and a phone ever draw. It is drawn whole, there
 // is no mesh, and the road through it is a toy track (buildToyTrack): moulded plastic with a
 // shoulder either side, standing on stilts wherever it is off the floor.
@@ -60,23 +61,29 @@ export const COURT = {
 
 export const HOUSE = {
     url: null,                               // no mesh: the light splat is the lite version
-    splat: 'models/house.ksplat',            // 2M splats, 48 MB
-    splatLow: 'models/house-low.ksplat',     // 250k, 6 MB: shown first, and the lite version
+    splat: 'models/house.ksplat',            // 2.8M splats, 92 MB
+    splatLow: 'models/house-low.ksplat',     // 250k, 8 MB: shown first, and the lite version
     splatLift: 1.0,
     label: 'house',
     crop: false,          // drawn whole
-    cap: { high: 2000000, medium: 1000000, low: 250000 },
+    // Every splat on a desktop, whatever its tier: thinning the file by a stride (and swelling the
+    // survivors to cover) is what made the house blobby on medium.
+    cap: { high: 3000000, medium: 3000000, low: 250000 },
     // What is drawn of it (platform/3d/splats.js culls to the view first): past `near` world units
-    // (2 m) only the most important share of each `cell` (half a metre) of the house, down to a
-    // fifth of it at the far end, and never more than `draw` at once (the nearest are kept).
-    // Owner, 2026-11-27: draw more of the house and accept fewer frames. So the budget is set by
-    // the tier the scan was loaded on and does not follow the scene's live quality down. Drawing
-    // all 2M ran at 10 fps on a laptop GPU (Snapdragon X) whatever the resolution; frames go
-    // roughly as 9M / splats drawn there with a 64-car race on top.
-    lod: { near: 160, floor: 0.2, cell: 40 },
-    draw: { high: 800000, medium: 550000, low: 250000 },
+    // (3 m) only the most important share of each `cell` (half a metre) of the house, down to a
+    // third of it at the far end, and never more than `draw` at once (the nearest are kept).
+    // Owner, 2026-11-27: the house should look like the scan, and fewer frames are accepted. The
+    // budget is set by the tier the scan was loaded on and does not follow the live quality down.
+    // On a Snapdragon X laptop, looking down a whole room: 400k drawn ran at 12 to 17 fps, 600k at
+    // 6 to 7, 1M at 2 to 3 (the drop is steep), so the budget stops at the knee.
+    lod: { near: 240, floor: 0.35, cell: 40 },
+    draw: { high: 450000, medium: 380000, low: 250000 },
     indoor: true,         // no terrain, sky, scenery, grass or rain; the road is a toy track
     shadow: 0.2,
+    // The chase camera rides higher and further back here (cameras.js): the scan was filmed from
+    // standing height, and the closer the camera gets to the floor the more it sees what the
+    // capture never did (smears and floaters).
+    chase: { back: 10.5, up: 5.2, look: 1.4 },
     groundY: -110,        // world units: a dark floor under the house, below the stairwell's foot
     deckFrom: 40,         // sim units (5 cm): past this the road is off the floor, on stilts
     stiltEvery: 8,        // samples between pairs of stilts (~25 cm of road)

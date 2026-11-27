@@ -54,15 +54,18 @@ export function setView(sh, p) {
     if (mode === 'chase' || mode === 'far') {
         const far = mode === 'far';
         const s01 = Math.min(1, Math.abs(Number(p.speed) || 0) / 560);
-        const back = (far ? 13 : 7.4) + s01 * (far ? 2 : 1.6);
-        const up = (far ? 5.2 : 2.35) + s01 * 0.25;
+        // An indoor scan (the house) sets its own chase: higher, so the camera sits nearer where
+        // the scan was filmed from.
+        const room = !far && sh.indoor ? sh.chaseLook : null;
+        const back = (far ? 13 : room ? room.back : 7.4) + s01 * (far ? 2 : 1.6);
+        const up = (far ? 5.2 : room ? room.up : 2.35) + s01 * 0.25;
         const target = sh._v.set(x - fx * back, h - rise * back + up, z - fz * back);
         // Lagged follow so the car swings in frame through corners; time-based so
         // the lag is the same at 30 fps as at 144.
         const dt = Number(p.dt) || 0;
         const k = dt > 0 ? 1 - Math.exp(-dt * (far ? 5 : 8)) : 0.18;
         const ahead = far ? 6 : 4.5;
-        const look = new THREE.Vector3(x + fx * ahead, h + rise * ahead + (far ? 0.6 : 1.0), z + fz * ahead);
+        const look = new THREE.Vector3(x + fx * ahead, h + rise * ahead + (far ? 0.6 : room ? room.look : 1.0), z + fz * ahead);
         if (!sh._chaseInit || p.snap) {
             sh._chase.copy(target);
             sh._chaseLook.copy(look);

@@ -80,6 +80,8 @@ export class PostFx {
         this.u = {
             time: uniform(0), speed: uniform(0), motion: uniform(1), rain: uniform(0), flash: uniform(0), slow: uniform(0),
             bloom: uniform(0.7), exposure: uniform(1), threshold: uniform(1), heat: uniform(0),
+            // 1 on an indoor scan (the house): the frame is left as the scan was filmed (see composite).
+            clean: uniform(0),
             // sun: x, y (screen uv, y up here), z = visibility; sunColor: linear rgb.
             sun: uniform(new Vector3()), sunColor: uniform(new Color(1, 1, 1)),
             // Dynamic point-light accumulation (brake lights, backfire flashes, wreck fires, spark bursts):
@@ -155,13 +157,15 @@ export class PostFx {
         const asp = vec2(aspect, 1);
         const lit = (uv) => {
             const c = max(sceneTex.sample(at(uv)).rgb, vec3(0));
-            return aoTex ? c.mul(mix(float(1), clamp(max(aoTex.sample(at(uv)).r, float(0)), 0, 1), AO_STRENGTH)) : c;
+            return aoTex ? c.mul(mix(float(1), clamp(max(aoTex.sample(at(uv)).r, float(0)), 0, 1), U.clean.oneMinus().mul(AO_STRENGTH))) : c;
         };
         const center = vec2(0.5, 0.5);
         const toC = up.sub(center);
 
         // ── Speed: radial blur + fringing ──
-        const bmask = smoothstep(0.18, 0.66, length(toC.mul(asp)));
+        // Indoors (`clean`) none of the speed effects run: they smear the scan.
+        const dirty = U.clean.oneMinus();
+        const bmask = smoothstep(0.18, 0.66, length(toC.mul(asp))).mul(dirty);
         const amt = U.speed.mul(U.speed).mul(0.032).mul(U.motion).mul(bmask);
         let col = vec3(0);
         for (let i = 0; i < 8; i++) col = col.add(lit(up.sub(toC.mul(amt).mul(i / 7))));
@@ -195,7 +199,7 @@ export class PostFx {
         col = mix(col, rained, step(0.001, U.rain));
 
         // ── Bloom + depth-occluded volumetric light shafts toward the sun ──
-        col = col.add(max(bloomTex.sample(at(up)).rgb, vec3(0)).mul(U.bloom));
+        col = col.add(max(bloomTex.sample(at(up)).rgb, vec3(0)).mul(U.bloom).mul(float(1).sub(U.clean.mul(0.75))));
         const sp = U.sun.xy, vis = U.sun.z;
         const dlt = sp.sub(up).div(taps);
         let shafts = vec3(0), p = up, decay = float(1);
@@ -226,7 +230,7 @@ export class PostFx {
         col = col.add(dynLight.mul(wetBoost));
 
         // ── Subtle exhaust / wreck heat-haze shimmer (lower-center band when heat > 0) ──
-        const heatZone = smoothstep(0.45, 0.08, up.y).mul(smoothstep(0.36, 0.05, abs(up.x.sub(0.5)))).mul(U.heat).mul(U.motion);
+        const heatZone = smoothstep(0.45, 0.08, up.y).mul(smoothstep(0.36, 0.05, abs(up.x.sub(0.5)))).mul(U.heat).mul(U.motion).mul(dirty);
         const hWave = vec2(
             sin(up.y.mul(58).sub(U.time.mul(16))).mul(0.0022),
             cos(up.x.mul(44).add(U.time.mul(13))).mul(0.0014),
@@ -250,15 +254,15 @@ export class PostFx {
         const travel = fract(len.mul(1.1).sub(U.time.mul(float(1.6).add(lr.mul(2)))).add(lr.mul(7)));
         streak = streak.mul(smoothstep(0, 0.05, travel)).mul(smoothstep(0.08, 0.32, travel).oneMinus());
         streak = streak.mul(smoothstep(0.05, 0.22, abs(fract(laneF).sub(0.5))).oneMinus());
-        col = col.add(vec3(0.9, 0.95, 1).mul(streak).mul(pow(U.speed, 3)).mul(0.12).mul(U.motion));
+        col = col.add(vec3(0.9, 0.95, 1).mul(streak).mul(pow(U.speed, 3)).mul(0.12).mul(U.motion).mul(dirty));
 
-        // ── Tone map + grade ──
-        col = acesFilmic(col.mul(U.exposure).div(0.6));
+        // ── Tone map + grade ── (indoors the scan keeps its own colours: no filmic curve, no saturation boost)
+        col = mix(acesFilmic(col.mul(U.exposure).div(0.6)), clamp(col, 0, 1), U.clean);
         const luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col = mix(vec3(luma), col, 1.08);
+        col = mix(vec3(luma), col, mix(float(1.08), float(1), U.clean));
         col = mix(col, vec3(luma).mul(vec3(0.9, 0.97, 1.08)), U.slow.mul(0.55));
         const vig = smoothstep(0.5, 1.2, length(toC.mul(asp).mul(vec2(0.9, 1))));
-        col = col.mul(float(1).sub(vig.mul(float(0.35).add(U.speed.mul(0.15).mul(U.motion)).add(U.slow.mul(0.35)))));
+        col = col.mul(float(1).sub(vig.mul(float(0.35).mul(float(1).sub(U.clean.mul(0.7))).add(U.speed.mul(0.15).mul(U.motion).mul(dirty)).add(U.slow.mul(0.35)))));
         col = mix(col, vec3(1, 0.98, 0.95), clamp(U.flash, 0, 1));
         col = col.add(hash12(q.mul(screenSize).add(fract(U.time.mul(7.3)).mul(91))).sub(0.5).mul(0.004));
         return vec4(clamp(col, 0, 1), 1);
@@ -273,6 +277,7 @@ export class PostFx {
         U.rain.value = fx.rain || 0;
         U.flash.value = fx.flash || 0;
         U.slow.value = fx.slow || 0;
+        U.clean.value = fx.clean || 0;
         U.bloom.value = fx.bloom ?? 0.7;
         U.exposure.value = fx.exposure || 1;
         U.threshold.value = fx.bloomThreshold || 1.0;

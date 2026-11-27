@@ -8,11 +8,13 @@
 // and adds the returned object to its scene.
 //
 // WHAT IT DOES
-//   • Parses .ksplat (the 0.1 format the court ships in, compression level 0/1/2, base colour only),
+//   • Parses .ksplat (the 0.1 format, compression level 0/1/2, base colour and, when the file has it,
+//     the degree-1 band of view-dependent colour: the sheen and reflections that turn with the camera),
 //     .splat (antimatter15, 32 B per splat) and .ply (3DGS: f_dc / opacity / scale_ / rot_).
 //   • Bakes the placement matrix into the data once: centres to world, the 3D covariance
 //     Sigma = A (R S S^T R^T) A^T as 6 floats. Nothing per frame touches the CPU copy of that.
-//   • Three float data textures (position+opacity, covariance x2 with the colour packed into one float) read with textureLoad by a
+//   • Four float data textures (position+opacity, covariance x2 with the colour packed into one float,
+//     the view-dependent colour as three world-space vectors of 8-bit components) read with textureLoad by a
 //     per-instance index, so the same TSL graph runs on the WebGPU and the WebGL2 backend (no storage
 //     buffers). One quad per splat, instanced; the material is ONE node graph, per-cloud values
 //     (crop, fade, lift) are uniforms, so every cloud shares one compiled program.
@@ -50,6 +52,8 @@
 // higher than `low` metres over the floor except two hoop columns (PoCabinet's court). Both optional.
 
 const TEX_W = 2048;
+/** World-space SH vectors are stored as 8-bit components in [-SH_RANGE, SH_RANGE]. */
+const SH_RANGE = 1.8;
 
 // ----------------------------------------------------------------------------------- parsing
 
@@ -63,7 +67,8 @@ function halfToFloat(h) {
 
 /**
  * Decode a .ksplat into flat arrays in the file's own frame:
- *   { count, pos: Float32Array(3n), scale: Float32Array(3n), quat: Float32Array(4n) (x,y,z,w), rgba: Uint8Array(4n) }
+ *   { count, pos: Float32Array(3n), scale: Float32Array(3n), quat: Float32Array(4n) (x,y,z,w), rgba: Uint8Array(4n),
+ *     sh: Float32Array(9n) | null }   sh: degree-1 coefficients, red's three then green's then blue's
  * Layout per compression level (mkkellogg SplatBuffer): L0 floats; L1/L2 uint16 centres (bucketed) and
  * half-float scale/rotation; colour is always 4 bytes at ColorOffsetBytes.
  */
@@ -72,6 +77,8 @@ export function parseKSplat(buffer) {
     const h32 = new Uint32Array(buffer, 0, 1024), h16 = new Uint16Array(buffer, 0, 2048);
     if (u8[0] !== 0 || u8[1] < 1) throw new Error('ksplat: unsupported version ' + u8[0] + '.' + u8[1]);
     const maxSections = h32[1], sectionCount = h32[2], total = h32[4], level = h16[10];
+    const hf = new Float32Array(buffer, 0, 1024);
+    const shMin = hf[9] || -1.5, shMax = hf[10] || 1.5;      // level 2's 8-bit SH range (SplatBuffer header)
     const LV = [
         { c: 12, s: 12, r: 16, col: 4, so: 12, ro: 24, co: 40, shb: 4, range: 1, sh: [44, 80, 140] },
         { c: 6, s: 6, r: 8, col: 4, so: 6, ro: 12, co: 20, shb: 2, range: 32767, sh: [24, 42, 72] },
@@ -80,6 +87,7 @@ export function parseKSplat(buffer) {
     if (!LV) throw new Error('ksplat: bad compression level ' + level);
     const pos = new Float32Array(total * 3), scale = new Float32Array(total * 3);
     const quat = new Float32Array(total * 4), rgba = new Uint8Array(total * 4);
+    let sh = null;
     let sectionBase = 4096 + maxSections * 1024, out = 0;
     for (let si = 0; si < maxSections; si++) {
         const hb = 4096 + si * 1024;
@@ -88,6 +96,7 @@ export function parseKSplat(buffer) {
         const blockSize = sf[4], bucketStorage = sh16[10];
         const range = sh32[6] || LV.range, fullBuckets = sh32[8], partial = sh32[9], shDegree = sh16[20];
         const bytesPerSplat = LV.sh[shDegree] ?? LV.sh[0];
+        if (shDegree >= 1 && !sh) sh = new Float32Array(total * 9);
         const metaBytes = partial * 4, bucketsBytes = bucketStorage * bucketCount + metaBytes;
         const dataBase = sectionBase + bucketsBytes;
         const bucketsBase = sectionBase + metaBytes;
@@ -119,11 +128,19 @@ export function parseKSplat(buffer) {
                 quat[out * 4 + 2] = halfToFloat(dv.getUint16(o + LV.ro + 6, true)); quat[out * 4 + 3] = halfToFloat(dv.getUint16(o + LV.ro, true));
             }
             rgba.set(new Uint8Array(buffer, o + LV.co, 4), out * 4);
+            if (shDegree >= 1) {
+                const so = o + LV.co + 4;
+                for (let k = 0; k < 9; k++) {
+                    sh[out * 9 + k] = level === 0 ? dv.getFloat32(so + k * 4, true)
+                        : level === 1 ? halfToFloat(dv.getUint16(so + k * 2, true))
+                            : dv.getUint8(so + k) / 255 * (shMax - shMin) + shMin;
+                }
+            }
         }
         sectionBase += bytesPerSplat * maxCount + bucketsBytes;
         if (si + 1 >= Math.max(sectionCount, 1) && out >= total) break;
     }
-    return { count: total, pos, scale, quat, rgba };
+    return { count: total, pos, scale, quat, rgba, sh };
 }
 
 /** antimatter15 .splat: 32 B = pos f32x3, scale f32x3, rgba u8x4, rot u8x4 (w,x,y,z, (v-128)/128). */
@@ -195,12 +212,20 @@ export function packSplats(data, { m = null, maxSplats = Infinity, lod = null } 
     const grow = Math.pow(stride, 1 / 3);               // fewer splats cover the same space: swell them
     const size = Math.ceil(n / TEX_W) * TEX_W * 4;
     const A = new Float32Array(size), B = new Float32Array(size), C = new Float32Array(size);
+    // View-dependent colour: per channel the vector w with colour += C1 dot(view direction, w),
+    // turned into the world frame here (the placement's rotation, its uniform scale divided out)
+    // and stored as three 8-bit components in one exact float. Zeros without SH.
+    const D = new Float32Array(size);
     const centers = new Float32Array(n * 3);
     const radii = new Float32Array(n);                  // how far a splat reaches from its centre (3 sigma), for the culler
     const weight = lod ? new Float32Array(n) : null;    // opacity x footprint, for the LOD's ranking
     const e = m ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     // 3x3 (row-major a[r][c] = e[c*4+r]) and translation
     const a = [[e[0], e[4], e[8]], [e[1], e[5], e[9]], [e[2], e[6], e[10]]];
+    const det = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+        + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    const unit = 1 / (Math.cbrt(Math.abs(det)) || 1);
+    const q8 = (v) => Math.max(0, Math.min(255, Math.round((v / SH_RANGE + 1) * 127.5)));
     for (let j = 0; j < n; j++) {
         const i = j * stride;
         const x = data.pos[i * 3], y = data.pos[i * 3 + 1], z = data.pos[i * 3 + 2];
@@ -233,9 +258,19 @@ export function packSplats(data, { m = null, maxSplats = Infinity, lod = null } 
             weight[j] = A[o + 3] * (lo > 1e-12 ? vol / lo : 0);
         }
         C[o + 2] = data.rgba[i * 4] + data.rgba[i * 4 + 1] * 256 + data.rgba[i * 4 + 2] * 65536;   // 3 bytes in one exact float
+        if (data.sh) {
+            for (let ch = 0; ch < 3; ch++) {
+                const s0 = data.sh[i * 9 + ch * 3], s1 = data.sh[i * 9 + ch * 3 + 1], s2 = data.sh[i * 9 + ch * 3 + 2];
+                const wx = -s2, wy = -s0, wz = s1;      // colour += C1 (-s0 y + s1 z - s2 x) = C1 dot(d, w)
+                const gx = (a[0][0] * wx + a[0][1] * wy + a[0][2] * wz) * unit;
+                const gy = (a[1][0] * wx + a[1][1] * wy + a[1][2] * wz) * unit;
+                const gz = (a[2][0] * wx + a[2][1] * wy + a[2][2] * wz) * unit;
+                D[o + ch] = q8(gx) + q8(gy) * 256 + q8(gz) * 65536;
+            }
+        }
     }
     const ranks = lod ? rankSplats(centers, weight, Number(lod.cell) || 1) : null;
-    return { n, A, B, C, centers, radii, ranks, stride, rows: size / 4 / TEX_W };
+    return { n, A, B, C, D, hasSh: !!data.sh, centers, radii, ranks, stride, rows: size / 4 / TEX_W };
 }
 
 /**
@@ -345,21 +380,23 @@ function sortWorkerBody() {
 export function createSplatCloud(THREE, TSL, packed, opts = {}) {
     const { float, vec2, vec3, vec4, int, ivec2, uniform, textureLoad, instancedBufferAttribute, positionGeometry,
         modelViewMatrix, cameraProjectionMatrix, screenSize, varying, exp, sqrt, max, min, dot, normalize, smoothstep,
-        abs, pow, mix, select, mod } = TSL;
+        abs, pow, mix, select, mod, floor, clamp, cameraPosition } = TSL;
     const n = packed.n;
     const mk = (arr, type, fmt) => {
         const t = new THREE.DataTexture(arr, TEX_W, packed.rows, fmt ?? THREE.RGBAFormat, type ?? THREE.FloatType);
         t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
         return t;
     };
-    const tA = mk(packed.A), tB = mk(packed.B), tC = mk(packed.C);
+    const tA = mk(packed.A), tB = mk(packed.B), tC = mk(packed.C), tD = mk(packed.D);
     const order = new Float32Array(n); for (let i = 0; i < n; i++) order[i] = i;
     const orderAttr = new THREE.InstancedBufferAttribute(order, 1);
     orderAttr.setUsage(THREE.DynamicDrawUsage);
     const geo = new THREE.InstancedBufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-2, -2, 0, 2, -2, 0, 2, 2, 0, -2, 2, 0]), 3));
     geo.setIndex([0, 1, 2, 0, 2, 3]);
-    geo.instanceCount = n;
+    // Until the first sort comes back, draw no more than the budget (the file's first rows):
+    // a 2.8M-splat house drawn whole stalled the opening frames.
+    geo.instanceCount = Math.min(n, Number(opts.maxDraw) || n);
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);   // never frustum-culled by bounds
 
     const U = {
@@ -371,6 +408,7 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
         hideOn: uniform(opts.hide ? 1 : 0), size: uniform(1),
         ambientTint: uniform(new THREE.Color(opts.ambientTint ?? 0xffffff)),
         flash: uniform(0),
+        shOn: uniform(packed.hasSh ? 1 : 0),
     };
     if (opts.crop) U.crop.value.set(opts.crop.x, opts.crop.z, opts.crop.hx, opts.crop.hz);
 
@@ -413,7 +451,16 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
         .or(U.hideOn.greaterThan(0.5).and(high));
     const fade = select(U.cropOn.greaterThan(0.5), smoothstep(0, U.fade, edge), float(1));
     const pk = c.z, cb = pk.div(65536).floor(), cg = pk.sub(cb.mul(65536)).div(256).floor(), cr = pk.sub(cb.mul(65536)).sub(cg.mul(256));
-    const rgb = vec3(cr, cg, cb).div(255);
+    const base = vec3(cr, cg, cb).div(255);
+    // View-dependent colour (degree-1 SH): three world vectors, 8 bits a component, one float each.
+    const unpack = (f) => {
+        const hi = floor(f.div(65536)), rest = f.sub(hi.mul(65536)), mid = floor(rest.div(256)), lo = rest.sub(mid.mul(256));
+        return vec3(lo, mid, hi).div(127.5).sub(1).mul(SH_RANGE);
+    };
+    const dsh = tex(tD);
+    const viewDir = normalize(center.sub(cameraPosition));
+    const shCol = vec3(dot(viewDir, unpack(dsh.x)), dot(viewDir, unpack(dsh.y)), dot(viewDir, unpack(dsh.z))).mul(0.4886025119029199);
+    const rgb = clamp(base.add(shCol.mul(U.shOn)), 0, 1);
     const lin = mix(rgb, pow(max(rgb, 0), vec3(2.2)).mul(U.lift), U.linear);
     const lit = lin.mul(U.ambientTint).add(vec3(U.flash));
     const vColor = varying(lit, 'vSplatColor'), vAlpha = varying(a.w.mul(fade).mul(U.opacity), 'vSplatAlpha'), vQuad = varying(q, 'vSplatQuad');
@@ -443,7 +490,7 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
     // comes back a frame or two after the camera asked for it, and the car has turned meanwhile.
     const CULL_MARGIN = 0.22;
     const lod = opts.lod || null;
-    let spare = null, drawn = n, maxDraw = Number(opts.maxDraw) || 0;
+    let spare = null, drawn = geo.instanceCount, maxDraw = Number(opts.maxDraw) || 0;
     try {
         url = URL.createObjectURL(new Blob([`(${sortWorkerBody.toString()})()`], { type: 'text/javascript' }));
         worker = new Worker(url);
@@ -511,7 +558,7 @@ export function createSplatCloud(THREE, TSL, packed, opts = {}) {
         },
         dispose() {
             worker?.terminate(); if (url) URL.revokeObjectURL(url);
-            geo.dispose(); material.dispose(); tA.dispose(); tB.dispose(); tC.dispose();
+            geo.dispose(); material.dispose(); tA.dispose(); tB.dispose(); tC.dispose(); tD.dispose();
             mesh.parent?.remove(mesh);
         },
     };

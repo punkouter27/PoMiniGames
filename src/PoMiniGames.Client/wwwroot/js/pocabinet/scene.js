@@ -141,6 +141,7 @@ class SceneHandle {
         this.roadRefl = { value: 0.02 };   // the road's reflectivity for postfx.js, set by setWeather
         this.theme = 'grandprix';
         this.indoor = false;      // an indoor scan is the whole world (models.isIndoor): no terrain, sky, scenery, grass or rain
+        this.chaseLook = null;    // its chase camera ({ back, up, look }, models.js SCANS), when it sets one
         this.roomSplat = null;    // the court scan's Gaussian splat (DropInViewer), when it loaded
         this.roomProgress = null; // its loading bar over the canvas
         this.roomDetail = null;   // 'auto' | 'splat' (full) | 'mesh' (lite); read from the stored settings when unset
@@ -559,6 +560,11 @@ class SceneHandle {
         // scenery, grass or rain of its own, and the road is a toy track on stilts.
         const indoor = models.isIndoor(t);
         this.indoor = indoor;
+        this.chaseLook = indoor ? models.scanOf(t).chase || null : null;
+        // Indoors the post chain leaves the scan as filmed (postfx.js `clean`): no speed blur,
+        // colour fringes, heat haze or speed lines smearing it, no AO darkening it, little bloom,
+        // and no filmic tone curve on its colours.
+        this.fx.clean = indoor ? 1 : 0;
         const group = new THREE.Group();
         group.name = 'pocabinet-track';
 
