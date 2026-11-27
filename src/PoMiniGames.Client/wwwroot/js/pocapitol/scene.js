@@ -203,8 +203,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
                 value = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
             } else {
                 const kind = surfaceKind(color);
-                value = addSurface(new THREE.MeshStandardNodeMaterial({ color, roughness: 0.78, metalness }), kind, surfaces, surfaceDetail,
-                    kind === SURFACE.grass || kind === SURFACE.paving ? wearUniforms : null);
+                value = isWebGPU
+                    ? addSurface(new THREE.MeshStandardNodeMaterial({ color, roughness: 0.78, metalness }), kind, surfaces, surfaceDetail,
+                        kind === SURFACE.grass || kind === SURFACE.paving ? wearUniforms : null)
+                    : new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness });
             }
             materials.set(key, value);
         }
@@ -381,8 +383,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const domeLantern = mesh(new THREE.CylinderGeometry(1.3, 1.8, 2.8, 24), '#c9c4b8', 0, 39, -14);
     // The dome is floodlit after dark. Its shell, drum, attic and lantern share one material of
     // their own, so the glow can be raised at dusk without lighting every cornice in the building.
-    const domeLit = addSurface(new THREE.MeshStandardNodeMaterial({ color: '#ede5d6', roughness: 0.78, emissive: '#ffe9c6', emissiveIntensity: 0 }),
-        SURFACE.stone, surfaces, surfaceDetail);
+    const domeLit = isWebGPU
+        ? addSurface(new THREE.MeshStandardNodeMaterial({ color: '#ede5d6', roughness: 0.78, emissive: '#ffe9c6', emissiveIntensity: 0 }),
+            SURFACE.stone, surfaces, surfaceDetail)
+        : new THREE.MeshStandardMaterial({ color: '#ede5d6', roughness: 0.78, emissive: '#ffe9c6', emissiveIntensity: 0 });
     materials.set('dome-lit', domeLit);
     for (const lit of [domeDrum, domeAttic, domeShell, domeLantern]) lit.material = domeLit;
     for (let i = 0; i < 12; i++) {
@@ -445,8 +449,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         mesh(new THREE.CylinderGeometry(ring, ring, 0.025, 64), ring < 2 ? '#eeeadf' : i % 2 ? '#b5a090' : '#ebe2cd',
             0, 0.14 + i * 0.006, -14);
     const innerDome = mesh(new THREE.SphereGeometry(11.5, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), '#d6c6ad', 0, 8, -14);
-    const domeMaterial = addSurface(new THREE.MeshStandardNodeMaterial({ color: '#d6c6ad', roughness: 0.95, side: THREE.DoubleSide }),
-        SURFACE.stone, surfaces, surfaceDetail);
+    const domeMaterial = isWebGPU
+        ? addSurface(new THREE.MeshStandardNodeMaterial({ color: '#d6c6ad', roughness: 0.95, side: THREE.DoubleSide }),
+            SURFACE.stone, surfaces, surfaceDetail)
+        : new THREE.MeshStandardMaterial({ color: '#d6c6ad', roughness: 0.95, side: THREE.DoubleSide });
     materials.set('inner-dome', domeMaterial); innerDome.material = domeMaterial;
     for (const y of [7.6, 8.2]) {
         const cornice = mesh(new THREE.TorusGeometry(11.4, 0.22, 6, 64), '#e4dac6', 0, y, -14);
@@ -1007,7 +1013,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
     }
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs, detail: surfaceDetail, surge });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs, detail: surfaceDetail, surge, isWebGPU });
     // Canisters, flash-bang bodies, bottles and dropped signs under Rapier (debris.js). Loaded on
     // the first tier that wants it; until then, and on the low tier, there is none.
     const debris = createDebris(scene, {

@@ -266,7 +266,7 @@ function template(names, parents, heads, regions, shapeNames = []) {
  * its own run of bones in a single bone texture. One draw call per pass, and because it is a
  * real SkinnedMesh the shadow, ambient-occlusion and depth-of-field passes all see the pose.
  */
-function createBodies(scene, t, capacity, { detail, flat = false, bake = false } = {}) {
+function createBodies(scene, t, capacity, { detail, flat = false, bake = false, isWebGPU = true } = {}) {
     const V = t.vertices, B = t.bones;
     const position = new Float32Array(V * capacity * 3), normal = new Float32Array(V * capacity * 3);
     const skinIndex = new Uint16Array(V * capacity * 4), skinWeight = new Float32Array(V * capacity * 4);
@@ -293,7 +293,8 @@ function createBodies(scene, t, capacity, { detail, flat = false, bake = false }
     geometry.setDrawRange(0, 0);
     // `flat` is the unlit body the far-crowd bake uses to cut out its coat mask.
     const material = flat ? new THREE.MeshBasicMaterial({ vertexColors: true, fog: false })
-        : addFabric(addSubsurfaceScattering(new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.82 })), detail);
+        : isWebGPU ? addFabric(addSubsurfaceScattering(new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.82 })), detail)
+        : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
     // The far-crowd bake draws and then throws away crowds that look exactly like the live one. WebGPURenderer
     // shares one program between render objects whose materials hash the same, and frees it when the
     // last one is disposed: the bake's disposal must not take the live crowd's program with it.
@@ -569,7 +570,7 @@ const NEUTRAL_COAT = '#b0b0b0';
  *                 coats white and everything else black. Either one leaves the banners out.
  * @param detail   shared `{ value }` 0..1 for the cloth detail, so the quality governor can turn it down
  */
-export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null, signs = [], detail = { value: 1 }, palette = null, surge = null }) {
+export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null, signs = [], detail = { value: 1 }, palette = null, surge = null, isWebGPU = true }) {
     const parts = [], resources = new Set(), textures = new Set();
     // Follow-through: each person's velocity, and a spring that chases it a beat late. The gap
     // between the two is what swings a cape, a hood or a pack when its wearer starts or stops.
@@ -581,7 +582,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     let extras = true;
     const mask = palette === 'mask';
     const rig = figure ?? fromRig(buildFigure());
-    const bodies = createBodies(scene, rig, capacity, { detail, flat: mask, bake: palette !== null });
+    const bodies = createBodies(scene, rig, capacity, { detail, flat: mask, bake: palette !== null, isWebGPU });
     const maskBlack = new THREE.MeshBasicMaterial({ color: '#000000', fog: false }), maskWhite = new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false });
     resources.add(maskBlack); resources.add(maskWhite);
     /**

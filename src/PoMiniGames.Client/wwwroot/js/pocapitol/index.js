@@ -131,12 +131,22 @@ async function init(hostId, reference) {
         g.captionAt = now;
         reference?.invokeMethodAsync('OnCaption', String(text)).catch(() => { /* no page listening */ });
     };
+    // Track whether a modal/side dialog was open before its own key handler closed it on Escape
+    // (Radzen's side-dialog handler closes and detaches the dialog before window keydown bubbles).
+    let escSuppressed = false;
+    listen(document, 'keydown', e => {
+        if (e.code === 'Escape') {
+            escSuppressed = Boolean(document.querySelector('dialog[open], .rz-dialog-wrapper, .rz-dialog-side, .game-opts-sheet, [data-po-dialog], [role="dialog"][aria-modal="true"]'));
+        }
+    }, { capture: true });
     listen(window, 'keydown', e => {
         if (!g.started || e.target.closest?.('input, select, textarea, [role="slider"]')) return;
         // Esc leaves for the main menu (owner, 2026-11-21); P (or its rebinding) pauses. A menu that
         // is open (options sheet, pause panel, end card) handles its own Esc, so it is left alone.
         if (e.code === 'Escape' && !e.repeat) {
-            if (g.state.status === 'active' && !document.querySelector('dialog[open], .rz-dialog-wrapper, [data-po-dialog]')) { e.preventDefault(); toMainMenu(); }
+            const blocked = escSuppressed;
+            escSuppressed = false;
+            if (g.state.status === 'active' && !blocked && !document.querySelector('dialog[open], .rz-dialog-wrapper, .rz-dialog-side, .game-opts-sheet, [data-po-dialog]')) { e.preventDefault(); toMainMenu(); }
             return;
         }
         if (matches(g.prefs, 'pause', e.code) && !e.repeat) {

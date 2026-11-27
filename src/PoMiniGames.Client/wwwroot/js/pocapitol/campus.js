@@ -11,8 +11,10 @@ export function createCampus({ surfaces, surfaceDetail, osm, isWebGPU = true } =
     const geometries = new Set(), materials = new Set();
     const detail = surfaceDetail ?? { value: 1 };
     const mat = (color, roughness = 0.8, metalness = 0, kind = SURFACE.stone) => {
-        const value = new THREE.MeshStandardNodeMaterial({ color, roughness, metalness });
-        if (surfaces) addSurface(value, kind, surfaces, detail);
+        const value = isWebGPU
+            ? new THREE.MeshStandardNodeMaterial({ color, roughness, metalness })
+            : new THREE.MeshStandardMaterial({ color, roughness, metalness });
+        if (isWebGPU && surfaces) addSurface(value, kind, surfaces, detail);
         materials.add(value);
         return value;
     };
