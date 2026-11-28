@@ -510,21 +510,25 @@ export function createPost(renderer, scene, camera, depthCamera) {
         lights,
         /** Builds the scene's pipelines for the target it is drawn into, without freezing the page. */
         // compileAsync can stay pending forever on some drivers (seen on Windows ARM64, Chromium and
-        // Edge, both backends): the scene then never reaches its start card. It is a head start, not a
-        // requirement, so it gets three seconds and the first frame builds whatever is still missing.
-        async compile(timeoutMs = 3000) {
+        // Edge, both backends), so it has a ceiling; past it the first frame builds whatever is still
+        // missing. On the Adreno X1-85 the whole set takes about 20 s, which the start card covers;
+        // index.js holds the first frame until this settles, because a frame drawn while pipelines
+        // are still pending waits for all of them with the tab frozen.
+        // `onProgress(fraction)` follows the objects compiled, 0..1.
+        async compile({ timeoutMs = 60000, onProgress = null } = {}) {
             // On the WebGL2 backend, compileAsync compiles every TSL shader synchronously on the
             // main thread before returning a Promise, freezing the tab before setTimeout can fire.
             // Skip the upfront pass on WebGL2 and let the first draw compile lazily.
             if (!renderer.backend?.isWebGPUBackend) return;
             const was = renderer.getRenderTarget();
             renderer.setRenderTarget(scenePass);
+            const progress = onProgress ? e => { if (e.total > 0) onProgress(e.loaded / e.total); } : null;
             let timer = 0;
             try {
-                await Promise.race([
-                    renderer.compileAsync(scene, camera),
-                    new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); }),
-                ]);
+                const running = renderer.compileAsync(scene, camera, null, progress);
+                // compileAsync reads the render target synchronously, before its first await.
+                renderer.setRenderTarget(was);
+                await Promise.race([running, new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]);
             } catch { /* the first frame builds what is missing */ }
             clearTimeout(timer);
             renderer.setRenderTarget(was);

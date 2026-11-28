@@ -115,9 +115,12 @@ async function init(hostId, reference, map = 'capitol') {
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
-    // After the tier (and its render scale) is set, never before: see compile() in scene.js. It is a
-    // head start that keeps going behind the start card; init does not wait for it.
-    view.compile?.();
+    // After the tier (and its render scale) is set, never before: see compile() in scene.js. It runs
+    // behind the start card; init does not wait for it, but the first frame of play does (loop).
+    g.warm = { done: false, progress: 0, pill: null };
+    Promise.resolve(view.compile?.({ onProgress: f => { g.warm.progress = f; } }))
+        .catch(() => { /* the first frame builds what is missing */ })
+        .then(() => { g.warm.done = true; g.warm.pill?.remove(); g.warm.pill = null; });
     track('init', { ms: g.initMs, tier,
         footprints: g.osmBuildings, signs: signs.length });
 
@@ -328,6 +331,10 @@ async function init(hostId, reference, map = 'capitol') {
     function loop(elapsed) {
         if (g.disposed) return;
         try {
+            // OK came before the pipelines were built. Drawing now would freeze the tab until the GPU
+            // finished all of them, so play (the clock, the crowd, the camera) waits here, with the
+            // page live and a count on screen, and starts the moment they are ready.
+            if (g.started && !g.warm.done) { showWarming(g); return; }
             const now = stage.time * 1000;
             const dt = Math.min(0.05, elapsed);
             const frameMs = elapsed * 1000;
@@ -611,6 +618,27 @@ function notify(g) {
         }).finally(() => { g.notifying = false; });
     // The commander's board is its own call, so a slow board never stalls the HUD or pauses play.
     if (s.command) g.reference.invokeMethodAsync('OnCommand', commandView(s, g.lastReply)).catch(() => { /* page gone */ });
+}
+
+/** The "Warming up" pill over the scene while play waits for its pipelines (see loop). */
+function showWarming(g) {
+    if (!g.warm.pill) {
+        const pill = document.createElement('div');
+        pill.className = 'pc-warming';
+        pill.setAttribute('role', 'status');
+        pill.setAttribute('aria-live', 'polite');
+        Object.assign(pill.style, {
+            position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: '5',
+            padding: '10px 18px', borderRadius: 'var(--po-radius-pill, 999px)', background: 'var(--po-surface)',
+            color: 'var(--po-text)', boxShadow: 'var(--po-shadow)', font: '600 15px/1.3 Inter, system-ui, sans-serif',
+            pointerEvents: 'none', whiteSpace: 'nowrap',
+        });
+        g.host.parentElement.append(pill);
+        g.warm.pill = pill;
+        g.warm.shown = -1;
+    }
+    const pct = Math.min(99, Math.round(g.warm.progress * 100));
+    if (pct !== g.warm.shown) { g.warm.shown = pct; g.warm.pill.textContent = `Warming up the scene… ${pct}%`; }
 }
 
 function start(difficulty, demo = false, role = 'raider') {
@@ -1142,6 +1170,7 @@ function dispose() {
     if (!game) return;
     const g = game;
     g.disposed = true; g.events.abort();
+    g.warm?.pill?.remove();
     if (document.pointerLockElement === g.view.canvas) releasePointer(g);
     g.audio?.dispose?.();
     g.hailer?.dispose(); g.score?.dispose(); g.aftermath?.dispose(); g.streetMap?.dispose();
