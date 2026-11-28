@@ -84,7 +84,8 @@ On the owner's laptop (Snapdragon X, x64 Python under emulation, 2026-11-27) one
 all kept; the full model draws a little more finger detail), so Nick's and Matt's 2026-11-27 sheets
 (128 and 127 pictures) were cut with it; rerunning `cutout.py` without `--model` into an empty cut
 folder and packing again replaces them with no other change. DirectML on that laptop's GPU runs out
-of memory on BiRefNet, so the CPU is the only route there.
+of memory on BiRefNet, so the CPU is the only route there; run one `cutout.py` at a time (two
+together ran its 16 GB out of memory).
 
 A fixed phone (a tripod) makes everything easier: `camera.py` then measures no pan or zoom, and
 `"scaleFrom": "idle"` gives every move the stance's size.

@@ -38,6 +38,10 @@ two clips, measured by camera.py) instead of from its own reference picture, who
 stance, raised arms, a crouch) skews a height-based size. A move the performer filmed nearer or
 further from the phone takes "scaleAdjust" (e.g. 0.81 when the head is 23% bigger).
 
+"quality" (default 90) is the sheet's WebP quality; its alpha stays lossless. A broad performer
+in patterned clothes (Matt) makes a sheet of 4.2 MB at 90 and 3.3 MB at 82, with no visible loss
+at game size.
+
 "mirror": true is for a performer filmed facing screen-left. The game draws every fighter
 facing right (it flips the one on the right-hand side itself), so each cell is flipped, the
 anchor and reach swap sides, and travel changes sign: walking toward screen-left on video is
@@ -227,7 +231,7 @@ def main() -> None:
         sheet.paste(crop, (fs[0]["x"], fs[0]["y"]))
 
     fighter = cfg["fighter"]
-    sheet.save(out / f"{fighter}.webp", quality=90, alpha_quality=100, method=6)
+    sheet.save(out / f"{fighter}.webp", quality=int(cfg.get("quality", 90)), alpha_quality=100, method=6)
     data = {"fighter": fighter, "sheet": f"{fighter}.webp", "standHeight": stand_px, "res": res, "moves": meta}
     # The fighter's own special (shot-list.html): its clip is the "signature" move above; this
     # block names it and says which button and kind it is. Hand-tuned timings pass through too.

@@ -494,6 +494,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // The mode is settled before the first await. OnParametersSetAsync first runs only when
+        // this method has finished, and a slow ratings call (2 s while storage is down) let a card
+        // that starts itself (demo, tournament) begin first: that late first pass then stopped the
+        // game, restarted it and left "could not be loaded" over a running tournament.
+        _activeMode = Mode ?? string.Empty;
+        _introDismissed = Kiosk.IsActive && (IsDemo || IsTournament);
         _playerName = PlayerNameService.GetPlayerName();
         await LoadRatingsAsync();
         if (!IsDemo) await RefreshFightersAsync();
