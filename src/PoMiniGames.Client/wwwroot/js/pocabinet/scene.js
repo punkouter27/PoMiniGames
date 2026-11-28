@@ -873,7 +873,7 @@ export async function mount(canvas, world) {
     // r186 WebGPURenderer: the WebGPU backend where an adapter exists, else its own WebGL2 backend (the build
     // has no WebGLRenderer). `?cabwebgl` forces the WebGL2 backend, for comparing the two.
     const gpu = await webgpuAvailable();
-    const renderer = await createRenderer(THREE, { api: 'webgpu', canvas, antialias: false, preserveDrawingBuffer: false, tone: 'none', forceWebGL: !gpu || /[?&]cabwebgl/.test(location.search) });
+    const renderer = await createRenderer(THREE, { api: 'webgpu', canvas, antialias: false, preserveDrawingBuffer: false, tone: 'none', forceWebGL: !gpu || /[?&]cabwebgl/.test(location.search), shareInstancePrograms: true });
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.25, 5000);

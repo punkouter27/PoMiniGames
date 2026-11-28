@@ -65,7 +65,7 @@ export async function webgpuAvailable() {
  * @param {{api?:'webgl'|'webgpu'|'auto', canvas?:HTMLCanvasElement, antialias?:boolean, alpha?:boolean,
  *          powerPreference?:string, preserveDrawingBuffer?:boolean, forceWebGL?:boolean, trackTimestamp?:boolean,
  *          tone?:string, exposure?:number, shadows?:any, colorSpace?:string, clearColor?:any, clearAlpha?:number,
- *          pixelRatio?:number}} [o]
+ *          pixelRatio?:number, shareInstancePrograms?:boolean}} [o]
  */
 export async function createRenderer(THREE, o = {}) {
     const want = o.api ?? 'webgl';
@@ -102,7 +102,33 @@ export async function createRenderer(THREE, o = {}) {
         ...(o.clearColor !== undefined ? { clearColor: o.clearColor, clearAlpha: o.clearAlpha } : {}),
     });
     if (o.pixelRatio) renderer.setPixelRatio(o.pixelRatio);
+    if (o.shareInstancePrograms && useGpu) shareInstancePrograms(THREE, renderer);
     return renderer;
+}
+
+/**
+ * One vertex program for every instanced mesh with the same material, instead of one each.
+ *
+ * three r186 hands a small InstancedMesh its matrices as a uniform buffer whose WGSL struct is named
+ * after the node's id (`NodeBuffer_<id>Struct`), so every such mesh compiles its own shader. PoCapitol
+ * had 335 vertex programs and PoCabinet 191 shader modules, and the first frames after OK wait on the
+ * GPU for all of them. Above the uniform-buffer limit three uses instanced vertex attributes, which
+ * carry no id, so reporting a limit of 0 while it builds a plain InstancedMesh makes those programs
+ * identical (PoCapitol: 76 programs). Skinned meshes keep the real limit: PoCapitol's crowd bodies are
+ * one SkinnedMesh whose bone path reads it too, and forcing that path drew hats with no people under
+ * them. The patch is on the shared NodeBuilder class, so it only acts for renderers that opted in.
+ */
+export function shareInstancePrograms(THREE, renderer) {
+    renderer.userData = { ...(renderer.userData ?? {}), shareInstancePrograms: true };
+    const proto = THREE.NodeBuilder?.prototype;
+    if (!proto || proto.__poShareInstances) return;
+    proto.__poShareInstances = true;
+    const limit = proto.getUniformBufferLimit;
+    proto.getUniformBufferLimit = function () {
+        const object = this.object;
+        if (object?.isInstancedMesh && !object.isSkinnedMesh && this.renderer?.userData?.shareInstancePrograms) return 0;
+        return limit.call(this);
+    };
 }
 
 /**
