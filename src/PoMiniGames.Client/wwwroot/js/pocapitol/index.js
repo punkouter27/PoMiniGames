@@ -115,6 +115,9 @@ async function init(hostId, reference, map = 'capitol') {
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
+    // After the tier (and its render scale) is set, never before: see compile() in scene.js. It is a
+    // head start that keeps going behind the start card; init does not wait for it.
+    view.compile?.();
     track('init', { ms: g.initMs, tier,
         footprints: g.osmBuildings, signs: signs.length });
 

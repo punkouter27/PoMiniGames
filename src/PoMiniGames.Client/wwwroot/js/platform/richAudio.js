@@ -154,7 +154,17 @@ export function playRichLayerStep({ ctx, bus, bar, inBar, rootHz, intensity, gai
 }
 
 if (typeof window !== 'undefined') {
-    if (_enabled) ensureToneLoaded();
+    // Importing Tone builds its AudioContext at once. Before the page has had a gesture Chrome will
+    // not start it and logs "The AudioContext was not allowed to start" on every page, so Tone is
+    // fetched on the first gesture instead. Until then playRichLayerStep uses the built-in synth.
+    if (_enabled) {
+        const gestures = ['pointerdown', 'keydown', 'touchstart'];
+        const kick = () => {
+            for (const type of gestures) window.removeEventListener(type, kick, true);
+            ensureToneLoaded();
+        };
+        for (const type of gestures) window.addEventListener(type, kick, { capture: true, passive: true });
+    }
     window.PoRichAudio = {
         isRichAudio,
         setRichAudio,

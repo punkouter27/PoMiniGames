@@ -1896,8 +1896,12 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     }
     // Pipelines are built off the main thread, and in parallel, against the target the scene is drawn
     // into; built one at a time during the first frames they would freeze the page for the whole set.
-    await post.compile();
-    return { canvas: renderer.domElement, scene, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu, onEvent,
+    // The caller runs compile() once the quality tier is applied: that tier sets the render scale,
+    // and resizing the scene target while compileAsync is still running disposes its depth texture,
+    // so every pipeline still queued fails ("GPUDepthStencilState.format is undefined") and the
+    // first frame builds the whole set on the main thread instead (a 10-20 s freeze after OK).
+    const compile = () => post.compile();
+    return { canvas: renderer.domElement, scene, stage, render, aim, pickUnit, applyQuality, compile, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu, onEvent,
         setOverlay: next => overlay.setMode(next), setOverlayPalette: next => overlay.setPalette(next),
         setSnow: amount => { snowUniform.value = Math.max(0, Math.min(1, amount)); },
         /** The sun now, degrees (sun.js): for the diagnostics. */

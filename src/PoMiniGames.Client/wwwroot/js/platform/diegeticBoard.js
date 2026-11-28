@@ -55,7 +55,7 @@ function lowOrCalm() {
 
 const HUD_CSS = 'position:absolute;right:12px;top:72px;max-width:min(46vw,240px);z-index:3;pointer-events:none;'
     + 'font:600 13px/1.35 system-ui,sans-serif;color:#fff;background:rgba(10,14,24,.72);border-radius:8px;padding:6px 10px;';
-const HIDDEN_CSS = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;';
+const HIDDEN_CSS = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;';
 
 export class DiegeticBoard {
     /**

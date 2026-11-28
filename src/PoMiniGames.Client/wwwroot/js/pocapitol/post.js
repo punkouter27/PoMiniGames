@@ -369,6 +369,11 @@ export function createPost(renderer, scene, camera, depthCamera) {
         for (const t of [scenePass, A, B, D, ...history]) t.setSize(pw, ph);
         uTexel.value.set(1 / pw, 1 / ph); uRes.value.set(pw, ph);
         temporal.setSize(pw, ph); lights.setSize(pw, ph); air.setSize(pw, ph); lens.setSize(pw, ph);
+        // A resize disposes the scene target's textures, and they are only made again by the next
+        // draw into it. A compile() still running in the background (the quality tier can change the
+        // render scale while the start card is up) reads the depth format from them for every pipeline
+        // it has left, so without them each one fails and the first frame builds them all at once.
+        try { renderer.initRenderTarget?.(scenePass); } catch { /* the next draw makes them */ }
     }
     const sunNDC = new THREE.Vector3();
     /**

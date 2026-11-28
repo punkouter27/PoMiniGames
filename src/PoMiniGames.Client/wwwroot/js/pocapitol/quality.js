@@ -9,16 +9,18 @@
 // Pure logic with no DOM or three.js, so it can be tested with made-up frame times.
 
 /**
- * Best first. `scale` multiplies render resolution; `distant` is the share of the far crowd
- * drawn; `post` is post.js's level (3 AO, bloom and depth of field; 2 bloom; 1 MSAA; 0 grade
- * only); `detail` is the strength of the world-space surface detail on buildings and ground.
+ * Best first. `scale` multiplies render resolution and is 1 on every rung: the owner would rather
+ * see the frame rate drop than a softer picture, so a slow frame costs effects, never pixels.
+ * `distant` is the share of the far crowd drawn; `post` is post.js's level (3 AO, bloom and depth
+ * of field; 2 bloom; 1 MSAA; 0 grade only); `detail` is the strength of the world-space surface
+ * detail on buildings and ground. `name` is what the graphics label shows.
  */
 export const RUNGS = [
-    { scale: 1, shadows: 2048, distant: 1, extras: true, post: 3, detail: 1 },
-    { scale: 0.85, shadows: 1024, distant: 0.7, extras: true, post: 2, detail: 1 },
-    { scale: 0.7, shadows: 1024, distant: 0.45, extras: true, post: 1, detail: 1 },
-    { scale: 0.6, shadows: 0, distant: 0.25, extras: false, post: 0, detail: 0.6 },
-    { scale: 0.5, shadows: 0, distant: 0.1, extras: false, post: 0, detail: 0 },
+    { name: 'Full', scale: 1, shadows: 2048, distant: 1, extras: true, post: 3, detail: 1 },
+    { name: 'Rich', scale: 1, shadows: 1024, distant: 0.7, extras: true, post: 2, detail: 1 },
+    { name: 'Balanced', scale: 1, shadows: 1024, distant: 0.45, extras: true, post: 1, detail: 1 },
+    { name: 'Light', scale: 1, shadows: 0, distant: 0.25, extras: false, post: 0, detail: 0.6 },
+    { name: 'Minimal', scale: 1, shadows: 0, distant: 0.1, extras: false, post: 0, detail: 0 },
 ];
 export const MODES = ['auto', 'low', 'high'];
 const CEILING = { high: 0, medium: 1, low: 3 };
@@ -95,7 +97,7 @@ export function createGovernor({ tier = 'high', mode = 'auto' } = {}) {
         suspend(hidden) { suspended = hidden === true; if (suspended) { time = 0; frames = 0; hitches = 0; } },
         settings: () => RUNGS[rung],
         mode: () => current,
-        label: () => `${current === 'auto' ? 'Auto' : current === 'low' ? 'Low' : 'High'} · ${Math.round(RUNGS[rung].scale * 100)}%`,
+        label: () => `${current === 'auto' ? 'Auto' : current === 'low' ? 'Low' : 'High'} · ${RUNGS[rung].name}`,
         /** Why the governor is where it is, for the diagnostics panel. */
         why: () => current !== 'auto'
             ? `${current} mode is fixed`
