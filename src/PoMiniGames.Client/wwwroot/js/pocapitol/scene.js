@@ -93,6 +93,31 @@ function cloudLight(cloudCover = 0.92, altitude = 20) {
     return base > 0 ? Math.max(0.6, Math.min(1.5, daylightFactor(Math.max(1, altitude), cloudCover) / base)) : 1;
 }
 
+/**
+ * One vertex program for every instanced mesh with the same material, instead of one each.
+ *
+ * three r186 hands a small InstancedMesh its matrices as a uniform buffer whose WGSL struct is named
+ * after the node's id (`NodeBuffer_<id>Struct`), so every such mesh compiles its own shader: 335
+ * vertex programs for this scene, and after OK the first frame waits on the GPU for all of them.
+ * Above the uniform-buffer limit three uses instanced vertex attributes, which carry no id, so
+ * reporting a limit of 0 while it builds a plain InstancedMesh makes those programs identical.
+ * Skinned meshes keep the real limit: the crowd's bodies are one SkinnedMesh whose bone path reads
+ * it too, and forcing that path drew hats with no people under them. Only renderers that opt in
+ * (this one) are affected; the patch is on the shared NodeBuilder class, so it checks the flag.
+ */
+function shareInstancePrograms(renderer) {
+    renderer.userData = { ...(renderer.userData ?? {}), shareInstancePrograms: true };
+    const proto = THREE.NodeBuilder?.prototype;
+    if (!proto || proto.__poShareInstances) return;
+    proto.__poShareInstances = true;
+    const limit = proto.getUniformBufferLimit;
+    proto.getUniformBufferLimit = function () {
+        const o = this.object;
+        if (o?.isInstancedMesh && !o.isSkinnedMesh && this.renderer?.userData?.shareInstancePrograms) return 0;
+        return limit.call(this);
+    };
+}
+
 export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
@@ -101,6 +126,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     // ?capitolGl, or localStorage 'pominigames:pocapitol-gl', forces that backend, for comparing the two.
     const forceWebGL = !(await webgpuAvailable()) || /[?&]capitolGl/.test(location.search) || (() => { try { return Boolean(localStorage.getItem('pominigames:pocapitol-gl')); } catch { return false; } })();
     const renderer = await createRenderer(THREE, { api: 'webgpu', forceWebGL, antialias: false, tone: 'aces', exposure: 1.1 });
+    shareInstancePrograms(renderer);
     const isWebGPU = Boolean(renderer.backend?.isWebGPUBackend);
     renderer.info.autoReset = false;
     renderer.domElement.tabIndex = 0;
